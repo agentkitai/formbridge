@@ -106,3 +106,11 @@ export type {
   ToolGenerationOptions,
   ToolOperation
 } from './mcp/tool-generator.js';
+
+// =============================================================================
+// HTTP Route Utilities (Advanced Usage)
+// =============================================================================
+
+export { createIntakeRouter } from './routes/intake.js';
+export { createSubmissionRouter } from './routes/submissions.js';
+export { createUploadRouter } from './routes/uploads.js';
