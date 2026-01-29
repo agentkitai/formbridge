@@ -33,3 +33,5 @@ export { FieldWrapper } from './components/FieldWrapper';
 export type { FieldWrapperProps } from './components/FieldWrapper';
 export { ActorBadge } from './components/ActorBadge';
 export type { ActorBadgeProps } from './components/ActorBadge';
+export { FormBridgeForm } from './components/FormBridgeForm';
+export type { FormBridgeFormProps, FormSchema, SchemaProperty } from './components/FormBridgeForm';
