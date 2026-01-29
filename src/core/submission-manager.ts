@@ -33,7 +33,8 @@ export interface EventEmitter {
 export class SubmissionManager {
   constructor(
     private store: SubmissionStore,
-    private eventEmitter: EventEmitter
+    private eventEmitter: EventEmitter,
+    private baseUrl: string = "http://localhost:3000"
   ) {}
 
   /**
@@ -283,5 +284,45 @@ export class SubmissionManager {
     resumeToken: string
   ): Promise<Submission | null> {
     return this.store.getByResumeToken(resumeToken);
+  }
+
+  /**
+   * Generate a handoff URL for agent-to-human collaboration
+   * Returns a shareable resume URL that allows a human to continue filling the form
+   */
+  async generateHandoffUrl(
+    submissionId: string,
+    actor: Actor
+  ): Promise<string> {
+    const submission = await this.store.get(submissionId);
+
+    if (!submission) {
+      throw new Error(`Submission not found: ${submissionId}`);
+    }
+
+    // Generate the resume URL with the token
+    const resumeUrl = `${this.baseUrl}/resume?token=${submission.resumeToken}`;
+
+    const now = new Date().toISOString();
+
+    // Emit handoff.link_issued event
+    const event: IntakeEvent = {
+      eventId: `evt_${randomUUID()}`,
+      type: "handoff.link_issued",
+      submissionId: submission.id,
+      ts: now,
+      actor,
+      state: submission.state,
+      payload: {
+        url: resumeUrl,
+        resumeToken: submission.resumeToken,
+      },
+    };
+
+    submission.events.push(event);
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
+
+    return resumeUrl;
   }
 }

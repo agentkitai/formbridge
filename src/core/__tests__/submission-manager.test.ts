@@ -281,6 +281,72 @@ describe("SubmissionManager", () => {
     });
   });
 
+  describe("generateHandoffUrl", () => {
+    it("should generate a resume URL with the submission's resume token", async () => {
+      // Create a submission
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Acme Corp",
+        },
+      };
+
+      const createResponse = await manager.createSubmission(createRequest);
+      eventEmitter.clear();
+
+      // Generate handoff URL
+      const handoffUrl = await manager.generateHandoffUrl(
+        createResponse.submissionId,
+        agentActor
+      );
+
+      // Verify URL format
+      expect(handoffUrl).toContain("/resume?token=");
+      expect(handoffUrl).toContain(createResponse.resumeToken);
+      expect(handoffUrl).toMatch(/^http:\/\/localhost:3000\/resume\?token=rtok_/);
+
+      // Verify handoff.link_issued event was emitted
+      expect(eventEmitter.events).toHaveLength(1);
+      expect(eventEmitter.events[0].type).toBe("handoff.link_issued");
+      expect(eventEmitter.events[0].actor).toEqual(agentActor);
+      expect(eventEmitter.events[0].payload?.url).toBe(handoffUrl);
+      expect(eventEmitter.events[0].payload?.resumeToken).toBe(
+        createResponse.resumeToken
+      );
+    });
+
+    it("should throw error for non-existent submission", async () => {
+      await expect(
+        manager.generateHandoffUrl("sub_nonexistent", agentActor)
+      ).rejects.toThrow("Submission not found");
+    });
+
+    it("should use custom base URL when provided", async () => {
+      const customManager = new SubmissionManager(
+        store,
+        eventEmitter,
+        "https://forms.example.com"
+      );
+
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Acme Corp",
+        },
+      };
+
+      const createResponse = await customManager.createSubmission(createRequest);
+      const handoffUrl = await customManager.generateHandoffUrl(
+        createResponse.submissionId,
+        agentActor
+      );
+
+      expect(handoffUrl).toMatch(/^https:\/\/forms\.example\.com\/resume\?token=rtok_/);
+    });
+  });
+
   describe("mixed-mode agent-human collaboration", () => {
     it("should track field attribution in a typical handoff workflow", async () => {
       // Step 1: Agent creates submission and fills known fields
