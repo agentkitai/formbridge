@@ -204,6 +204,17 @@ export const vendorOnboardingSchema: IntakeSchema = {
         ],
       },
     },
+
+    // File upload field
+    documents: {
+      type: 'string',
+      title: 'Company Documents',
+      description: 'Upload relevant company documents (W-9, certificates, etc.)',
+      maxSize: 5 * 1024 * 1024, // 5MB
+      allowedTypes: ['application/pdf', 'image/png', 'image/jpeg'],
+      maxCount: 3,
+      multiple: true,
+    },
   },
   required: [
     'companyName',

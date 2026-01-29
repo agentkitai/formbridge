@@ -23,6 +23,7 @@ import { BooleanField } from './fields/BooleanField';
 import { EnumField } from './fields/EnumField';
 import { ObjectField } from './fields/ObjectField';
 import { ArrayField } from './fields/ArrayField';
+import { FileField } from './fields/FileField';
 
 /**
  * FormBridgeForm - Main form component
@@ -196,6 +197,22 @@ export const FormBridgeForm: React.FC<FormBridgeFormProps> = ({
         error,
         disabled,
       };
+
+      // Check for file field first (via widget hint)
+      if (metadata.hint?.widget === 'file') {
+        return (
+          <FileField
+            key={path}
+            {...fieldProps}
+            value={(value as File | File[]) || null}
+            onChange={onChange as (value: File | File[] | null) => void}
+            maxSize={metadata.schema.maxSize as number | undefined}
+            allowedTypes={metadata.schema.allowedTypes as string[] | undefined}
+            maxCount={metadata.schema.maxCount as number | undefined}
+            multiple={metadata.schema.multiple as boolean | undefined}
+          />
+        );
+      }
 
       switch (metadata.type) {
         case 'string':

@@ -57,6 +57,7 @@ const App: React.FC = () => {
             <li><strong>Enum fields</strong> as select dropdowns and radio buttons</li>
             <li><strong>Nested object fields</strong> (Address section)</li>
             <li><strong>Array fields</strong> for repeatable data (Certifications, Service Categories)</li>
+            <li><strong>File upload fields</strong> with drag-and-drop support and constraints</li>
           </ul>
           <p className="note">
             <strong>Note:</strong> This is a demo environment. The API endpoint is mocked and submissions
@@ -76,6 +77,19 @@ const App: React.FC = () => {
             submitText="Submit Vendor Application"
             showRequiredIndicator={true}
             className="vendor-onboarding-form"
+            uiHints={{
+              fieldHints: {
+                description: {
+                  widget: 'textarea',
+                },
+                documents: {
+                  widget: 'file',
+                },
+                companySize: {
+                  widget: 'radio',
+                },
+              },
+            }}
           />
         </div>
 
