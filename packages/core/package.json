@@ -1,0 +1,41 @@
+{
+  "name": "@formbridge/core",
+  "version": "0.0.0",
+  "description": "Core form adapter interfaces and utilities for FormBridge",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [
+    "forms",
+    "adapter",
+    "typescript"
+  ],
+  "author": "FormBridge Contributors",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/formbridge/formbridge.git",
+    "directory": "packages/core"
+  }
+}

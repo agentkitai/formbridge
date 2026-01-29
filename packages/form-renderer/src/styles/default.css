@@ -1,0 +1,549 @@
+/**
+ * FormBridge Form Renderer - Default Styles
+ *
+ * Minimal, clean styling for the form renderer components.
+ * All styles use CSS custom properties (variables) for easy customization.
+ *
+ * Import this file in your application to use the default styles:
+ * @example
+ * ```tsx
+ * import '@formbridge/form-renderer/styles/default.css';
+ * ```
+ */
+
+@import './variables.css';
+
+/* ===========================
+ * Form Container
+ * =========================== */
+
+.formbridge-form {
+  font-family: var(--formbridge-font-family);
+  font-size: var(--formbridge-font-size-base);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-color);
+  max-width: 100%;
+}
+
+.formbridge-form__title {
+  font-size: var(--formbridge-font-size-xl);
+  font-weight: var(--formbridge-font-weight-semibold);
+  line-height: var(--formbridge-line-height-tight);
+  margin: 0 0 var(--formbridge-spacing-md);
+  color: var(--formbridge-text-color);
+}
+
+.formbridge-form__description {
+  font-size: var(--formbridge-font-size-base);
+  line-height: var(--formbridge-line-height-normal);
+  margin: 0 0 var(--formbridge-spacing-xl);
+  color: var(--formbridge-text-secondary);
+}
+
+.formbridge-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--formbridge-spacing-xl);
+}
+
+.formbridge-form__actions {
+  margin-top: var(--formbridge-spacing-xl);
+  display: flex;
+  gap: var(--formbridge-spacing-md);
+  justify-content: flex-start;
+}
+
+.formbridge-form__submit {
+  padding: var(--formbridge-spacing-md) var(--formbridge-spacing-xl);
+  font-size: var(--formbridge-font-size-base);
+  font-weight: var(--formbridge-font-weight-medium);
+  font-family: inherit;
+  line-height: var(--formbridge-line-height-normal);
+  color: #ffffff;
+  background-color: var(--formbridge-primary-color);
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-primary-color);
+  border-radius: var(--formbridge-radius-md);
+  cursor: pointer;
+  transition: background-color var(--formbridge-transition-base);
+}
+
+.formbridge-form__submit:hover:not(:disabled) {
+  background-color: var(--formbridge-primary-hover);
+}
+
+.formbridge-form__submit:focus {
+  outline: 2px solid var(--formbridge-border-focus);
+  outline-offset: 2px;
+}
+
+.formbridge-form__submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.formbridge-form__success {
+  padding: var(--formbridge-spacing-md) var(--formbridge-spacing-lg);
+  background-color: var(--formbridge-success-bg);
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-success-color);
+  border-radius: var(--formbridge-radius-md);
+  color: var(--formbridge-success-color);
+  margin-bottom: var(--formbridge-spacing-xl);
+}
+
+.formbridge-form__success p {
+  margin: 0;
+}
+
+/* ===========================
+ * Field Wrapper
+ * =========================== */
+
+.formbridge-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--formbridge-spacing-sm);
+}
+
+.formbridge-field__label {
+  font-size: var(--formbridge-font-size-base);
+  font-weight: var(--formbridge-font-weight-medium);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-color);
+  display: block;
+  margin-bottom: var(--formbridge-spacing-xs);
+}
+
+.formbridge-field__required {
+  color: var(--formbridge-error-color);
+  margin-left: var(--formbridge-spacing-xs);
+}
+
+.formbridge-field__description {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-secondary);
+  margin: 0 0 var(--formbridge-spacing-xs);
+}
+
+.formbridge-field__input {
+  /* Container for the input element */
+}
+
+.formbridge-field__error {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  margin-top: var(--formbridge-spacing-xs);
+}
+
+/* ===========================
+ * Base Input Styles
+ * =========================== */
+
+.formbridge-string-field input,
+.formbridge-string-field textarea,
+.formbridge-number-field__input,
+.formbridge-enum-field__select {
+  width: 100%;
+  padding: var(--formbridge-spacing-md);
+  font-size: var(--formbridge-font-size-base);
+  font-family: inherit;
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-color);
+  background-color: var(--formbridge-bg-color);
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-border-color);
+  border-radius: var(--formbridge-radius-md);
+  transition: border-color var(--formbridge-transition-fast), box-shadow var(--formbridge-transition-fast);
+}
+
+.formbridge-string-field input:focus,
+.formbridge-string-field textarea:focus,
+.formbridge-number-field__input:focus,
+.formbridge-enum-field__select:focus {
+  outline: none;
+  border-color: var(--formbridge-border-focus);
+  box-shadow: var(--formbridge-shadow-focus);
+}
+
+.formbridge-string-field input[aria-invalid='true'],
+.formbridge-string-field textarea[aria-invalid='true'],
+.formbridge-number-field__input[aria-invalid='true'],
+.formbridge-enum-field__select[aria-invalid='true'] {
+  border-color: var(--formbridge-error-color);
+}
+
+.formbridge-string-field input:disabled,
+.formbridge-string-field textarea:disabled,
+.formbridge-number-field__input:disabled,
+.formbridge-enum-field__select:disabled {
+  background-color: var(--formbridge-disabled-bg);
+  color: var(--formbridge-disabled-text);
+  cursor: not-allowed;
+}
+
+.formbridge-string-field textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+/* ===========================
+ * Boolean Field (Checkbox)
+ * =========================== */
+
+.formbridge-boolean-field {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--formbridge-spacing-sm);
+}
+
+.formbridge-boolean-field__input {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+  accent-color: var(--formbridge-primary-color);
+}
+
+.formbridge-boolean-field__input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.formbridge-boolean-field__input:focus {
+  outline: 2px solid var(--formbridge-border-focus);
+  outline-offset: 2px;
+}
+
+/* ===========================
+ * Enum Field (Radio/Select)
+ * =========================== */
+
+.formbridge-enum-field__radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--formbridge-spacing-md);
+}
+
+.formbridge-enum-field__radio-option {
+  display: flex;
+  align-items: center;
+  gap: var(--formbridge-spacing-sm);
+}
+
+.formbridge-enum-field__radio-input {
+  width: 1.125rem;
+  height: 1.125rem;
+  cursor: pointer;
+  accent-color: var(--formbridge-primary-color);
+}
+
+.formbridge-enum-field__radio-input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.formbridge-enum-field__radio-input:focus {
+  outline: 2px solid var(--formbridge-border-focus);
+  outline-offset: 2px;
+}
+
+.formbridge-enum-field__radio-label {
+  font-size: var(--formbridge-font-size-base);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-color);
+  cursor: pointer;
+}
+
+.formbridge-enum-field__select {
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23111827' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--formbridge-spacing-md) center;
+  padding-right: calc(var(--formbridge-spacing-md) * 3);
+}
+
+/* ===========================
+ * Object Field
+ * =========================== */
+
+.formbridge-object-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.formbridge-object-field__fieldset {
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-border-color);
+  border-radius: var(--formbridge-radius-md);
+  padding: var(--formbridge-spacing-lg);
+  margin: 0;
+}
+
+.formbridge-object-field__legend {
+  font-size: var(--formbridge-font-size-base);
+  font-weight: var(--formbridge-font-weight-medium);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-color);
+  padding: 0 var(--formbridge-spacing-sm);
+}
+
+.formbridge-object-field__required {
+  color: var(--formbridge-error-color);
+  margin-left: var(--formbridge-spacing-xs);
+}
+
+.formbridge-object-field__description {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-secondary);
+  margin: 0 0 var(--formbridge-spacing-md);
+}
+
+.formbridge-object-field__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--formbridge-spacing-lg);
+}
+
+.formbridge-object-field__field {
+  /* Individual field container */
+}
+
+.formbridge-object-field__error {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  margin-top: var(--formbridge-spacing-sm);
+}
+
+/* ===========================
+ * Array Field
+ * =========================== */
+
+.formbridge-array-field {
+  display: flex;
+  flex-direction: column;
+}
+
+.formbridge-array-field__fieldset {
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-border-color);
+  border-radius: var(--formbridge-radius-md);
+  padding: var(--formbridge-spacing-lg);
+  margin: 0;
+}
+
+.formbridge-array-field__legend {
+  font-size: var(--formbridge-font-size-base);
+  font-weight: var(--formbridge-font-weight-medium);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-color);
+  padding: 0 var(--formbridge-spacing-sm);
+}
+
+.formbridge-array-field__required {
+  color: var(--formbridge-error-color);
+  margin-left: var(--formbridge-spacing-xs);
+}
+
+.formbridge-array-field__description {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-secondary);
+  margin: 0 0 var(--formbridge-spacing-md);
+}
+
+.formbridge-array-field__items {
+  display: flex;
+  flex-direction: column;
+  gap: var(--formbridge-spacing-lg);
+}
+
+.formbridge-array-field__empty {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-secondary);
+  font-style: italic;
+  padding: var(--formbridge-spacing-md);
+}
+
+.formbridge-array-field__item {
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-border-color);
+  border-radius: var(--formbridge-radius-md);
+  padding: var(--formbridge-spacing-lg);
+  background-color: var(--formbridge-bg-color);
+}
+
+.formbridge-array-field__item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--formbridge-spacing-md);
+}
+
+.formbridge-array-field__item-index {
+  font-size: var(--formbridge-font-size-sm);
+  font-weight: var(--formbridge-font-weight-medium);
+  color: var(--formbridge-text-secondary);
+}
+
+.formbridge-array-field__remove-button {
+  padding: var(--formbridge-spacing-sm) var(--formbridge-spacing-md);
+  font-size: var(--formbridge-font-size-sm);
+  font-family: inherit;
+  font-weight: var(--formbridge-font-weight-medium);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  background-color: transparent;
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-error-color);
+  border-radius: var(--formbridge-radius-md);
+  cursor: pointer;
+  transition: background-color var(--formbridge-transition-fast), color var(--formbridge-transition-fast);
+}
+
+.formbridge-array-field__remove-button:hover:not(:disabled) {
+  background-color: var(--formbridge-error-color);
+  color: #ffffff;
+}
+
+.formbridge-array-field__remove-button:focus {
+  outline: 2px solid var(--formbridge-error-color);
+  outline-offset: 2px;
+}
+
+.formbridge-array-field__remove-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.formbridge-array-field__item-content {
+  /* Content wrapper for the field */
+}
+
+.formbridge-array-field__actions {
+  margin-top: var(--formbridge-spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--formbridge-spacing-sm);
+}
+
+.formbridge-array-field__add-button {
+  padding: var(--formbridge-spacing-md) var(--formbridge-spacing-lg);
+  font-size: var(--formbridge-font-size-base);
+  font-family: inherit;
+  font-weight: var(--formbridge-font-weight-medium);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-primary-color);
+  background-color: transparent;
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-primary-color);
+  border-radius: var(--formbridge-radius-md);
+  cursor: pointer;
+  transition: background-color var(--formbridge-transition-fast), color var(--formbridge-transition-fast);
+}
+
+.formbridge-array-field__add-button:hover:not(:disabled) {
+  background-color: var(--formbridge-primary-color);
+  color: #ffffff;
+}
+
+.formbridge-array-field__add-button:focus {
+  outline: 2px solid var(--formbridge-primary-color);
+  outline-offset: 2px;
+}
+
+.formbridge-array-field__add-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.formbridge-array-field__constraint {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-text-secondary);
+  font-style: italic;
+}
+
+.formbridge-array-field__error {
+  font-size: var(--formbridge-font-size-sm);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  margin-top: var(--formbridge-spacing-sm);
+}
+
+/* ===========================
+ * Error Display
+ * =========================== */
+
+.formbridge-error-display {
+  padding: var(--formbridge-spacing-lg);
+  background-color: var(--formbridge-error-bg);
+  border: var(--formbridge-border-width) var(--formbridge-border-style) var(--formbridge-error-color);
+  border-radius: var(--formbridge-radius-md);
+  margin-bottom: var(--formbridge-spacing-xl);
+}
+
+.formbridge-error-display__header {
+  display: flex;
+  align-items: center;
+  gap: var(--formbridge-spacing-sm);
+  margin-bottom: var(--formbridge-spacing-sm);
+}
+
+.formbridge-error-display__title {
+  font-size: var(--formbridge-font-size-lg);
+  font-weight: var(--formbridge-font-weight-semibold);
+  line-height: var(--formbridge-line-height-tight);
+  color: var(--formbridge-error-color);
+  margin: 0;
+}
+
+.formbridge-error-display__retryable {
+  font-size: var(--formbridge-font-size-sm);
+  font-weight: var(--formbridge-font-weight-normal);
+  color: var(--formbridge-text-secondary);
+  font-style: italic;
+}
+
+.formbridge-error-display__message {
+  font-size: var(--formbridge-font-size-base);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  margin: 0 0 var(--formbridge-spacing-md);
+}
+
+.formbridge-error-display__fields {
+  margin-top: var(--formbridge-spacing-md);
+}
+
+.formbridge-error-display__fields-title {
+  font-size: var(--formbridge-font-size-base);
+  font-weight: var(--formbridge-font-weight-medium);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  margin: 0 0 var(--formbridge-spacing-sm);
+}
+
+.formbridge-error-display__fields-list {
+  list-style: disc;
+  margin: 0;
+  padding-left: var(--formbridge-spacing-xl);
+}
+
+.formbridge-error-display__field-error {
+  font-size: var(--formbridge-font-size-base);
+  line-height: var(--formbridge-line-height-normal);
+  color: var(--formbridge-error-color);
+  margin-bottom: var(--formbridge-spacing-xs);
+}
+
+.formbridge-error-display__field-path {
+  font-weight: var(--formbridge-font-weight-medium);
+}
+
+.formbridge-error-display__field-message {
+  /* Default styling for message text */
+}
+
+.formbridge-error-display__field-code {
+  font-size: var(--formbridge-font-size-sm);
+  font-family: 'Courier New', monospace;
+  color: var(--formbridge-text-secondary);
+}

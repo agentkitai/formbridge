@@ -1,0 +1,20 @@
+# Dependencies
+node_modules
+
+# Build outputs
+dist
+*.tsbuildinfo
+
+# Coverage
+coverage
+
+# Configuration files (already covered by ignorePatterns in .eslintrc.json)
+*.config.js
+*.config.ts
+
+# Logs
+*.log
+
+# IDE files
+.vscode
+.idea

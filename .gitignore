@@ -1,10 +1,53 @@
-# Auto Claude data directory
-.auto-claude/
+# Dependencies
+node_modules/
 
-# Auto Claude generated files
-.auto-claude-security.json
+# Build output
+dist/
+build/
+
+# TypeScript
+*.tsbuildinfo
+
+# Test / Coverage
+coverage/
+htmlcov/
+.coverage
+.nyc_output/
+test-summary.md
+
+# Vitest
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.tox/
+.venv/
+venv/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Auto Claude
+.auto-claude/
 .auto-claude-status
+.auto-claude-security.json
 .claude_settings.json
-.worktrees/
-.security-key
-logs/security/
