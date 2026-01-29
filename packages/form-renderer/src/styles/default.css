@@ -1,0 +1,491 @@
+/**
+ * FormBridge Default Styles
+ * Styles for forms with mixed-mode agent-human collaboration
+ */
+
+/* ============================================================================
+   Root Variables & Theme
+   ========================================================================== */
+
+:root {
+  /* Colors - Actor Attribution */
+  --fb-agent-color: #3b82f6;        /* Blue for agent */
+  --fb-agent-bg: #eff6ff;
+  --fb-agent-border: #93c5fd;
+
+  --fb-human-color: #10b981;        /* Green for human */
+  --fb-human-bg: #d1fae5;
+  --fb-human-border: #6ee7b7;
+
+  --fb-system-color: #6b7280;       /* Gray for system */
+  --fb-system-bg: #f3f4f6;
+  --fb-system-border: #d1d5db;
+
+  /* Colors - General */
+  --fb-primary: #2563eb;
+  --fb-error: #ef4444;
+  --fb-text: #1f2937;
+  --fb-text-light: #6b7280;
+  --fb-border: #d1d5db;
+  --fb-bg: #ffffff;
+  --fb-bg-input: #f9fafb;
+
+  /* Spacing */
+  --fb-space-xs: 0.25rem;
+  --fb-space-sm: 0.5rem;
+  --fb-space-md: 0.75rem;
+  --fb-space-lg: 1rem;
+  --fb-space-xl: 1.5rem;
+
+  /* Typography */
+  --fb-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  --fb-font-size-sm: 0.75rem;
+  --fb-font-size-base: 0.875rem;
+  --fb-font-size-md: 0.938rem;
+  --fb-font-size-lg: 1rem;
+  --fb-font-size-xl: 1.25rem;
+  --fb-font-size-2xl: 1.5rem;
+
+  /* Border Radius */
+  --fb-radius-sm: 0.25rem;
+  --fb-radius-md: 0.375rem;
+  --fb-radius-lg: 0.5rem;
+
+  /* Shadows */
+  --fb-shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --fb-shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* ============================================================================
+   ActorBadge Component
+   ========================================================================== */
+
+.formbridge-actor-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fb-space-xs);
+  font-family: var(--fb-font-family);
+  font-weight: 500;
+  border-radius: var(--fb-radius-md);
+  transition: all 0.15s ease-in-out;
+}
+
+/* Size variants */
+.formbridge-actor-badge--small {
+  padding: var(--fb-space-xs) var(--fb-space-sm);
+  font-size: var(--fb-font-size-sm);
+  line-height: 1.25;
+}
+
+.formbridge-actor-badge--medium {
+  padding: var(--fb-space-sm) var(--fb-space-md);
+  font-size: var(--fb-font-size-base);
+  line-height: 1.5;
+}
+
+.formbridge-actor-badge--large {
+  padding: var(--fb-space-md) var(--fb-space-lg);
+  font-size: var(--fb-font-size-md);
+  line-height: 1.5;
+}
+
+/* Agent variant */
+.formbridge-actor-badge--agent {
+  background-color: var(--fb-agent-bg);
+  color: var(--fb-agent-color);
+  border: 1px solid var(--fb-agent-border);
+}
+
+.formbridge-actor-badge--agent:hover {
+  background-color: #dbeafe;
+}
+
+/* Human variant */
+.formbridge-actor-badge--human {
+  background-color: var(--fb-human-bg);
+  color: var(--fb-human-color);
+  border: 1px solid var(--fb-human-border);
+}
+
+.formbridge-actor-badge--human:hover {
+  background-color: #a7f3d0;
+}
+
+/* System variant */
+.formbridge-actor-badge--system {
+  background-color: var(--fb-system-bg);
+  color: var(--fb-system-color);
+  border: 1px solid var(--fb-system-border);
+}
+
+.formbridge-actor-badge--system:hover {
+  background-color: #e5e7eb;
+}
+
+/* Badge sub-elements */
+.formbridge-actor-badge__prefix {
+  opacity: 0.9;
+}
+
+.formbridge-actor-badge__kind {
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.formbridge-actor-badge__name {
+  opacity: 0.8;
+  font-weight: 400;
+  font-size: 0.9em;
+}
+
+/* ============================================================================
+   FieldWrapper Component
+   ========================================================================== */
+
+.formbridge-field-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fb-space-sm);
+  margin-bottom: var(--fb-space-xl);
+  font-family: var(--fb-font-family);
+}
+
+.formbridge-field-wrapper--error .formbridge-field-wrapper__input input,
+.formbridge-field-wrapper--error .formbridge-field-wrapper__input select,
+.formbridge-field-wrapper--error .formbridge-field-wrapper__input textarea {
+  border-color: var(--fb-error);
+}
+
+/* Field header - contains label and attribution */
+.formbridge-field-wrapper__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--fb-space-md);
+  flex-wrap: wrap;
+}
+
+/* Field label */
+.formbridge-field-wrapper__label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--fb-space-xs);
+  font-size: var(--fb-font-size-base);
+  font-weight: 500;
+  color: var(--fb-text);
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Required asterisk */
+.formbridge-field-wrapper__required {
+  color: var(--fb-error);
+  font-weight: 700;
+  margin-left: var(--fb-space-xs);
+}
+
+/* Attribution badge in field wrapper */
+.formbridge-field-wrapper__attribution {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--fb-space-xs) var(--fb-space-sm);
+  font-size: var(--fb-font-size-sm);
+  font-weight: 500;
+  border-radius: var(--fb-radius-sm);
+  transition: all 0.15s ease-in-out;
+}
+
+/* Agent attribution */
+.formbridge-field-wrapper__attribution--agent {
+  background-color: var(--fb-agent-bg);
+  color: var(--fb-agent-color);
+  border: 1px solid var(--fb-agent-border);
+}
+
+/* Human attribution */
+.formbridge-field-wrapper__attribution--human {
+  background-color: var(--fb-human-bg);
+  color: var(--fb-human-color);
+  border: 1px solid var(--fb-human-border);
+}
+
+/* System attribution */
+.formbridge-field-wrapper__attribution--system {
+  background-color: var(--fb-system-bg);
+  color: var(--fb-system-color);
+  border: 1px solid var(--fb-system-border);
+}
+
+/* Attribution name */
+.formbridge-field-wrapper__attribution-name {
+  opacity: 0.8;
+  font-weight: 400;
+}
+
+/* Field input container */
+.formbridge-field-wrapper__input {
+  position: relative;
+}
+
+.formbridge-field-wrapper__input input,
+.formbridge-field-wrapper__input select,
+.formbridge-field-wrapper__input textarea {
+  width: 100%;
+  padding: var(--fb-space-md);
+  font-family: var(--fb-font-family);
+  font-size: var(--fb-font-size-base);
+  color: var(--fb-text);
+  background-color: var(--fb-bg-input);
+  border: 1px solid var(--fb-border);
+  border-radius: var(--fb-radius-md);
+  transition: all 0.15s ease-in-out;
+  outline: none;
+}
+
+.formbridge-field-wrapper__input input:focus,
+.formbridge-field-wrapper__input select:focus,
+.formbridge-field-wrapper__input textarea:focus {
+  background-color: var(--fb-bg);
+  border-color: var(--fb-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.formbridge-field-wrapper__input input:disabled,
+.formbridge-field-wrapper__input select:disabled,
+.formbridge-field-wrapper__input textarea:disabled {
+  background-color: #f3f4f6;
+  color: var(--fb-text-light);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Helper text */
+.formbridge-field-wrapper__helper {
+  font-size: var(--fb-font-size-sm);
+  color: var(--fb-text-light);
+  line-height: 1.4;
+  margin-top: -0.25rem;
+}
+
+/* Error message */
+.formbridge-field-wrapper__error {
+  font-size: var(--fb-font-size-sm);
+  color: var(--fb-error);
+  font-weight: 500;
+  line-height: 1.4;
+  margin-top: -0.25rem;
+}
+
+/* ============================================================================
+   FormBridgeForm Component
+   ========================================================================== */
+
+.formbridge-form {
+  font-family: var(--fb-font-family);
+  max-width: 100%;
+}
+
+/* Form header */
+.formbridge-form__header {
+  margin-bottom: var(--fb-space-xl);
+  padding-bottom: var(--fb-space-lg);
+  border-bottom: 1px solid var(--fb-border);
+}
+
+.formbridge-form__title {
+  font-size: var(--fb-font-size-2xl);
+  font-weight: 700;
+  color: var(--fb-text);
+  margin: 0 0 var(--fb-space-sm) 0;
+  line-height: 1.3;
+}
+
+.formbridge-form__description {
+  font-size: var(--fb-font-size-base);
+  color: var(--fb-text-light);
+  margin: 0;
+  line-height: 1.6;
+}
+
+/* Form fields container */
+.formbridge-form__fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--fb-space-xl);
+}
+
+/* Form inputs */
+.formbridge-form__input,
+.formbridge-form__select,
+.formbridge-form__checkbox {
+  width: 100%;
+  padding: var(--fb-space-md);
+  font-family: var(--fb-font-family);
+  font-size: var(--fb-font-size-base);
+  color: var(--fb-text);
+  background-color: var(--fb-bg-input);
+  border: 1px solid var(--fb-border);
+  border-radius: var(--fb-radius-md);
+  transition: all 0.15s ease-in-out;
+  outline: none;
+}
+
+.formbridge-form__input:focus,
+.formbridge-form__select:focus {
+  background-color: var(--fb-bg);
+  border-color: var(--fb-primary);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.formbridge-form__input:disabled,
+.formbridge-form__select:disabled,
+.formbridge-form__checkbox:disabled {
+  background-color: #f3f4f6;
+  color: var(--fb-text-light);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* Checkbox special styling */
+.formbridge-form__checkbox {
+  width: auto;
+  padding: 0;
+  width: 1.25rem;
+  height: 1.25rem;
+  cursor: pointer;
+}
+
+.formbridge-form__checkbox:focus {
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Form actions */
+.formbridge-form__actions {
+  margin-top: var(--fb-space-xl);
+  padding-top: var(--fb-space-lg);
+  border-top: 1px solid var(--fb-border);
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--fb-space-md);
+}
+
+.formbridge-form__submit {
+  padding: var(--fb-space-md) var(--fb-space-xl);
+  font-family: var(--fb-font-family);
+  font-size: var(--fb-font-size-base);
+  font-weight: 600;
+  color: white;
+  background-color: var(--fb-primary);
+  border: none;
+  border-radius: var(--fb-radius-md);
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  box-shadow: var(--fb-shadow-sm);
+}
+
+.formbridge-form__submit:hover {
+  background-color: #1d4ed8;
+  box-shadow: var(--fb-shadow-md);
+  transform: translateY(-1px);
+}
+
+.formbridge-form__submit:active {
+  background-color: #1e40af;
+  transform: translateY(0);
+}
+
+.formbridge-form__submit:disabled {
+  background-color: #9ca3af;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+/* ============================================================================
+   Responsive Design
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  .formbridge-field-wrapper__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .formbridge-actor-badge--medium {
+    font-size: var(--fb-font-size-sm);
+    padding: var(--fb-space-xs) var(--fb-space-sm);
+  }
+
+  .formbridge-form__title {
+    font-size: var(--fb-font-size-xl);
+  }
+
+  .formbridge-form__actions {
+    flex-direction: column;
+  }
+
+  .formbridge-form__submit {
+    width: 100%;
+  }
+}
+
+/* ============================================================================
+   Accessibility Enhancements
+   ========================================================================== */
+
+/* Focus visible for keyboard navigation */
+.formbridge-form__input:focus-visible,
+.formbridge-form__select:focus-visible,
+.formbridge-form__checkbox:focus-visible,
+.formbridge-form__submit:focus-visible {
+  outline: 2px solid var(--fb-primary);
+  outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .formbridge-actor-badge--agent,
+  .formbridge-actor-badge--human,
+  .formbridge-actor-badge--system,
+  .formbridge-field-wrapper__attribution {
+    border-width: 2px;
+  }
+
+  .formbridge-form__input,
+  .formbridge-form__select {
+    border-width: 2px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* ============================================================================
+   Print Styles
+   ========================================================================== */
+
+@media print {
+  .formbridge-actor-badge,
+  .formbridge-field-wrapper__attribution {
+    border: 1px solid #000;
+    background-color: transparent !important;
+  }
+
+  .formbridge-form__submit {
+    display: none;
+  }
+
+  .formbridge-form__input,
+  .formbridge-form__select {
+    border: 1px solid #000;
+    background-color: transparent;
+  }
+}
