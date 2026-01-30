@@ -167,7 +167,9 @@ function formatError(error: unknown): IntakeError | ErrorResponse {
       ok: false,
       error: {
         type: 'internal_error',
-        message: error.message,
+        message: process.env.NODE_ENV === 'production'
+          ? 'An internal error occurred'
+          : error.message,
       },
     };
   }

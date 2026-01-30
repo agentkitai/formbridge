@@ -126,6 +126,11 @@ describe("Agent-to-Human Handoff Integration", () => {
       expect(setFieldsResponse.ok).toBe(true);
       expect(setFieldsResponse.state).toBe("in_progress");
 
+      // Capture the rotated resume token from setFields
+      const currentResumeToken = setFieldsResponse.ok
+        ? setFieldsResponse.resumeToken
+        : createResponse.resumeToken;
+
       // Verify field.updated events were emitted for each field
       const fieldUpdatedEvents = eventEmitter.getEventsByType("field.updated");
       expect(fieldUpdatedEvents).toHaveLength(5); // 5 fields updated
@@ -152,7 +157,7 @@ describe("Agent-to-Human Handoff Integration", () => {
       // Verify resume URL format
       expect(resumeUrl).toBeDefined();
       expect(resumeUrl).toContain("/resume?token=");
-      expect(resumeUrl).toContain(createResponse.resumeToken);
+      expect(resumeUrl).toContain(currentResumeToken);
       expect(resumeUrl).toMatch(/^http:\/\/localhost:3000\/resume\?token=rtok_/);
 
       // Step 4: Verify HANDOFF_LINK_ISSUED event was emitted
@@ -165,17 +170,17 @@ describe("Agent-to-Human Handoff Integration", () => {
       expect(handoffEvent.actor).toEqual(agentActor);
       expect(handoffEvent.state).toBe("in_progress");
       expect(handoffEvent.payload?.url).toBe(resumeUrl);
-      expect(handoffEvent.payload?.resumeToken).toBe(createResponse.resumeToken);
+      expect(handoffEvent.payload?.resumeToken).toBe(currentResumeToken);
       expect(handoffEvent.eventId).toMatch(/^evt_/);
       expect(handoffEvent.ts).toBeDefined();
 
       // Step 5: Verify resume URL contains valid resumeToken
       const urlParams = new URL(resumeUrl);
       const tokenFromUrl = urlParams.searchParams.get("token");
-      expect(tokenFromUrl).toBe(createResponse.resumeToken);
+      expect(tokenFromUrl).toBe(currentResumeToken);
 
       // Verify we can retrieve the submission using the resume token
-      const submissionByToken = await store.getByResumeToken(createResponse.resumeToken);
+      const submissionByToken = await store.getByResumeToken(currentResumeToken);
       expect(submissionByToken).toBeDefined();
       expect(submissionByToken!.id).toBe(createResponse.submissionId);
       expect(submissionByToken!.fields.companyName).toBe("Acme Corp");
@@ -406,7 +411,13 @@ describe("Agent-to-Human Handoff Integration", () => {
         },
       };
 
-      await manager.setFields(agentFields);
+      const agentSetResult = await manager.setFields(agentFields);
+      expect(agentSetResult.ok).toBe(true);
+
+      // Capture rotated resume token from setFields
+      const currentResumeToken = agentSetResult.ok
+        ? agentSetResult.resumeToken
+        : createResponse.resumeToken;
 
       // Step 3: Agent recognizes need for document uploads and generates handoff URL
       eventEmitter.clear();
@@ -428,7 +439,7 @@ describe("Agent-to-Human Handoff Integration", () => {
       // Step 4: Human opens resume URL (simulated by extracting token)
       const urlParams = new URL(resumeUrl);
       const resumeToken = urlParams.searchParams.get("token");
-      expect(resumeToken).toBe(createResponse.resumeToken);
+      expect(resumeToken).toBe(currentResumeToken);
 
       // Step 5: Human completes remaining fields (document uploads)
       const humanFields: SetFieldsRequest = {
@@ -474,7 +485,7 @@ describe("Agent-to-Human Handoff Integration", () => {
       // Verify handoff event has correct payload
       const handoffEvent = allEvents.find((e) => e.type === "handoff.link_issued");
       expect(handoffEvent?.payload?.url).toBe(resumeUrl);
-      expect(handoffEvent?.payload?.resumeToken).toBe(createResponse.resumeToken);
+      expect(handoffEvent?.payload?.resumeToken).toBe(currentResumeToken);
       expect(handoffEvent?.actor).toEqual(agentActor);
     });
   });

@@ -279,6 +279,59 @@ describe("SubmissionManager", () => {
         "Invalid resume token"
       );
     });
+
+    it("should include oldValue and newValue in field.updated events", async () => {
+      // Create submission with initial field value
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Original Name",
+          taxId: "11-1111111",
+        },
+      };
+
+      const createResponse = await manager.createSubmission(createRequest);
+      eventEmitter.clear();
+
+      // Update existing field and add new field
+      const setFieldsRequest: SetFieldsRequest = {
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: humanActor,
+        fields: {
+          companyName: "Updated Name", // Update existing
+          contactEmail: "new@example.com", // Add new
+        },
+      };
+
+      await manager.setFields(setFieldsRequest);
+
+      // Verify field.updated events contain oldValue and newValue
+      expect(eventEmitter.events).toHaveLength(2);
+
+      // First event: companyName update (has oldValue)
+      const companyNameEvent = eventEmitter.events.find(
+        (e) => e.payload?.fieldPath === "companyName"
+      );
+      expect(companyNameEvent).toBeDefined();
+      expect(companyNameEvent!.type).toBe("field.updated");
+      expect(companyNameEvent!.payload?.fieldPath).toBe("companyName");
+      expect(companyNameEvent!.payload?.oldValue).toBe("Original Name");
+      expect(companyNameEvent!.payload?.newValue).toBe("Updated Name");
+      expect(companyNameEvent!.actor).toEqual(humanActor);
+
+      // Second event: contactEmail creation (oldValue is undefined)
+      const emailEvent = eventEmitter.events.find(
+        (e) => e.payload?.fieldPath === "contactEmail"
+      );
+      expect(emailEvent).toBeDefined();
+      expect(emailEvent!.type).toBe("field.updated");
+      expect(emailEvent!.payload?.fieldPath).toBe("contactEmail");
+      expect(emailEvent!.payload?.oldValue).toBeUndefined();
+      expect(emailEvent!.payload?.newValue).toBe("new@example.com");
+      expect(emailEvent!.actor).toEqual(humanActor);
+    });
   });
 
   describe("generateHandoffUrl", () => {
@@ -478,12 +531,14 @@ describe("SubmissionManager", () => {
         },
       };
 
-      await manager.setFields(agentFields);
+      const agentSetResult = await manager.setFields(agentFields);
+      expect(agentSetResult.ok).toBe(true);
 
       // Step 3: Human opens resume URL and completes remaining fields
+      // Must use the rotated resume token from the previous setFields call
       const humanFields: SetFieldsRequest = {
         submissionId: createResponse.submissionId,
-        resumeToken: createResponse.resumeToken,
+        resumeToken: agentSetResult.ok ? agentSetResult.resumeToken : createResponse.resumeToken,
         actor: humanActor,
         fields: {
           w9Document: "file://uploads/w9.pdf",

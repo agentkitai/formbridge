@@ -581,6 +581,11 @@ describe('Approval Workflow End-to-End', () => {
 
       expect(setFieldsResponse.ok).toBe(true);
 
+      // Capture the rotated resume token from setFields
+      const rotatedToken = setFieldsResponse.ok
+        ? setFieldsResponse.resumeToken
+        : resumeToken;
+
       // Verify fields were updated
       const submissionAfterUpdates = await store.get(submissionId);
       expect(submissionAfterUpdates!.fields.taxId).toBe('12-3456789');
@@ -589,10 +594,10 @@ describe('Approval Workflow End-to-End', () => {
       );
       expect(submissionAfterUpdates!.fields.email).toBe('contact@acme.com');
 
-      // Step 8: Agent resubmits the corrected submission
+      // Step 8: Agent resubmits the corrected submission (using rotated token)
       const resubmitResponse = await submissionManager.submit({
         submissionId,
-        resumeToken,
+        resumeToken: rotatedToken,
         idempotencyKey: 'idem_submit_2',
         actor: agentActor,
       });
@@ -604,10 +609,10 @@ describe('Approval Workflow End-to-End', () => {
         expect(resubmitResponse.error.type).toBe('needs_approval');
       }
 
-      // Step 9: Reviewer approves the updated submission
+      // Step 9: Reviewer approves the updated submission (using rotated token)
       const approveResponse = await approvalManager.approve({
         submissionId,
-        resumeToken,
+        resumeToken: rotatedToken,
         actor: reviewerActor,
         comment: 'All corrections look good. Approved.',
       });
@@ -698,10 +703,13 @@ describe('Approval Workflow End-to-End', () => {
         await submissionManager.setFields(setFieldsRequest);
       expect(setFieldsResponse.ok).toBe(true);
 
-      // Agent submits
+      // Agent submits (using rotated token from setFields)
+      const submitResumeToken = setFieldsResponse.ok
+        ? setFieldsResponse.resumeToken
+        : createResponse.resumeToken;
       const submitResponse = await submissionManager.submit({
         submissionId: createResponse.submissionId,
-        resumeToken: createResponse.resumeToken,
+        resumeToken: submitResumeToken,
         idempotencyKey: 'idem_submit',
         actor: agentActor,
       });

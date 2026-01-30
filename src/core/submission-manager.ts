@@ -16,6 +16,9 @@ import type {
 import type { Submission, FieldAttribution } from "../types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";
+import type { EventStore } from "./event-store.js";
+import { Validator } from "../validation/validator.js";
+import { InMemoryEventStore } from "./event-store.js";
 import { randomUUID } from "crypto";
 
 export class SubmissionNotFoundError extends Error {
@@ -108,13 +111,22 @@ export interface ConfirmUploadOutput {
  * with field-level actor attribution for audit trails
  */
 export class SubmissionManager {
+  private _validator: Validator;
+  private eventStore: EventStore;
+
   constructor(
     private store: SubmissionStore,
-    private eventEmitter: EventEmitter,
+    private _eventEmitter: EventEmitter,
     private intakeRegistry?: IntakeRegistry,
     private baseUrl: string = "http://localhost:3000",
-    private storageBackend?: StorageBackend
-  ) {}
+    private storageBackend?: StorageBackend,
+    eventStore?: EventStore
+  ) {
+    // Initialize validator with event emitter for audit trail
+    this._validator = new Validator(_eventEmitter);
+    // Initialize event store (defaults to in-memory implementation)
+    this.eventStore = eventStore ?? new InMemoryEventStore();
+  }
 
   /**
    * Create a new submission
@@ -175,8 +187,10 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
     submission.events.push(event);
-    await this.eventEmitter.emit(event);
+    await this._eventEmitter.emit(event);
+    await this.eventStore.appendEvent(event);
     await this.store.save(submission);
 
     return {
@@ -249,17 +263,25 @@ export class SubmissionManager {
 
     // Update fields and record actor attribution
     const now = new Date().toISOString();
-    const updatedFields: string[] = [];
+    const fieldUpdates: Array<{
+      fieldPath: string;
+      oldValue: unknown;
+      newValue: unknown;
+    }> = [];
 
     Object.entries(request.fields).forEach(([fieldPath, value]) => {
+      const oldValue = submission!.fields[fieldPath];
       submission!.fields[fieldPath] = value;
       submission!.fieldAttribution[fieldPath] = request.actor;
-      updatedFields.push(fieldPath);
+      fieldUpdates.push({ fieldPath, oldValue, newValue: value });
     });
 
     // Update metadata
     submission.updatedAt = now;
     submission.updatedBy = request.actor;
+
+    // Rotate resume token on every state-changing operation
+    submission.resumeToken = `rtok_${randomUUID()}`;
 
     // Update state if still in draft
     if (submission.state === "draft") {
@@ -269,7 +291,7 @@ export class SubmissionManager {
     await this.store.save(submission);
 
     // Emit field.updated event for each field
-    for (const fieldPath of updatedFields) {
+    for (const fieldUpdate of fieldUpdates) {
       const event: IntakeEvent = {
         eventId: `evt_${randomUUID()}`,
         type: "field.updated",
@@ -278,13 +300,16 @@ export class SubmissionManager {
         actor: request.actor,
         state: submission.state,
         payload: {
-          fieldPath,
-          value: request.fields[fieldPath],
+          fieldPath: fieldUpdate.fieldPath,
+          oldValue: fieldUpdate.oldValue,
+          newValue: fieldUpdate.newValue,
         },
       };
 
+      // Triple-write pattern: array + emit + store
       submission.events.push(event);
-      await this.eventEmitter.emit(event);
+      await this._eventEmitter.emit(event);
+      await this.eventStore.appendEvent(event);
     }
 
     await this.store.save(submission);
@@ -400,8 +425,10 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
     submission.events.push(event);
-    await this.eventEmitter.emit(event);
+    await this._eventEmitter.emit(event);
+    await this.eventStore.appendEvent(event);
     await this.store.save(submission);
 
     // Calculate expiration in milliseconds
@@ -511,8 +538,10 @@ export class SubmissionManager {
         },
       };
 
+      // Triple-write pattern: array + emit + store
       submission.events.push(event);
-      await this.eventEmitter.emit(event);
+      await this._eventEmitter.emit(event);
+      await this.eventStore.appendEvent(event);
       await this.store.save(submission);
 
       return {
@@ -540,8 +569,10 @@ export class SubmissionManager {
         },
       };
 
+      // Triple-write pattern: array + emit + store
       submission.events.push(event);
-      await this.eventEmitter.emit(event);
+      await this._eventEmitter.emit(event);
+      await this.eventStore.appendEvent(event);
       await this.store.save(submission);
 
       throw new Error(
@@ -622,7 +653,7 @@ export class SubmissionManager {
       };
 
       submission.events.push(reviewEvent);
-      await this.eventEmitter.emit(reviewEvent);
+      await this._eventEmitter.emit(reviewEvent);
       await this.store.save(submission);
 
       // Return needs_approval error with next action guidance
@@ -667,8 +698,10 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
     submission.events.push(event);
-    await this.eventEmitter.emit(event);
+    await this._eventEmitter.emit(event);
+    await this.eventStore.appendEvent(event);
     await this.store.save(submission);
 
     return {
@@ -695,6 +728,18 @@ export class SubmissionManager {
     resumeToken: string
   ): Promise<Submission | null> {
     return this.store.getByResumeToken(resumeToken);
+  }
+
+  /**
+   * Get events for a submission
+   * Returns the full event stream for audit trail purposes
+   */
+  async getEvents(submissionId: string): Promise<IntakeEvent[]> {
+    const submission = await this.store.get(submissionId);
+    if (!submission) {
+      throw new SubmissionNotFoundError(submissionId);
+    }
+    return submission.events;
   }
 
   /**
@@ -730,8 +775,10 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
     submission.events.push(event);
-    await this.eventEmitter.emit(event);
+    await this._eventEmitter.emit(event);
+    await this.eventStore.appendEvent(event);
     await this.store.save(submission);
 
     return resumeUrl;
@@ -771,8 +818,10 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
     submission.events.push(event);
-    await this.eventEmitter.emit(event);
+    await this._eventEmitter.emit(event);
+    await this.eventStore.appendEvent(event);
     await this.store.save(submission);
 
     return event.eventId;
