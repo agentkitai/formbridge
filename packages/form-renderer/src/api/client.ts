@@ -6,11 +6,31 @@
 import type { Actor } from '../types';
 
 /**
+ * Field-level comment for request_changes action
+ */
+export interface FieldComment {
+  fieldPath: string;
+  comment: string;
+  suggestedValue?: unknown;
+}
+
+/**
  * Event emission response
  */
 export interface EmitEventResponse {
   ok: boolean;
   eventId?: string;
+  error?: string;
+}
+
+/**
+ * Approval action response
+ */
+export interface ApprovalResponse {
+  ok: boolean;
+  submissionId?: string;
+  state?: string;
+  resumeToken?: string;
   error?: string;
 }
 
@@ -28,7 +48,8 @@ export interface ApiClientOptions {
  * FormBridge API Client
  *
  * Provides methods for interacting with the FormBridge backend API,
- * including event emission for the agent-to-human handoff workflow.
+ * including event emission for the agent-to-human handoff workflow
+ * and approval actions for the review workflow.
  *
  * @example
  * ```typescript
@@ -42,6 +63,13 @@ export interface ApiClientOptions {
  *   id: 'user-123',
  *   name: 'John Doe'
  * });
+ *
+ * // Approve a submission
+ * await client.approve('sub_123', 'rtok_abc123', {
+ *   kind: 'human',
+ *   id: 'reviewer-1',
+ *   name: 'Jane Doe'
+ * }, 'Approved');
  * ```
  */
 export class FormBridgeApiClient {
@@ -141,6 +169,199 @@ export class FormBridgeApiClient {
     }
 
     return await response.json();
+  }
+
+  /**
+   * Approve a submission that is in needs_review state
+   *
+   * @param submissionId - The submission ID to approve
+   * @param resumeToken - The resume token for verification
+   * @param actor - The actor (reviewer) performing the approval
+   * @param comment - Optional approval comment
+   * @returns Response indicating success or failure
+   *
+   * @example
+   * ```typescript
+   * const result = await client.approve('sub_123', 'rtok_abc123', {
+   *   kind: 'human',
+   *   id: 'reviewer-1',
+   *   name: 'Jane Doe'
+   * }, 'Looks good!');
+   *
+   * if (result.ok) {
+   *   console.log('Approved:', result.submissionId, result.state);
+   * } else {
+   *   console.error('Failed to approve:', result.error);
+   * }
+   * ```
+   */
+  async approve(
+    submissionId: string,
+    resumeToken: string,
+    actor: Actor,
+    comment?: string
+  ): Promise<ApprovalResponse> {
+    try {
+      const url = `${this.endpoint}/api/submissions/${encodeURIComponent(submissionId)}/approve`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ resumeToken, actor, comment }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          ok: false,
+          error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+      return {
+        ok: true,
+        submissionId: data.submissionId,
+        state: data.state,
+        resumeToken: data.resumeToken,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  /**
+   * Reject a submission that is in needs_review state
+   *
+   * @param submissionId - The submission ID to reject
+   * @param resumeToken - The resume token for verification
+   * @param actor - The actor (reviewer) performing the rejection
+   * @param reason - Required rejection reason
+   * @param comment - Optional additional comment
+   * @returns Response indicating success or failure
+   *
+   * @example
+   * ```typescript
+   * const result = await client.reject('sub_123', 'rtok_abc123', {
+   *   kind: 'human',
+   *   id: 'reviewer-1',
+   *   name: 'Jane Doe'
+   * }, 'Missing required documents');
+   *
+   * if (result.ok) {
+   *   console.log('Rejected:', result.submissionId, result.state);
+   * } else {
+   *   console.error('Failed to reject:', result.error);
+   * }
+   * ```
+   */
+  async reject(
+    submissionId: string,
+    resumeToken: string,
+    actor: Actor,
+    reason: string,
+    comment?: string
+  ): Promise<ApprovalResponse> {
+    try {
+      const url = `${this.endpoint}/api/submissions/${encodeURIComponent(submissionId)}/reject`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ resumeToken, actor, reason, comment }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          ok: false,
+          error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+      return {
+        ok: true,
+        submissionId: data.submissionId,
+        state: data.state,
+        resumeToken: data.resumeToken,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
+  }
+
+  /**
+   * Request changes on a submission that is in needs_review state
+   *
+   * @param submissionId - The submission ID to request changes on
+   * @param resumeToken - The resume token for verification
+   * @param actor - The actor (reviewer) requesting changes
+   * @param fieldComments - Array of field-level comments with suggested changes
+   * @param comment - Optional overall comment
+   * @returns Response indicating success or failure
+   *
+   * @example
+   * ```typescript
+   * const result = await client.requestChanges('sub_123', 'rtok_abc123', {
+   *   kind: 'human',
+   *   id: 'reviewer-1',
+   *   name: 'Jane Doe'
+   * }, [
+   *   { fieldPath: 'vendorName', comment: 'Please provide full legal name' },
+   *   { fieldPath: 'email', comment: 'Invalid email format', suggestedValue: 'user@example.com' }
+   * ]);
+   *
+   * if (result.ok) {
+   *   console.log('Changes requested:', result.submissionId, result.state);
+   * } else {
+   *   console.error('Failed to request changes:', result.error);
+   * }
+   * ```
+   */
+  async requestChanges(
+    submissionId: string,
+    resumeToken: string,
+    actor: Actor,
+    fieldComments: FieldComment[],
+    comment?: string
+  ): Promise<ApprovalResponse> {
+    try {
+      const url = `${this.endpoint}/api/submissions/${encodeURIComponent(submissionId)}/request-changes`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ resumeToken, actor, fieldComments, comment }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          ok: false,
+          error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      const data = await response.json();
+      return {
+        ok: true,
+        submissionId: data.submissionId,
+        state: data.state,
+        resumeToken: data.resumeToken,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
+    }
   }
 }
 
