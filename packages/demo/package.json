@@ -1,7 +1,7 @@
 {
   "name": "@formbridge/demo",
   "version": "0.1.0",
-  "description": "Demo app showcasing FormBridge React Form Renderer",
+  "description": "FormBridge demo application showcasing agent-to-human handoff workflow",
   "type": "module",
   "private": true,
   "scripts": {
@@ -12,9 +12,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@formbridge/react-form-renderer": "workspace:*",
+    "@formbridge/form-renderer": "workspace:*",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.20.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.48",

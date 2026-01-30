@@ -1,7 +1,7 @@
 {
-  "name": "@formbridge/react-form-renderer",
+  "name": "@formbridge/form-renderer",
   "version": "0.1.0",
-  "description": "React component for rendering forms from FormBridge IntakeSchema IR",
+  "description": "FormBridge form renderer with React components and hooks",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",

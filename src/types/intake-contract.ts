@@ -1,156 +1,232 @@
 /**
- * FormBridge Intake Contract Type Definitions
- *
- * This module defines the core types for the Intake Contract protocol,
- * which provides structured error responses and submission state management
- * for agent-native form submissions.
+ * FormBridge Intake Contract - TypeScript Type Definitions
+ * Based on INTAKE_CONTRACT_SPEC.md v0.1.0-draft
  */
 
 /**
- * Submission state enumeration
- * Tracks the lifecycle of an intake submission
- */
-export enum SubmissionState {
-  /** Initial state - submission created but not validated */
-  CREATED = 'created',
-  /** Submission data is being validated */
-  VALIDATING = 'validating',
-  /** Validation failed - errors present */
-  INVALID = 'invalid',
-  /** Validation passed - ready for submission */
-  VALID = 'valid',
-  /** Submission is awaiting approval */
-  PENDING_APPROVAL = 'pending_approval',
-  /** File upload in progress */
-  UPLOADING = 'uploading',
-  /** Submission is being processed */
-  SUBMITTING = 'submitting',
-  /** Submission completed successfully */
-  COMPLETED = 'completed',
-  /** Submission failed during processing */
-  FAILED = 'failed',
-  /** Submission was cancelled */
-  CANCELLED = 'cancelled',
-  /** Submission has expired */
-  EXPIRED = 'expired'
-}
-
-/**
- * Error type taxonomy for intake submissions
- * Provides semantic categorization of validation and processing errors
- */
-export type IntakeErrorType =
-  | 'missing'           // Required field is missing
-  | 'invalid'           // Field value is invalid
-  | 'conflict'          // Field value conflicts with another field
-  | 'needs_approval'    // Submission requires human approval
-  | 'upload_pending'    // File upload is not yet complete
-  | 'delivery_failed'   // Failed to deliver submission to destination
-  | 'expired'           // Submission or session has expired
-  | 'cancelled';        // Submission was cancelled
-
-/**
- * Field-level error information
- * Describes a specific validation error for a single field
- */
-export interface FieldError {
-  /** Name of the field with the error */
-  field: string;
-  /** Human-readable error message */
-  message: string;
-  /** Error type for programmatic handling */
-  type: IntakeErrorType;
-  /** Optional constraint that was violated (e.g., "min:5", "email") */
-  constraint?: string;
-  /** Optional current value that caused the error (for debugging) */
-  value?: unknown;
-}
-
-/**
- * Actor information
- * Tracks who performed an action in the submission lifecycle
+ * Actor identity for all operations
+ * Recorded on every event for audit purposes
  */
 export interface Actor {
-  /** Actor type - agent or human */
-  type: 'agent' | 'human';
-  /** Unique identifier for the actor */
+  kind: "agent" | "human" | "system";
   id: string;
-  /** Optional display name */
   name?: string;
-  /** Optional email address */
-  email?: string;
+  metadata?: Record<string, unknown>;
 }
 
 /**
- * Suggested next action for resolving errors
- * Guides agents on how to proceed when errors occur
+ * Submission lifecycle states
+ */
+export type SubmissionState =
+  | "draft"
+  | "in_progress"
+  | "awaiting_input"
+  | "awaiting_upload"
+  | "submitted"
+  | "needs_review"
+  | "approved"
+  | "rejected"
+  | "finalized"
+  | "cancelled"
+  | "expired";
+
+/**
+ * Field-level error details
+ */
+export interface FieldError {
+  path: string;
+  code:
+    | "required"
+    | "invalid_type"
+    | "invalid_format"
+    | "invalid_value"
+    | "too_long"
+    | "too_short"
+    | "file_required"
+    | "file_too_large"
+    | "file_wrong_type"
+    | "custom";
+  message: string;
+  expected?: unknown;
+  received?: unknown;
+}
+
+/**
+ * Next action guidance for agent loops
  */
 export interface NextAction {
-  /** Action type identifier */
-  type: string;
-  /** Human-readable description of the action */
-  description: string;
-  /** Optional fields that need attention for this action */
-  fields?: string[];
-  /** Optional parameters for the action */
-  params?: Record<string, unknown>;
+  action:
+    | "collect_field"
+    | "request_upload"
+    | "wait_for_review"
+    | "retry_delivery"
+    | "cancel";
+  field?: string;
+  hint?: string;
+  accept?: string[];
+  maxBytes?: number;
 }
 
 /**
- * Structured intake error response
- * Returned by MCP tools to communicate validation and processing errors
+ * Structured error response envelope
  */
 export interface IntakeError {
-  /** Error type from the Intake Contract taxonomy */
-  type: IntakeErrorType;
-  /** High-level error message */
-  message: string;
-  /** Array of field-level errors */
-  fields: FieldError[];
-  /** Suggested next actions to resolve the error */
-  nextActions: NextAction[];
-  /** Optional resume token for continuing a failed submission */
-  resumeToken?: string;
-  /** Optional idempotency key for retry safety */
-  idempotencyKey?: string;
-  /** Timestamp when the error occurred */
-  timestamp?: string;
-}
-
-/**
- * Successful submission response
- * Returned when a submission completes successfully
- */
-export interface SubmissionSuccess {
-  /** Submission state */
-  state: SubmissionState;
-  /** Unique submission identifier */
+  ok: false;
   submissionId: string;
-  /** Success message */
-  message: string;
-  /** Optional data returned from the destination */
-  data?: Record<string, unknown>;
-  /** Actor who submitted */
-  actor?: Actor;
-  /** Timestamp of submission */
-  timestamp?: string;
+  state: SubmissionState;
+  resumeToken: string;
+  error: {
+    type:
+      | "missing"
+      | "invalid"
+      | "conflict"
+      | "needs_approval"
+      | "upload_pending"
+      | "delivery_failed"
+      | "expired"
+      | "cancelled";
+    message?: string;
+    fields?: FieldError[];
+    nextActions?: NextAction[];
+    retryable: boolean;
+    retryAfterMs?: number;
+  };
 }
 
 /**
- * Submission response - either success or error
+ * Event types for the intake event stream
  */
-export type SubmissionResponse = SubmissionSuccess | IntakeError;
+export type IntakeEventType =
+  | "submission.created"
+  | "field.updated"
+  | "validation.passed"
+  | "validation.failed"
+  | "upload.requested"
+  | "upload.completed"
+  | "upload.failed"
+  | "submission.submitted"
+  | "review.requested"
+  | "review.approved"
+  | "review.rejected"
+  | "delivery.attempted"
+  | "delivery.succeeded"
+  | "delivery.failed"
+  | "submission.finalized"
+  | "submission.cancelled"
+  | "submission.expired"
+  | "handoff.link_issued"
+  | "handoff.resumed";
 
 /**
- * Type guard to check if a response is an IntakeError
+ * Typed event for audit trail
  */
-export function isIntakeError(response: SubmissionResponse): response is IntakeError {
-  return 'type' in response && 'fields' in response && 'nextActions' in response;
+export interface IntakeEvent {
+  eventId: string;
+  type: IntakeEventType;
+  submissionId: string;
+  ts: string;
+  actor: Actor;
+  state: SubmissionState;
+  payload?: Record<string, unknown>;
 }
 
 /**
- * Type guard to check if a response is a SubmissionSuccess
+ * Approval gate configuration
  */
-export function isSubmissionSuccess(response: SubmissionResponse): response is SubmissionSuccess {
-  return 'state' in response && 'submissionId' in response;
+export interface ApprovalGate {
+  name: string;
+  reviewers: unknown;
+  requiredApprovals?: number;
+  autoApproveIf?: unknown;
+  escalateAfterMs?: number;
+}
+
+/**
+ * Destination for finalized submissions
+ */
+export interface Destination {
+  kind: "webhook" | "callback" | "queue";
+  url?: string;
+  headers?: Record<string, string>;
+  retryPolicy?: unknown;
+}
+
+/**
+ * Intake definition - the template for data collection
+ */
+export interface IntakeDefinition {
+  id: string;
+  version: string;
+  name: string;
+  description?: string;
+  schema: unknown;
+  approvalGates?: ApprovalGate[];
+  ttlMs?: number;
+  destination: Destination;
+  uiHints?: {
+    steps?: unknown[];
+    fieldHints?: Record<string, unknown>;
+  };
+}
+
+/**
+ * Create submission request
+ */
+export interface CreateSubmissionRequest {
+  intakeId: string;
+  idempotencyKey?: string;
+  actor: Actor;
+  initialFields?: Record<string, unknown>;
+  ttlMs?: number;
+}
+
+/**
+ * Create submission response
+ */
+export interface CreateSubmissionResponse {
+  ok: true;
+  submissionId: string;
+  state: "draft" | "in_progress" | "submitted";
+  resumeToken: string;
+  schema: unknown;
+  missingFields?: string[];
+}
+
+/**
+ * Set fields request
+ */
+export interface SetFieldsRequest {
+  submissionId: string;
+  resumeToken: string;
+  actor: Actor;
+  fields: Record<string, unknown>;
+}
+
+/**
+ * Submit request
+ */
+export interface SubmitRequest {
+  submissionId: string;
+  resumeToken: string;
+  idempotencyKey: string;
+  actor: Actor;
+}
+
+/**
+ * Review request
+ */
+export interface ReviewRequest {
+  submissionId: string;
+  decision: "approved" | "rejected";
+  reasons?: string[];
+  actor: Actor;
+}
+
+/**
+ * Cancel request
+ */
+export interface CancelRequest {
+  submissionId: string;
+  reason?: string;
+  actor: Actor;
 }

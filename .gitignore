@@ -1,56 +1,10 @@
-# Dependencies
-node_modules/
-
-# Build output
-dist/
-build/
-
-# TypeScript
-*.tsbuildinfo
-
-# Test / Coverage
-coverage/
-htmlcov/
-.coverage
-.nyc_output/
-test-summary.md
-
-# Vitest
-.vite/
-
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-*.egg
-.eggs/
-.mypy_cache/
-.pytest_cache/
-.ruff_cache/
-.tox/
-.venv/
-venv/
-
-# Environment
-.env
-.env.*
-!.env.example
-
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Auto Claude
+# Auto Claude data directory
 .auto-claude/
+
+# Auto Claude machine-specific config
 .auto-claude-security.json
 .auto-claude-status
 .claude_settings.json
-.worktrees/
-.security-key
-logs/security/
+
+# Development verification artifacts
+*VERIFICATION*.md

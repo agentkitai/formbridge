@@ -1,324 +1,219 @@
 /**
- * FormBridgeForm component - Main form component that orchestrates all pieces
- * Renders a complete form from an IntakeSchema with validation and submission
+ * FormBridgeForm component - Renders a form with field attribution tracking
+ * Displays which actor (agent, human, system) filled each field
  */
 
-import React, { useMemo, useCallback } from 'react';
-import {
-  IntakeSchema,
-  FormBridgeFormProps,
-  FieldMetadata,
-  Actor,
-  FormData,
-} from '../types';
-import { useFormState } from '../hooks/useFormState';
-import { useValidation } from '../hooks/useValidation';
-import { useFormSubmission } from '../hooks/useFormSubmission';
-import { FormBridgeApiClient, createApiClient } from '../api/client';
-import { parseSchema, parseObjectFields, getFieldValue } from '../utils/schemaParser';
-import { ErrorDisplay } from './ErrorDisplay';
-import { StringField } from './fields/StringField';
-import { NumberField } from './fields/NumberField';
-import { BooleanField } from './fields/BooleanField';
-import { EnumField } from './fields/EnumField';
-import { ObjectField } from './fields/ObjectField';
-import { ArrayField } from './fields/ArrayField';
+import React, { useState, useCallback, useEffect } from 'react';
+import { FieldWrapper } from './FieldWrapper';
+import type { Actor, FieldAttribution } from '../types';
 
 /**
- * FormBridgeForm - Main form component
+ * JSON Schema property definition
+ */
+export interface SchemaProperty {
+  type: string;
+  title?: string;
+  description?: string;
+  enum?: unknown[];
+  format?: string;
+  minLength?: number;
+  maxLength?: number;
+  minimum?: number;
+  maximum?: number;
+}
+
+/**
+ * JSON Schema definition for forms
+ */
+export interface FormSchema {
+  type: 'object';
+  properties: Record<string, SchemaProperty>;
+  required?: string[];
+  title?: string;
+  description?: string;
+}
+
+/**
+ * Props for FormBridgeForm component
+ */
+export interface FormBridgeFormProps {
+  /** JSON Schema defining the form structure */
+  schema: FormSchema;
+  /** Current field values */
+  fields: Record<string, unknown>;
+  /** Field-level attribution mapping field paths to actors */
+  fieldAttribution: FieldAttribution;
+  /** Callback when field value changes */
+  onFieldChange?: (fieldPath: string, value: unknown, actor: Actor) => void;
+  /** Callback when form is submitted */
+  onSubmit?: (fields: Record<string, unknown>) => void;
+  /** Current actor filling the form */
+  currentActor: Actor;
+  /** Custom CSS class */
+  className?: string;
+  /** Whether the form is read-only */
+  readOnly?: boolean;
+  /** Field-level errors */
+  errors?: Record<string, string>;
+}
+
+/**
+ * FormBridgeForm - Component that renders a form with field attribution tracking
  *
- * Features:
- * - Automatic field rendering from IntakeSchema
- * - Client-side validation with inline errors
- * - Server-side validation error display
- * - Form submission with loading/success/error states
- * - Fully accessible with ARIA attributes
- * - Customizable via className and callbacks
+ * This component provides a complete form rendering solution for mixed-mode
+ * agent-human collaboration workflows. It renders form fields with visual
+ * attribution badges showing which actor (agent, human, system) filled each
+ * field, enabling humans to see pre-filled data from agents and complete
+ * remaining fields.
  *
  * @example
  * ```tsx
  * <FormBridgeForm
  *   schema={{
- *     intakeId: 'vendor-onboarding',
- *     title: 'Vendor Onboarding',
  *     type: 'object',
  *     properties: {
- *       companyName: {
- *         type: 'string',
- *         title: 'Company Name'
- *       },
- *       email: {
- *         type: 'string',
- *         format: 'email',
- *         title: 'Email'
- *       }
+ *       vendorName: { type: 'string', title: 'Vendor Name' },
+ *       taxId: { type: 'string', title: 'Tax ID' },
  *     },
- *     required: ['companyName', 'email']
+ *     required: ['vendorName', 'taxId'],
  *   }}
- *   endpoint="https://api.formbridge.example.com"
- *   onSuccess={(data, submissionId) => console.log('Success!', submissionId)}
+ *   fields={{
+ *     vendorName: 'Acme Corp',
+ *     taxId: '',
+ *   }}
+ *   fieldAttribution={{
+ *     vendorName: { kind: 'agent', id: 'agent_123', name: 'AutoVendor' },
+ *   }}
+ *   currentActor={{ kind: 'human', id: 'user_456', name: 'John Doe' }}
+ *   onFieldChange={(path, value, actor) => console.log('Field changed', path, value)}
+ *   onSubmit={(fields) => console.log('Form submitted', fields)}
  * />
  * ```
  */
 export const FormBridgeForm: React.FC<FormBridgeFormProps> = ({
-  schema: schemaProp,
-  endpoint,
-  initialData = {},
-  actor,
-  onSuccess,
-  onError,
-  onChange,
-  onValidate,
-  uiHints,
+  schema,
+  fields,
+  fieldAttribution,
+  onFieldChange,
+  onSubmit,
+  currentActor,
   className = '',
-  validateOnBlur = true,
-  validateOnChange = false,
-  submitText = 'Submit',
-  showRequiredIndicator = true,
-  disabled = false,
-  loadingComponent,
-  errorComponent,
-  successComponent,
+  readOnly = false,
+  errors = {},
 }) => {
-  // For now, only support direct schema object (not URL)
-  // Schema fetching can be added in future iterations
-  const schema = schemaProp as IntakeSchema;
+  const [localFields, setLocalFields] = useState<Record<string, unknown>>(fields);
 
-  // Default actor if not provided
-  const defaultActor: Actor = useMemo(
-    () =>
-      actor || {
-        kind: 'human',
-        id: 'anonymous',
-        name: 'Anonymous User',
-      },
-    [actor]
-  );
+  // Sync local state when the fields prop changes (e.g., after refetch)
+  useEffect(() => {
+    setLocalFields(fields);
+  }, [fields]);
 
-  // Initialize API client
-  const apiClient = useMemo<FormBridgeApiClient>(
-    () => createApiClient({ baseUrl: endpoint }),
-    [endpoint]
-  );
-
-  // Form state management
-  const formState = useFormState(initialData);
-  const { data, setField, reset: resetForm } = formState;
-
-  // Validation management
-  const validation = useValidation(schema, data);
-  const { errors, validateField, validate: validateForm } = validation;
-
-  // Submission management
-  const submission = useFormSubmission({
-    schema,
-    data,
-    validation,
-    apiClient,
-    intakeId: schema.intakeId,
-    actor: defaultActor,
-    onSuccess: (submissionId) => {
-      onSuccess?.(data, submissionId);
-    },
-    onError: (error) => {
-      onError?.(error);
-    },
-  });
-
-  const { submit, isSubmitting, isSuccess, error: submissionError } = submission;
-
-  // Parse schema to get field metadata
-  const fields = useMemo(() => parseSchema(schema, uiHints), [schema, uiHints]);
-
-  // Handle field change
+  /**
+   * Handle field value change
+   */
   const handleFieldChange = useCallback(
-    async (path: string, value: unknown) => {
-      setField(path, value);
-
-      // Notify parent of change
-      const newData = { ...data };
-      const keys = path.split('.');
-      let current: any = newData;
-
-      for (let i = 0; i < keys.length - 1; i++) {
-        if (!current[keys[i]]) {
-          current[keys[i]] = {};
-        }
-        current = current[keys[i]];
-      }
-      current[keys[keys.length - 1]] = value;
-
-      onChange?.(newData);
-
-      // Validate on change if enabled
-      if (validateOnChange) {
-        await validateField(path);
-      }
-    },
-    [setField, data, onChange, validateOnChange, validateField]
-  );
-
-  // Handle field blur
-  const handleFieldBlur = useCallback(
-    async (path: string) => {
-      // Validate on blur if enabled
-      if (validateOnBlur) {
-        const result = await validateField(path);
-
-        // Notify parent of validation result if needed
-        if (onValidate) {
-          const fullResult = await validateForm();
-          onValidate(fullResult);
-        }
-
-        return result;
-      }
-    },
-    [validateOnBlur, validateField, validateForm, onValidate]
-  );
-
-  // Render a single field based on its type
-  const renderField = useCallback(
-    (
-      metadata: FieldMetadata,
-      path: string,
-      value: unknown,
-      onChange: (value: unknown) => void,
-      onBlur?: () => void,
-      error?: string
-    ): React.ReactNode => {
-      const fieldProps = {
-        path,
-        metadata,
-        value,
-        onChange,
-        onBlur,
-        error,
-        disabled,
+    (fieldPath: string, value: unknown) => {
+      // Update local state
+      const newFields = {
+        ...localFields,
+        [fieldPath]: value,
       };
+      setLocalFields(newFields);
 
-      switch (metadata.type) {
-        case 'string':
-          return (
-            <StringField
-              key={path}
-              {...fieldProps}
-              value={(value as string) || ''}
-              onChange={onChange as (value: string) => void}
-            />
-          );
-
-        case 'number':
-        case 'integer':
-          return (
-            <NumberField
-              key={path}
-              {...fieldProps}
-              value={value as number | null}
-              onChange={onChange as (value: number | null) => void}
-            />
-          );
-
-        case 'boolean':
-          return (
-            <BooleanField
-              key={path}
-              {...fieldProps}
-              value={(value as boolean) || false}
-              onChange={onChange as (value: boolean) => void}
-            />
-          );
-
-        case 'array':
-          // Parse array item schema
-          const itemSchema: FieldMetadata = {
-            path: `${path}[0]`,
-            type: metadata.schema.items?.type || 'string',
-            label: metadata.label,
-            required: false,
-            schema: metadata.schema.items || { type: 'string' },
-          };
-
-          return (
-            <ArrayField
-              key={path}
-              {...fieldProps}
-              value={(value as unknown[]) || []}
-              onChange={onChange as (value: unknown[]) => void}
-              itemSchema={itemSchema}
-              minItems={metadata.schema.minItems}
-              maxItems={metadata.schema.maxItems}
-              renderItem={(itemMetadata, itemPath, itemValue, onItemChange, onItemBlur, itemError, index) =>
-                renderField(itemMetadata, itemPath, itemValue, onItemChange, onItemBlur, itemError)
-              }
-            />
-          );
-
-        case 'object':
-          // Parse nested object fields
-          const objectFields = parseObjectFields(path, metadata.schema, uiHints);
-
-          return (
-            <ObjectField
-              key={path}
-              {...fieldProps}
-              value={(value as Record<string, unknown>) || {}}
-              onChange={onChange as (value: Record<string, unknown>) => void}
-              fields={objectFields}
-              renderField={(fieldMetadata, fieldPath, fieldValue, onFieldChange, onFieldBlur, fieldError) =>
-                renderField(fieldMetadata, fieldPath, fieldValue, onFieldChange, onFieldBlur, fieldError)
-              }
-            />
-          );
-
-        default:
-          // Handle enum fields (which have 'enum' property in schema)
-          if (metadata.schema.enum && Array.isArray(metadata.schema.enum)) {
-            return (
-              <EnumField
-                key={path}
-                {...fieldProps}
-                value={value}
-                onChange={onChange}
-                options={metadata.schema.enum}
-                asRadio={metadata.hint?.widget === 'radio'}
-              />
-            );
-          }
-
-          // Fallback to string field for unknown types
-          return (
-            <StringField
-              key={path}
-              {...fieldProps}
-              value={(value as string) || ''}
-              onChange={onChange as (value: string) => void}
-            />
-          );
-      }
+      // Notify parent component
+      onFieldChange?.(fieldPath, value, currentActor);
     },
-    [disabled, uiHints]
+    [localFields, currentActor, onFieldChange]
   );
 
-  // Handle form submission
+  /**
+   * Handle form submission
+   */
   const handleSubmit = useCallback(
-    async (e: React.FormEvent) => {
-      e.preventDefault();
-
-      // Prevent double submission
-      if (isSubmitting) {
-        return;
-      }
-
-      await submit();
+    (event: React.FormEvent) => {
+      event.preventDefault();
+      onSubmit?.(localFields);
     },
-    [isSubmitting, submit]
+    [localFields, onSubmit]
   );
 
-  // Show success state if provided
-  if (isSuccess && successComponent) {
-    return <>{successComponent(submission.submissionId || '')}</>;
-  }
+  /**
+   * Render a single form field based on schema property
+   */
+  const renderField = (fieldPath: string, property: SchemaProperty) => {
+    const value = localFields[fieldPath] ?? '';
+    const isRequired = schema.required?.includes(fieldPath) ?? false;
+    const fieldLabel = property.title ?? fieldPath;
+    const error = errors[fieldPath];
+    const helperText = property.description;
+    const attribution = fieldAttribution[fieldPath];
+
+    // Determine input type based on schema
+    const inputType = property.format === 'email' ? 'email' :
+                     property.format === 'date' ? 'date' :
+                     property.type === 'number' ? 'number' :
+                     property.type === 'integer' ? 'number' :
+                     'text';
+
+    return (
+      <FieldWrapper
+        key={fieldPath}
+        fieldPath={fieldPath}
+        label={fieldLabel}
+        fieldAttribution={attribution}
+        required={isRequired}
+        error={error}
+        helperText={helperText}
+      >
+        {property.enum ? (
+          // Render select for enum properties
+          <select
+            id={`field-${fieldPath.replace(/\./g, '-')}`}
+            name={fieldPath}
+            value={String(value)}
+            onChange={(e) => handleFieldChange(fieldPath, e.target.value)}
+            disabled={readOnly}
+            className="formbridge-form__select"
+            required={isRequired}
+          >
+            <option value="">Select {fieldLabel}</option>
+            {property.enum.map((option, idx) => (
+              <option key={idx} value={String(option)}>
+                {String(option)}
+              </option>
+            ))}
+          </select>
+        ) : property.type === 'boolean' ? (
+          // Render checkbox for boolean properties
+          <input
+            id={`field-${fieldPath.replace(/\./g, '-')}`}
+            type="checkbox"
+            name={fieldPath}
+            checked={Boolean(value)}
+            onChange={(e) => handleFieldChange(fieldPath, e.target.checked)}
+            disabled={readOnly}
+            className="formbridge-form__checkbox"
+          />
+        ) : (
+          // Render text/number input for other types
+          <input
+            id={`field-${fieldPath.replace(/\./g, '-')}`}
+            type={inputType}
+            name={fieldPath}
+            value={String(value)}
+            onChange={(e) => handleFieldChange(fieldPath, e.target.value)}
+            disabled={readOnly}
+            className="formbridge-form__input"
+            required={isRequired}
+            minLength={property.minLength}
+            maxLength={property.maxLength}
+            min={property.minimum}
+            max={property.maximum}
+          />
+        )}
+      </FieldWrapper>
+    );
+  };
 
   return (
     <form
@@ -326,68 +221,34 @@ export const FormBridgeForm: React.FC<FormBridgeFormProps> = ({
       onSubmit={handleSubmit}
       noValidate
     >
-      {/* Form title */}
+      {/* Form title and description */}
       {schema.title && (
-        <h2 className="formbridge-form__title">{schema.title}</h2>
-      )}
-
-      {/* Form description */}
-      {schema.description && (
-        <p className="formbridge-form__description">{schema.description}</p>
-      )}
-
-      {/* Submission error display */}
-      {submissionError && (
-        errorComponent ? (
-          <>{errorComponent(submissionError)}</>
-        ) : (
-          <ErrorDisplay error={submissionError} />
-        )
-      )}
-
-      {/* Success message (inline version if no custom component) */}
-      {isSuccess && !successComponent && (
-        <div
-          className="formbridge-form__success"
-          role="alert"
-          aria-live="polite"
-        >
-          <p>Form submitted successfully!</p>
+        <div className="formbridge-form__header">
+          <h2 className="formbridge-form__title">{schema.title}</h2>
+          {schema.description && (
+            <p className="formbridge-form__description">{schema.description}</p>
+          )}
         </div>
       )}
 
-      {/* Field rendering */}
+      {/* Form fields */}
       <div className="formbridge-form__fields">
-        {fields.map((field) => {
-          const fieldValue = getFieldValue(data, field.path);
-          const fieldError = errors[field.path];
-
-          return renderField(
-            field,
-            field.path,
-            fieldValue,
-            (value) => handleFieldChange(field.path, value),
-            () => handleFieldBlur(field.path),
-            fieldError
-          );
-        })}
+        {Object.entries(schema.properties).map(([fieldPath, property]) =>
+          renderField(fieldPath, property)
+        )}
       </div>
 
       {/* Submit button */}
-      <div className="formbridge-form__actions">
-        <button
-          type="submit"
-          className="formbridge-form__submit"
-          disabled={disabled || isSubmitting}
-          aria-busy={isSubmitting}
-        >
-          {isSubmitting ? (
-            loadingComponent || 'Submitting...'
-          ) : (
-            submitText
-          )}
-        </button>
-      </div>
+      {!readOnly && (
+        <div className="formbridge-form__actions">
+          <button
+            type="submit"
+            className="formbridge-form__submit"
+          >
+            Submit
+          </button>
+        </div>
+      )}
     </form>
   );
 };

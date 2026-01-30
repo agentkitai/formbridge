@@ -1,10 +1,17 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { resolve } from 'path';
 
+// https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      '@formbridge/form-renderer': resolve(__dirname, '../form-renderer/src/index.ts'),
+    },
+  },
   server: {
-    port: 5174,
+    port: 3000,
     open: true,
   },
   build: {
@@ -13,6 +20,6 @@ export default defineConfig({
     target: 'es2020',
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', '@formbridge/react-form-renderer'],
+    include: ['react', 'react-dom'],
   },
 });

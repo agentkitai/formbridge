@@ -1,137 +1,37 @@
 /**
- * @formbridge/react-form-renderer
- *
- * React component library for rendering forms from FormBridge IntakeSchema IR.
- * Provides automatic form rendering, validation, and submission handling.
- *
- * @example
- * ```tsx
- * import { FormBridgeForm } from '@formbridge/react-form-renderer';
- * import '@formbridge/react-form-renderer/styles'; // Import default styles
- *
- * function App() {
- *   return (
- *     <FormBridgeForm
- *       schema={{
- *         intakeId: 'vendor-onboarding',
- *         title: 'Vendor Onboarding',
- *         type: 'object',
- *         properties: {
- *           companyName: {
- *             type: 'string',
- *             title: 'Company Name'
- *           }
- *         },
- *         required: ['companyName']
- *       }}
- *       endpoint="https://api.formbridge.example.com"
- *       onSuccess={(data, submissionId) => console.log('Success!', submissionId)}
- *     />
- *   );
- * }
- * ```
+ * FormBridge Form Renderer
+ * React components and hooks for rendering forms in the agent-to-human handoff workflow
  */
 
-// Import default styles (extracted to separate CSS file during build)
-import './styles/default.css';
-
-// Main form component
-export { FormBridgeForm } from './components/FormBridgeForm';
-
-// Field components (for advanced customization)
-export { StringField } from './components/fields/StringField';
-export { NumberField } from './components/fields/NumberField';
-export { BooleanField } from './components/fields/BooleanField';
-export { EnumField } from './components/fields/EnumField';
-export { ObjectField } from './components/fields/ObjectField';
-export { ArrayField } from './components/fields/ArrayField';
-
-// Helper components (for advanced customization)
-export { FieldWrapper } from './components/FieldWrapper';
-export { ErrorDisplay } from './components/ErrorDisplay';
-
-// Hooks (for advanced usage and custom form implementations)
-export { useFormState } from './hooks/useFormState';
-export { useValidation } from './hooks/useValidation';
-export { useFormSubmission } from './hooks/useFormSubmission';
-
-// API client (for direct API interaction)
+// API Client
 export {
   FormBridgeApiClient,
   createApiClient,
-  ApiClientError,
-  type ApiClientConfig,
-  type SetFieldsRequest,
-  type SetFieldsResponse,
-  type ValidateRequest,
-  type ValidateResponse,
-  type GetSubmissionResponse,
-} from './api/client';
+  defaultApiClient,
+} from './api';
 
-// Utility functions (for advanced usage)
-export {
-  parseSchema,
-  parseObjectFields,
-  getFieldValue,
-  setFieldValue,
-} from './utils/schemaParser';
-
-export {
-  validateField,
-  validateForm,
-  getErrorMap,
-  getFieldError,
-  hasFieldError,
-} from './utils/validation';
-
-// Re-export all types
 export type {
-  // Schema types
-  IntakeSchema,
-  JSONSchema,
-  JSONSchemaType,
-  JSONSchemaProperty,
-  FormData,
-  FieldPath,
-  FieldMetadata,
-  UIHints,
-  FieldHint,
-  StepDefinition,
+  EmitEventResponse,
+  ApiClientOptions,
+} from './api';
 
-  // Error types
-  IntakeError,
-  IntakeErrorType,
-  FieldErrorCode,
-  FieldError,
-  FormErrors,
-  SubmissionError,
-  ValidationResult,
-  SubmissionState,
+// Hooks
+export {
+  useResumeSubmission,
+} from './hooks';
 
-  // Component prop types
-  FormBridgeFormProps,
-  BaseFieldProps,
-  FieldWrapperProps,
-  StringFieldProps,
-  NumberFieldProps,
-  BooleanFieldProps,
-  EnumFieldProps,
-  ObjectFieldProps,
-  ArrayFieldProps,
+export type {
+  Submission,
+  UseResumeSubmissionReturn,
+  UseResumeSubmissionOptions,
+} from './hooks';
 
-  // Actor and submission types
-  Actor,
-  FormSubmissionState,
-  CreateSubmissionRequest,
-  CreateSubmissionResponse,
-  SubmitRequest,
-  SubmitResponse,
-
-  // Hook return types
-  UseFormStateReturn,
-  UseValidationReturn,
-  UseFormSubmissionReturn,
-
-  // Validation options
-  ValidationOptions,
-} from './types';
+// Components
+export { ResumeFormPage } from './components/ResumeFormPage';
+export type { ResumeFormPageProps } from './components/ResumeFormPage';
+export { FieldWrapper } from './components/FieldWrapper';
+export type { FieldWrapperProps } from './components/FieldWrapper';
+export { ActorBadge } from './components/ActorBadge';
+export type { ActorBadgeProps } from './components/ActorBadge';
+export { FormBridgeForm } from './components/FormBridgeForm';
+export type { FormBridgeFormProps, FormSchema, SchemaProperty } from './components/FormBridgeForm';

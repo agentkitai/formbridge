@@ -1,270 +1,167 @@
 /**
- * API client for FormBridge Intake Contract
- * Implements HTTP/JSON binding as specified in INTAKE_CONTRACT_SPEC.md
+ * FormBridge API Client
+ * Handles communication with the backend API including event emission
  */
 
-import {
-  IntakeSchema,
-  FormData,
-  Actor,
-  CreateSubmissionRequest,
-  CreateSubmissionResponse,
-  SubmitRequest,
-  SubmitResponse,
-} from '../types';
-import { IntakeError } from '../types/error';
+import type { Actor } from '../types';
 
 /**
- * Configuration for API client
+ * Event emission response
  */
-export interface ApiClientConfig {
-  /** Base URL for the FormBridge API */
-  baseUrl: string;
-  /** Optional headers to include in all requests */
+export interface EmitEventResponse {
+  ok: boolean;
+  eventId?: string;
+  error?: string;
+}
+
+/**
+ * API client configuration options
+ */
+export interface ApiClientOptions {
+  /** Base URL for the API (default: http://localhost:3000) */
+  endpoint?: string;
+  /** Custom headers to include in all requests */
   headers?: Record<string, string>;
-  /** Request timeout in milliseconds (default: 30000) */
-  timeout?: number;
-  /** Optional fetch implementation (for testing/custom transports) */
-  fetch?: typeof fetch;
 }
 
 /**
- * Request to set fields on a submission
- */
-export interface SetFieldsRequest {
-  submissionId: string;
-  resumeToken: string;
-  actor: Actor;
-  fields: FormData;
-}
-
-/**
- * Response from setFields operation
- */
-export interface SetFieldsResponse {
-  ok: true;
-  submissionId: string;
-  state: 'in_progress' | 'awaiting_input' | 'awaiting_upload';
-  resumeToken: string;
-  missingFields?: string[];
-}
-
-/**
- * Request to validate a submission
- */
-export interface ValidateRequest {
-  submissionId: string;
-  resumeToken: string;
-}
-
-/**
- * Response from validate operation
- */
-export interface ValidateResponse {
-  ok: true;
-  submissionId: string;
-  state: 'in_progress' | 'awaiting_input' | 'awaiting_upload';
-  resumeToken: string;
-  ready: boolean;
-  missingFields?: string[];
-}
-
-/**
- * Response from getSubmission operation
- */
-export interface GetSubmissionResponse {
-  ok: true;
-  submissionId: string;
-  state: string;
-  resumeToken: string;
-  schema: IntakeSchema;
-  fields: FormData;
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
- * API client error
- */
-export class ApiClientError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode?: number,
-    public readonly response?: unknown
-  ) {
-    super(message);
-    this.name = 'ApiClientError';
-  }
-}
-
-/**
- * API client for FormBridge Intake Contract
+ * FormBridge API Client
+ *
+ * Provides methods for interacting with the FormBridge backend API,
+ * including event emission for the agent-to-human handoff workflow.
+ *
+ * @example
+ * ```typescript
+ * const client = new FormBridgeApiClient({
+ *   endpoint: 'https://api.formbridge.example.com'
+ * });
+ *
+ * // Emit HANDOFF_RESUMED event when human opens resume URL
+ * await client.emitHandoffResumed('rtok_abc123', {
+ *   kind: 'human',
+ *   id: 'user-123',
+ *   name: 'John Doe'
+ * });
+ * ```
  */
 export class FormBridgeApiClient {
-  private config: Required<ApiClientConfig>;
+  private endpoint: string;
+  private headers: Record<string, string>;
 
-  constructor(config: ApiClientConfig) {
-    this.config = {
-      baseUrl: config.baseUrl.replace(/\/$/, ''), // Remove trailing slash
-      headers: config.headers || {},
-      timeout: config.timeout || 30000,
-      fetch: config.fetch || globalThis.fetch,
+  constructor(options: ApiClientOptions = {}) {
+    this.endpoint = options.endpoint || 'http://localhost:3000';
+    this.headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
     };
   }
 
   /**
-   * Make an HTTP request with timeout and error handling
+   * Emit HANDOFF_RESUMED event when a human opens a resume URL
+   *
+   * This notifies the backend that a human has resumed working on a submission
+   * that was previously started by an agent. The backend will emit a handoff.resumed
+   * event for audit trail purposes.
+   *
+   * @param resumeToken - The resume token from the URL
+   * @param actor - The actor (human) who is resuming the form
+   * @returns Response indicating success or failure
+   *
+   * @example
+   * ```typescript
+   * const result = await client.emitHandoffResumed('rtok_abc123', {
+   *   kind: 'human',
+   *   id: 'user-123',
+   *   name: 'John Doe'
+   * });
+   *
+   * if (result.ok) {
+   *   console.log('Event emitted:', result.eventId);
+   * } else {
+   *   console.error('Failed to emit event:', result.error);
+   * }
+   * ```
    */
-  private async request<T>(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<T | IntakeError> {
-    const url = `${this.config.baseUrl}${path}`;
-
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
-
+  async emitHandoffResumed(
+    resumeToken: string,
+    actor: Actor
+  ): Promise<EmitEventResponse> {
     try {
-      const response = await this.config.fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          ...this.config.headers,
-        },
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
+      const url = `${this.endpoint}/submissions/resume/${encodeURIComponent(resumeToken)}/resumed`;
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.headers,
+        body: JSON.stringify({ actor }),
       });
 
-      clearTimeout(timeoutId);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        return {
+          ok: false,
+          error: errorData.error || `HTTP ${response.status}: ${response.statusText}`,
+        };
+      }
 
       const data = await response.json();
-
-      // Check if response is an IntakeError
-      if (!response.ok || data.ok === false) {
-        // Return IntakeError for structured errors
-        if (this.isIntakeError(data)) {
-          return data as IntakeError;
-        }
-
-        // Throw ApiClientError for other errors
-        throw new ApiClientError(
-          data.message || `Request failed with status ${response.status}`,
-          response.status,
-          data
-        );
-      }
-
-      return data as T;
+      return {
+        ok: true,
+        eventId: data.eventId,
+      };
     } catch (error) {
-      clearTimeout(timeoutId);
-
-      if (error instanceof ApiClientError) {
-        throw error;
-      }
-
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new ApiClientError(`Request timeout after ${this.config.timeout}ms`);
-        }
-        throw new ApiClientError(error.message);
-      }
-
-      throw new ApiClientError('Unknown error occurred');
+      return {
+        ok: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      };
     }
   }
 
   /**
-   * Type guard to check if response is an IntakeError
+   * Fetch submission by resume token
+   *
+   * @param resumeToken - The resume token from the URL
+   * @returns Submission data or null if not found
    */
-  private isIntakeError(data: unknown): data is IntakeError {
-    return (
-      typeof data === 'object' &&
-      data !== null &&
-      'ok' in data &&
-      data.ok === false &&
-      'submissionId' in data &&
-      'state' in data &&
-      'resumeToken' in data &&
-      'error' in data
-    );
-  }
+  async getSubmissionByResumeToken(resumeToken: string): Promise<any> {
+    const url = `${this.endpoint}/submissions/resume/${encodeURIComponent(resumeToken)}`;
 
-  /**
-   * Create a new submission
-   * POST /intakes/{intakeId}/submissions
-   */
-  async createSubmission(
-    request: CreateSubmissionRequest
-  ): Promise<CreateSubmissionResponse | IntakeError> {
-    const { intakeId, ...body } = request;
-    return this.request<CreateSubmissionResponse>(
-      'POST',
-      `/intakes/${encodeURIComponent(intakeId)}/submissions`,
-      body
-    );
-  }
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.headers,
+    });
 
-  /**
-   * Set or update fields on a submission
-   * PATCH /submissions/{submissionId}/fields
-   */
-  async setFields(
-    request: SetFieldsRequest
-  ): Promise<SetFieldsResponse | IntakeError> {
-    const { submissionId, ...body } = request;
-    return this.request<SetFieldsResponse>(
-      'PATCH',
-      `/submissions/${encodeURIComponent(submissionId)}/fields`,
-      body
-    );
-  }
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new Error('Submission not found. The resume link may be invalid or expired.');
+      }
+      if (response.status === 403) {
+        throw new Error('Access denied. This resume link may have already been used.');
+      }
+      throw new Error(`Failed to fetch submission: ${response.status} ${response.statusText}`);
+    }
 
-  /**
-   * Validate a submission without submitting
-   * POST /submissions/{submissionId}/validate
-   */
-  async validate(
-    request: ValidateRequest
-  ): Promise<ValidateResponse | IntakeError> {
-    const { submissionId, ...body } = request;
-    return this.request<ValidateResponse>(
-      'POST',
-      `/submissions/${encodeURIComponent(submissionId)}/validate`,
-      body
-    );
-  }
-
-  /**
-   * Submit a submission for finalization
-   * POST /submissions/{submissionId}/submit
-   */
-  async submit(request: SubmitRequest): Promise<SubmitResponse | IntakeError> {
-    const { submissionId, ...body } = request;
-    return this.request<SubmitResponse>(
-      'POST',
-      `/submissions/${encodeURIComponent(submissionId)}/submit`,
-      body
-    );
-  }
-
-  /**
-   * Get current submission state
-   * GET /submissions/{submissionId}
-   */
-  async getSubmission(
-    submissionId: string
-  ): Promise<GetSubmissionResponse | IntakeError> {
-    return this.request<GetSubmissionResponse>(
-      'GET',
-      `/submissions/${encodeURIComponent(submissionId)}`
-    );
+    return await response.json();
   }
 }
 
 /**
- * Create a new API client instance
+ * Create a new FormBridge API client instance
+ *
+ * @param options - Client configuration options
+ * @returns New API client instance
+ *
+ * @example
+ * ```typescript
+ * const client = createApiClient({
+ *   endpoint: 'https://api.formbridge.example.com'
+ * });
+ * ```
  */
-export function createApiClient(config: ApiClientConfig): FormBridgeApiClient {
-  return new FormBridgeApiClient(config);
+export function createApiClient(options?: ApiClientOptions): FormBridgeApiClient {
+  return new FormBridgeApiClient(options);
 }
+
+/**
+ * Default API client instance using default options
+ */
+export const defaultApiClient = new FormBridgeApiClient();

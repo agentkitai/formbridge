@@ -1,16 +1,22 @@
+/**
+ * Demo Application Entry Point
+ */
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
-import '@formbridge/react-form-renderer/styles';
+import { App } from './App';
+import '@formbridge/form-renderer/dist/styles/default.css';
 import './styles.css';
 
-const root = document.getElementById('root');
+// Get root element
+const rootElement = document.getElementById('root');
 
-if (!root) {
-  throw new Error('Root element not found');
+if (!rootElement) {
+  throw new Error('Root element not found. Please add <div id="root"></div> to your HTML.');
 }
 
-ReactDOM.createRoot(root).render(
+// Render app
+ReactDOM.createRoot(rootElement).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>

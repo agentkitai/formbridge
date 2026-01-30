@@ -1,482 +1,408 @@
 /**
- * SubmissionManager - Core business logic for managing submission lifecycle
- *
- * Implements:
- * - In-memory submission storage (Map<submissionId, Submission>)
- * - State machine transitions per §2.2 of INTAKE_CONTRACT_SPEC
- * - Resume token generation and validation
- * - Idempotency key tracking
- * - Event stream recording
- *
- * Based on INTAKE_CONTRACT_SPEC.md v0.1.0-draft
+ * SubmissionManager - Core business logic for submission lifecycle
+ * Handles field attribution tracking for mixed-mode agent-human collaboration
  */
 
-import { randomBytes } from 'crypto';
 import type {
-  Submission,
-  SubmissionState,
-  IntakeDefinition,
   Actor,
   IntakeEvent,
-  CreateSubmissionInput,
-  CreateSubmissionOutput,
-  SetFieldsInput,
-  SetFieldsOutput,
-  GetSubmissionInput,
-  GetSubmissionOutput,
+  CreateSubmissionRequest,
+  CreateSubmissionResponse,
+  SetFieldsRequest,
+  SubmitRequest,
   IntakeError,
-  FieldError,
-  NextAction,
-  IntakeEventType,
-} from '../types.js';
+} from "../types/intake-contract";
+import type { Submission, FieldAttribution } from "../types";
+import { randomUUID } from "crypto";
 
-/**
- * Configuration options for SubmissionManager
- */
-export interface SubmissionManagerConfig {
-  /** Default TTL for submissions in milliseconds (default: 7 days) */
-  defaultTtlMs?: number;
+export class SubmissionNotFoundError extends Error {
+  constructor(identifier: string) {
+    super(`Submission not found: ${identifier}`);
+    this.name = "SubmissionNotFoundError";
+  }
+}
+
+export class SubmissionExpiredError extends Error {
+  constructor(message = "This resume link has expired") {
+    super(message);
+    this.name = "SubmissionExpiredError";
+  }
+}
+
+export class InvalidResumeTokenError extends Error {
+  constructor() {
+    super("Invalid resume token");
+    this.name = "InvalidResumeTokenError";
+  }
+}
+
+export interface SubmissionStore {
+  get(submissionId: string): Promise<Submission | null>;
+  save(submission: Submission): Promise<void>;
+  getByResumeToken(resumeToken: string): Promise<Submission | null>;
+}
+
+export interface EventEmitter {
+  emit(event: IntakeEvent): Promise<void>;
 }
 
 /**
- * SubmissionManager handles the lifecycle of all submissions.
- *
- * Responsibilities:
- * - Creating new submissions (with idempotency)
- * - Updating submission fields
- * - Managing state transitions
- * - Tracking events
- * - Enforcing resume token validation
+ * SubmissionManager orchestrates the submission lifecycle
+ * with field-level actor attribution for audit trails
  */
 export class SubmissionManager {
-  private submissions: Map<string, Submission> = new Map();
-  private events: Map<string, IntakeEvent[]> = new Map();
-  private idempotencyKeys: Map<string, string> = new Map();
-  private readonly config: Required<SubmissionManagerConfig>;
-
-  constructor(config: SubmissionManagerConfig = {}) {
-    this.config = {
-      defaultTtlMs: config.defaultTtlMs ?? 7 * 24 * 60 * 60 * 1000, // 7 days
-    };
-  }
+  constructor(
+    private store: SubmissionStore,
+    private eventEmitter: EventEmitter,
+    private baseUrl: string = "http://localhost:3000"
+  ) {}
 
   /**
-   * Creates a new submission for the given intake definition.
-   * Implements §4.1 of the spec.
-   *
-   * @param input - CreateSubmission operation input
-   * @param intakeDefinition - The intake definition to use
-   * @returns CreateSubmissionOutput or throws an error
+   * Create a new submission
    */
-  createSubmission(
-    input: CreateSubmissionInput,
-    intakeDefinition: IntakeDefinition
-  ): CreateSubmissionOutput {
-    // Check idempotency key
-    if (input.idempotencyKey) {
-      const existingSubmissionId = this.idempotencyKeys.get(input.idempotencyKey);
-      if (existingSubmissionId) {
-        const existing = this.submissions.get(existingSubmissionId);
-        if (existing) {
-          // Return existing submission
-          return {
-            ok: true,
-            submissionId: existing.id,
-            state: existing.state as 'draft' | 'in_progress',
-            resumeToken: existing.resumeToken,
-            schema: intakeDefinition.schema,
-            missingFields: this.findMissingFields(existing.fields, intakeDefinition.schema),
-          };
-        }
-      }
-      // Register idempotency key
-      this.idempotencyKeys.set(input.idempotencyKey, this.generateSubmissionId());
-    }
-
-    // Generate IDs
-    const submissionId = input.idempotencyKey
-      ? this.idempotencyKeys.get(input.idempotencyKey)!
-      : this.generateSubmissionId();
-    const resumeToken = this.generateResumeToken();
-
-    // Determine initial state
-    const hasInitialFields = input.initialFields && Object.keys(input.initialFields).length > 0;
-    const initialState: SubmissionState = hasInitialFields ? 'in_progress' : 'draft';
-
-    // Calculate expiration
+  async createSubmission(
+    request: CreateSubmissionRequest
+  ): Promise<CreateSubmissionResponse> {
+    const submissionId = `sub_${randomUUID()}`;
+    const resumeToken = `rtok_${randomUUID()}`;
     const now = new Date().toISOString();
-    const ttlMs = input.ttlMs ?? intakeDefinition.ttlMs ?? this.config.defaultTtlMs;
-    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
 
-    // Create submission
-    const submission: Submission = {
-      id: submissionId,
-      intakeId: input.intakeId,
-      state: initialState,
-      resumeToken,
-      fields: input.initialFields ?? {},
-      metadata: {
-        createdAt: now,
-        updatedAt: now,
-        createdBy: input.actor,
-        expiresAt,
-        idempotencyKeys: input.idempotencyKey ? [input.idempotencyKey] : [],
-      },
-      uploads: {},
-    };
+    const fieldAttribution: FieldAttribution = {};
+    const fields: Record<string, unknown> = {};
 
-    // Store submission
-    this.submissions.set(submissionId, submission);
-
-    // Emit creation event
-    this.emitEvent({
-      eventId: this.generateEventId(),
-      type: 'submission.created',
-      submissionId,
-      ts: now,
-      actor: input.actor,
-      state: initialState,
-      payload: {
-        intakeId: input.intakeId,
-        hasInitialFields,
-      },
-    });
-
-    // Emit field update event if there are initial fields
-    if (hasInitialFields) {
-      this.emitEvent({
-        eventId: this.generateEventId(),
-        type: 'field.updated',
-        submissionId,
-        ts: now,
-        actor: input.actor,
-        state: initialState,
-        payload: {
-          fields: Object.keys(input.initialFields!),
-        },
+    // If initial fields provided, record actor attribution
+    if (request.initialFields) {
+      Object.entries(request.initialFields).forEach(([key, value]) => {
+        fields[key] = value;
+        fieldAttribution[key] = request.actor;
       });
     }
 
+    const submission: Submission = {
+      id: submissionId,
+      intakeId: request.intakeId,
+      state: "draft",
+      resumeToken,
+      createdAt: now,
+      updatedAt: now,
+      fields,
+      fieldAttribution,
+      createdBy: request.actor,
+      updatedBy: request.actor,
+      idempotencyKey: request.idempotencyKey,
+      events: [],
+      ttlMs: request.ttlMs,
+    };
+
+    if (request.ttlMs) {
+      submission.expiresAt = new Date(
+        Date.now() + request.ttlMs
+      ).toISOString();
+    }
+
+    await this.store.save(submission);
+
+    // Emit submission.created event
+    const event: IntakeEvent = {
+      eventId: `evt_${randomUUID()}`,
+      type: "submission.created",
+      submissionId,
+      ts: now,
+      actor: request.actor,
+      state: "draft",
+      payload: {
+        intakeId: request.intakeId,
+        initialFields: request.initialFields,
+      },
+    };
+
+    submission.events.push(event);
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
+
     return {
       ok: true,
       submissionId,
-      state: initialState,
+      state: "draft",
       resumeToken,
-      schema: intakeDefinition.schema,
-      missingFields: hasInitialFields
-        ? this.findMissingFields(submission.fields, intakeDefinition.schema)
-        : undefined,
+      schema: {}, // TODO: Load from intake definition
+      missingFields: [], // TODO: Calculate from schema
     };
   }
 
   /**
-   * Sets or updates fields on an existing submission.
-   * Implements §4.2 of the spec.
-   *
-   * @param input - SetFields operation input
-   * @param intakeDefinition - The intake definition for validation
-   * @returns SetFieldsOutput or throws an error
+   * Set fields on a submission with actor attribution
+   * Records which actor filled each field for audit purposes
    */
-  setFields(
-    input: SetFieldsInput,
-    intakeDefinition: IntakeDefinition
-  ): SetFieldsOutput {
-    // Get submission and validate resume token
-    const submission = this.getAndValidateSubmission(input.submissionId, input.resumeToken);
+  async setFields(
+    request: SetFieldsRequest
+  ): Promise<CreateSubmissionResponse | IntakeError> {
+    // Get submission by ID or resume token
+    let submission = await this.store.get(request.submissionId);
 
-    // Update fields
-    const updatedFields = { ...submission.fields, ...input.fields };
-    submission.fields = updatedFields;
-    submission.metadata.updatedAt = new Date().toISOString();
-
-    // Update state if transitioning from draft
-    if (submission.state === 'draft') {
-      submission.state = 'in_progress';
+    if (!submission) {
+      submission = await this.store.getByResumeToken(request.resumeToken);
     }
 
-    // Generate new resume token
-    const newResumeToken = this.generateResumeToken();
-    submission.resumeToken = newResumeToken;
+    if (!submission) {
+      throw new SubmissionNotFoundError(request.submissionId);
+    }
 
-    // Emit field update event
-    this.emitEvent({
-      eventId: this.generateEventId(),
-      type: 'field.updated',
-      submissionId: input.submissionId,
-      ts: submission.metadata.updatedAt,
-      actor: input.actor,
-      state: submission.state,
-      payload: {
-        fields: Object.keys(input.fields),
-      },
+    // Check if submission is in a terminal state
+    if (
+      ["submitted", "finalized", "cancelled", "expired"].includes(
+        submission.state
+      )
+    ) {
+      return {
+        ok: false,
+        submissionId: submission.id,
+        state: submission.state,
+        resumeToken: submission.resumeToken,
+        error: {
+          type: "conflict",
+          message: "Cannot modify fields in current state",
+          retryable: false,
+        },
+      } as IntakeError;
+    }
+
+    // Verify resume token matches
+    if (submission.resumeToken !== request.resumeToken) {
+      throw new InvalidResumeTokenError();
+    }
+
+    // Check if submission is expired
+    if (submission.expiresAt && new Date(submission.expiresAt) < new Date()) {
+      const error: IntakeError = {
+        ok: false,
+        submissionId: submission.id,
+        state: "expired",
+        resumeToken: submission.resumeToken,
+        error: {
+          type: "expired",
+          message: "Submission has expired",
+          retryable: false,
+        },
+      };
+      return error;
+    }
+
+    // Update fields and record actor attribution
+    const now = new Date().toISOString();
+    const updatedFields: string[] = [];
+
+    Object.entries(request.fields).forEach(([fieldPath, value]) => {
+      submission!.fields[fieldPath] = value;
+      submission!.fieldAttribution[fieldPath] = request.actor;
+      updatedFields.push(fieldPath);
     });
 
-    // Validate and determine next actions
-    const { errors, nextActions } = this.validateFields(updatedFields, intakeDefinition);
+    // Update metadata
+    submission.updatedAt = now;
+    submission.updatedBy = request.actor;
 
-    return {
-      ok: true,
-      submissionId: input.submissionId,
-      state: submission.state,
-      resumeToken: newResumeToken,
-      fields: updatedFields,
-      errors: errors.length > 0 ? errors : undefined,
-      nextActions: nextActions.length > 0 ? nextActions : undefined,
-    };
-  }
-
-  /**
-   * Retrieves a submission by ID.
-   * Implements §4.9 of the spec.
-   *
-   * @param input - GetSubmission operation input
-   * @param intakeDefinition - The intake definition for validation
-   * @returns GetSubmissionOutput or throws an error
-   */
-  getSubmission(
-    input: GetSubmissionInput,
-    intakeDefinition: IntakeDefinition
-  ): GetSubmissionOutput {
-    const submission = this.submissions.get(input.submissionId);
-    if (!submission) {
-      throw new Error(`Submission not found: ${input.submissionId}`);
+    // Update state if still in draft
+    if (submission.state === "draft") {
+      submission.state = "in_progress";
     }
 
-    // Check if expired
-    if (submission.metadata.expiresAt) {
-      const now = Date.now();
-      const expiresAt = new Date(submission.metadata.expiresAt).getTime();
-      if (now > expiresAt && submission.state !== 'finalized' && submission.state !== 'cancelled') {
-        this.transitionState(submission, 'expired', {
-          kind: 'system',
-          id: 'submission-manager',
-          name: 'System',
-        });
-      }
+    await this.store.save(submission);
+
+    // Emit field.updated event for each field
+    for (const fieldPath of updatedFields) {
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: "field.updated",
+        submissionId: submission.id,
+        ts: now,
+        actor: request.actor,
+        state: submission.state,
+        payload: {
+          fieldPath,
+          value: request.fields[fieldPath],
+        },
+      };
+
+      submission.events.push(event);
+      await this.eventEmitter.emit(event);
     }
 
-    // Validate and get current errors
-    const { errors } = this.validateFields(submission.fields, intakeDefinition);
+    await this.store.save(submission);
 
     return {
       ok: true,
       submissionId: submission.id,
-      state: submission.state,
+      state: submission.state as "draft" | "in_progress",
       resumeToken: submission.resumeToken,
-      intakeId: submission.intakeId,
-      fields: submission.fields,
-      metadata: submission.metadata,
-      errors: errors.length > 0 ? errors : undefined,
+      schema: {}, // TODO: Load from intake definition
+      missingFields: [], // TODO: Calculate from schema
     };
   }
 
   /**
-   * Updates the state of a submission.
-   * Enforces state machine transitions per §2.2 and §2.3.
-   *
-   * @param submissionId - The submission ID
-   * @param newState - The target state
-   * @param actor - Who is performing the state change
-   * @param eventType - Optional event type (defaults based on state)
-   * @param payload - Optional event payload
+   * Submit a submission for processing
    */
-  updateState(
-    submissionId: string,
-    newState: SubmissionState,
-    actor: Actor,
-    eventType?: IntakeEventType,
-    payload?: Record<string, unknown>
-  ): void {
-    const submission = this.submissions.get(submissionId);
+  async submit(
+    request: SubmitRequest
+  ): Promise<CreateSubmissionResponse | IntakeError> {
+    const submission = await this.store.get(request.submissionId);
+
     if (!submission) {
-      throw new Error(`Submission not found: ${submissionId}`);
+      throw new SubmissionNotFoundError(request.submissionId);
     }
 
-    this.transitionState(submission, newState, actor, eventType, payload);
-  }
-
-  /**
-   * Gets events for a submission.
-   *
-   * @param submissionId - The submission ID
-   * @param afterEventId - Optional cursor for pagination
-   * @param limit - Maximum number of events to return
-   * @returns Array of events
-   */
-  getEvents(submissionId: string, afterEventId?: string, limit?: number): IntakeEvent[] {
-    const events = this.events.get(submissionId) ?? [];
-
-    let startIndex = 0;
-    if (afterEventId) {
-      const afterIndex = events.findIndex(e => e.eventId === afterEventId);
-      if (afterIndex !== -1) {
-        startIndex = afterIndex + 1;
-      }
+    // Verify resume token
+    if (submission.resumeToken !== request.resumeToken) {
+      throw new InvalidResumeTokenError();
     }
 
-    const result = events.slice(startIndex);
-    return limit ? result.slice(0, limit) : result;
-  }
-
-  /**
-   * Checks if a submission exists.
-   */
-  hasSubmission(submissionId: string): boolean {
-    return this.submissions.has(submissionId);
-  }
-
-  /**
-   * Gets a submission without validation (internal use).
-   */
-  private getAndValidateSubmission(submissionId: string, resumeToken: string): Submission {
-    const submission = this.submissions.get(submissionId);
-    if (!submission) {
-      throw new Error(`Submission not found: ${submissionId}`);
+    // Check if already submitted
+    if (submission.state === "submitted" || submission.state === "finalized") {
+      const error: IntakeError = {
+        ok: false,
+        submissionId: submission.id,
+        state: submission.state,
+        resumeToken: submission.resumeToken,
+        error: {
+          type: "conflict",
+          message: "Submission already submitted",
+          retryable: false,
+        },
+      };
+      return error;
     }
 
-    if (submission.resumeToken !== resumeToken) {
-      throw new Error('Invalid resume token');
-    }
+    const now = new Date().toISOString();
 
-    return submission;
-  }
+    // Update state
+    submission.state = "submitted";
+    submission.updatedAt = now;
+    submission.updatedBy = request.actor;
 
-  /**
-   * Transitions a submission to a new state.
-   * Emits appropriate event and rotates resume token.
-   */
-  private transitionState(
-    submission: Submission,
-    newState: SubmissionState,
-    actor: Actor,
-    eventType?: IntakeEventType,
-    payload?: Record<string, unknown>
-  ): void {
-    const oldState = submission.state;
-    submission.state = newState;
-    submission.metadata.updatedAt = new Date().toISOString();
+    await this.store.save(submission);
 
-    // Rotate resume token on state change
-    submission.resumeToken = this.generateResumeToken();
-
-    // Determine event type if not provided
-    const type = eventType ?? this.getEventTypeForStateTransition(oldState, newState);
-
-    this.emitEvent({
-      eventId: this.generateEventId(),
-      type,
+    // Emit submission.submitted event
+    const event: IntakeEvent = {
+      eventId: `evt_${randomUUID()}`,
+      type: "submission.submitted",
       submissionId: submission.id,
-      ts: submission.metadata.updatedAt,
-      actor,
-      state: newState,
+      ts: now,
+      actor: request.actor,
+      state: "submitted",
       payload: {
-        ...payload,
-        previousState: oldState,
+        idempotencyKey: request.idempotencyKey,
       },
-    });
+    };
+
+    submission.events.push(event);
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
+
+    return {
+      ok: true,
+      submissionId: submission.id,
+      state: submission.state as "draft" | "in_progress" | "submitted",
+      resumeToken: submission.resumeToken,
+      schema: {},
+      missingFields: [],
+    };
   }
 
   /**
-   * Determines the appropriate event type for a state transition.
+   * Get a submission by ID
    */
-  private getEventTypeForStateTransition(
-    oldState: SubmissionState,
-    newState: SubmissionState
-  ): IntakeEventType {
-    if (newState === 'submitted') return 'submission.submitted';
-    if (newState === 'needs_review') return 'review.requested';
-    if (newState === 'approved') return 'review.approved';
-    if (newState === 'rejected') return 'review.rejected';
-    if (newState === 'finalized') return 'submission.finalized';
-    if (newState === 'cancelled') return 'submission.cancelled';
-    if (newState === 'expired') return 'submission.expired';
-    return 'field.updated'; // default fallback
+  async getSubmission(submissionId: string): Promise<Submission | null> {
+    return this.store.get(submissionId);
   }
 
   /**
-   * Emits an event and stores it in the event stream.
+   * Get a submission by resume token
    */
-  private emitEvent(event: IntakeEvent): void {
-    const events = this.events.get(event.submissionId) ?? [];
-    events.push(event);
-    this.events.set(event.submissionId, events);
+  async getSubmissionByResumeToken(
+    resumeToken: string
+  ): Promise<Submission | null> {
+    return this.store.getByResumeToken(resumeToken);
   }
 
   /**
-   * Validates fields against the intake schema.
-   * Returns validation errors and suggested next actions.
+   * Generate a handoff URL for agent-to-human collaboration
+   * Returns a shareable resume URL that allows a human to continue filling the form
    */
-  private validateFields(
-    fields: Record<string, unknown>,
-    intakeDefinition: IntakeDefinition
-  ): { errors: FieldError[]; nextActions: NextAction[] } {
-    const errors: FieldError[] = [];
-    const nextActions: NextAction[] = [];
-    const schema = intakeDefinition.schema;
+  async generateHandoffUrl(
+    submissionId: string,
+    actor: Actor
+  ): Promise<string> {
+    const submission = await this.store.get(submissionId);
 
-    // Check required fields
-    if (schema.required) {
-      for (const requiredField of schema.required) {
-        if (!(requiredField in fields) || fields[requiredField] === undefined || fields[requiredField] === null) {
-          errors.push({
-            path: requiredField,
-            code: 'required',
-            message: `Field '${requiredField}' is required`,
-            expected: 'a value',
-            received: undefined,
-          });
-
-          nextActions.push({
-            action: 'collect_field',
-            field: requiredField,
-            hint: `Please provide a value for '${requiredField}'`,
-          });
-        }
-      }
+    if (!submission) {
+      throw new SubmissionNotFoundError(submissionId);
     }
 
-    // TODO: Add type validation, format validation, etc.
-    // For now, this is a basic implementation
+    // Generate the resume URL with the token
+    const resumeUrl = `${this.baseUrl}/resume?token=${encodeURIComponent(submission.resumeToken)}`;
 
-    return { errors, nextActions };
+    const now = new Date().toISOString();
+
+    // Emit handoff.link_issued event
+    const event: IntakeEvent = {
+      eventId: `evt_${randomUUID()}`,
+      type: "handoff.link_issued",
+      submissionId: submission.id,
+      ts: now,
+      actor,
+      state: submission.state,
+      payload: {
+        url: resumeUrl,
+        resumeToken: submission.resumeToken,
+      },
+    };
+
+    submission.events.push(event);
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
+
+    return resumeUrl;
   }
 
   /**
-   * Finds missing required fields.
+   * Emit HANDOFF_RESUMED event when human opens the resume form
+   * This notifies the agent that the human has started working on the form
    */
-  private findMissingFields(
-    fields: Record<string, unknown>,
-    schema: { required?: string[] }
-  ): string[] | undefined {
-    if (!schema.required) {
-      return undefined;
+  async emitHandoffResumed(
+    resumeToken: string,
+    actor: Actor
+  ): Promise<string> {
+    const submission = await this.store.getByResumeToken(resumeToken);
+
+    if (!submission) {
+      throw new SubmissionNotFoundError(resumeToken);
     }
 
-    const missing = schema.required.filter(
-      field => !(field in fields) || fields[field] === undefined || fields[field] === null
-    );
+    // Check if submission is expired
+    if (submission.expiresAt && new Date(submission.expiresAt) < new Date()) {
+      throw new SubmissionExpiredError();
+    }
 
-    return missing.length > 0 ? missing : undefined;
-  }
+    const now = new Date().toISOString();
 
-  /**
-   * Generates a unique submission ID.
-   */
-  private generateSubmissionId(): string {
-    return `sub_${randomBytes(16).toString('hex')}`;
-  }
+    // Create handoff.resumed event
+    const event: IntakeEvent = {
+      eventId: `evt_${randomUUID()}`,
+      type: "handoff.resumed",
+      submissionId: submission.id,
+      ts: now,
+      actor,
+      state: submission.state,
+      payload: {
+        resumeToken: submission.resumeToken,
+      },
+    };
 
-  /**
-   * Generates a cryptographically secure resume token.
-   */
-  private generateResumeToken(): string {
-    return `rtok_${randomBytes(32).toString('hex')}`;
-  }
+    submission.events.push(event);
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
 
-  /**
-   * Generates a unique event ID.
-   */
-  private generateEventId(): string {
-    return `evt_${randomBytes(16).toString('hex')}`;
+    return event.eventId;
   }
 }

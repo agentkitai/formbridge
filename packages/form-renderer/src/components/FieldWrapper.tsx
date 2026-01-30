@@ -1,91 +1,130 @@
 /**
- * FieldWrapper component - Wraps form fields with label, description, and error display
- * Provides consistent structure and accessibility for all field types
+ * FieldWrapper component - Wraps form fields with attribution and styling
+ * Shows which actor (agent, human, system) filled each field
  */
 
 import React from 'react';
-import { FieldWrapperProps } from '../types';
+import type { Actor } from '../types';
 
 /**
- * FieldWrapper - A container component that provides consistent structure for form fields
+ * Props for FieldWrapper component
+ */
+export interface FieldWrapperProps {
+  /** Field path/name (e.g., "vendorName", "address.street") */
+  fieldPath: string;
+  /** Field label to display */
+  label: string;
+  /** Actor who filled this field (from fieldAttribution map) */
+  fieldAttribution?: Actor;
+  /** Whether the field is required */
+  required?: boolean;
+  /** Error message to display */
+  error?: string;
+  /** Helper text to display below the field */
+  helperText?: string;
+  /** Child input element(s) */
+  children: React.ReactNode;
+  /** Custom CSS class */
+  className?: string;
+}
+
+/**
+ * FieldWrapper - Component that wraps form fields with attribution tracking
  *
- * Features:
- * - Accessible label with htmlFor linking
- * - Required field indicator
- * - Optional description text
- * - Error message display with ARIA attributes
- * - Customizable via className
+ * This component provides a consistent layout for form fields and displays
+ * visual attribution badges showing which actor (agent, human, system) filled
+ * each field in mixed-mode agent-human collaboration workflows.
  *
  * @example
  * ```tsx
  * <FieldWrapper
- *   path="email"
- *   label="Email Address"
- *   description="We'll never share your email"
- *   required={true}
- *   error="Email is required"
+ *   fieldPath="vendorName"
+ *   label="Vendor Name"
+ *   fieldAttribution={{ kind: "agent", id: "agent_123", name: "AutoVendor" }}
+ *   required
  * >
- *   <input type="email" id="email" />
+ *   <input type="text" value={value} onChange={handleChange} />
  * </FieldWrapper>
  * ```
  */
 export const FieldWrapper: React.FC<FieldWrapperProps> = ({
-  path,
+  fieldPath,
   label,
-  description,
+  fieldAttribution,
   required = false,
   error,
-  className = '',
+  helperText,
   children,
+  className = '',
 }) => {
-  // Generate unique IDs for accessibility
-  const fieldId = `field-${path}`;
-  const descriptionId = description ? `${fieldId}-description` : undefined;
+  // Generate unique ID for accessibility
+  const fieldId = `field-${fieldPath.replace(/\./g, '-')}`;
   const errorId = error ? `${fieldId}-error` : undefined;
+  const helperId = helperText ? `${fieldId}-helper` : undefined;
 
   return (
-    <div className={`formbridge-field ${className}`.trim()} data-field-path={path}>
-      <label htmlFor={fieldId} className="formbridge-field__label">
-        {label}
-        {required && (
-          <span className="formbridge-field__required" aria-label="required">
-            *
+    <div
+      className={`formbridge-field-wrapper ${error ? 'formbridge-field-wrapper--error' : ''} ${className}`.trim()}
+      data-field-path={fieldPath}
+    >
+      {/* Label and attribution badge */}
+      <div className="formbridge-field-wrapper__header">
+        <label
+          htmlFor={fieldId}
+          className="formbridge-field-wrapper__label"
+        >
+          {label}
+          {required && (
+            <span className="formbridge-field-wrapper__required" aria-label="required">
+              *
+            </span>
+          )}
+        </label>
+
+        {/* Show actor badge if field has attribution */}
+        {fieldAttribution && (
+          <span
+            className={`formbridge-field-wrapper__attribution formbridge-field-wrapper__attribution--${fieldAttribution.kind}`}
+            data-actor-kind={fieldAttribution.kind}
+            data-actor-id={fieldAttribution.id}
+            aria-label={`Filled by ${fieldAttribution.kind}${fieldAttribution.name ? `: ${fieldAttribution.name}` : ''}`}
+          >
+            Filled by {fieldAttribution.kind}
+            {fieldAttribution.name && (
+              <span className="formbridge-field-wrapper__attribution-name">
+                {' '}({fieldAttribution.name})
+              </span>
+            )}
           </span>
         )}
-      </label>
-
-      {description && (
-        <p
-          id={descriptionId}
-          className="formbridge-field__description"
-        >
-          {description}
-        </p>
-      )}
-
-      <div className="formbridge-field__input">
-        {/* Clone children and add accessibility IDs */}
-        {React.Children.map(children, (child) => {
-          if (React.isValidElement(child)) {
-            return React.cloneElement(child as React.ReactElement<any>, {
-              id: fieldId,
-              'aria-describedby': [descriptionId, errorId]
-                .filter(Boolean)
-                .join(' ') || undefined,
-              'aria-invalid': error ? 'true' : 'false',
-              'aria-required': required ? 'true' : 'false',
-            });
-          }
-          return child;
-        })}
       </div>
 
+      {/* Field input */}
+      <div
+        className="formbridge-field-wrapper__input"
+        id={fieldId}
+        aria-describedby={[helperId, errorId].filter(Boolean).join(' ') || undefined}
+        aria-invalid={error ? 'true' : 'false'}
+      >
+        {children}
+      </div>
+
+      {/* Helper text */}
+      {helperText && !error && (
+        <div
+          id={helperId}
+          className="formbridge-field-wrapper__helper"
+        >
+          {helperText}
+        </div>
+      )}
+
+      {/* Error message */}
       {error && (
         <div
           id={errorId}
-          className="formbridge-field__error"
+          className="formbridge-field-wrapper__error"
           role="alert"
-          aria-live="polite"
         >
           {error}
         </div>
