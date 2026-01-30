@@ -26,18 +26,18 @@ A clean, production-friendly state machine:
 
 ### States
 
-| State | Description |
-|-------|-------------|
-| `DRAFT` | Created, no meaningful data yet |
-| `IN_PROGRESS` | Partial fields present |
-| `AWAITING_INPUT` | Missing required fields (agent/human action) |
-| `AWAITING_UPLOAD` | Requires files via upload negotiation |
-| `SUBMITTED` | Submission requested (locked or semi-locked) |
-| `NEEDS_REVIEW` | Routed to human gate |
-| `APPROVED` | Review passed |
-| `REJECTED` | Review failed (with reasons) |
-| `FINALIZED` | Delivered to destination, immutable |
-| `CANCELLED` / `EXPIRED` | Abandoned or timed out |
+| State                   | Description                                  |
+| ----------------------- | -------------------------------------------- |
+| `DRAFT`                 | Created, no meaningful data yet              |
+| `IN_PROGRESS`           | Partial fields present                       |
+| `AWAITING_INPUT`        | Missing required fields (agent/human action) |
+| `AWAITING_UPLOAD`       | Requires files via upload negotiation        |
+| `SUBMITTED`             | Submission requested (locked or semi-locked) |
+| `NEEDS_REVIEW`          | Routed to human gate                         |
+| `APPROVED`              | Review passed                                |
+| `REJECTED`              | Review failed (with reasons)                 |
+| `FINALIZED`             | Delivered to destination, immutable          |
+| `CANCELLED` / `EXPIRED` | Abandoned or timed out                       |
 
 ### Key Transitions
 
@@ -65,8 +65,17 @@ Example validation error returned to an agent:
     "fields": ["tax_id", "docs.w9_or_w8"],
     "resumeToken": "fb_8x3k_9pQ",
     "nextActions": [
-      { "action": "collect_field", "field": "tax_id", "hint": "Vendor tax ID for US vendors is EIN" },
-      { "action": "request_upload", "field": "docs.w9_or_w8", "accept": ["application/pdf"], "maxBytes": 10000000 }
+      {
+        "action": "collect_field",
+        "field": "tax_id",
+        "hint": "Vendor tax ID for US vendors is EIN"
+      },
+      {
+        "action": "request_upload",
+        "field": "docs.w9_or_w8",
+        "accept": ["application/pdf"],
+        "maxBytes": 10000000
+      }
     ]
   }
 }
@@ -77,6 +86,7 @@ Example validation error returned to an agent:
 ## The Mixed-Mode Flow (step-by-step)
 
 ### Actors
+
 - **Agent** (your workflow runner)
 - **Vendor** (human filling form + uploading docs)
 - **Compliance Reviewer** (human gate)
