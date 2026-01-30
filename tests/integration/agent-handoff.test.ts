@@ -273,8 +273,12 @@ describe("Agent-to-Human Handoff Integration", () => {
       eventEmitter.clear();
 
       // Call handoffToHuman tool via MCP server
-      const toolHandler = (mcpServer as any).requestHandlers?.tools?.call;
-      expect(toolHandler).toBeDefined();
+      const toolHandler = async (req: { name: string; arguments: Record<string, unknown> }) => {
+        const tools = (mcpServer as any)._registeredTools || {};
+        const tool = tools[req.name];
+        if (!tool?.handler) throw new Error(`Tool '${req.name}' not found`);
+        return tool.handler(req.arguments, {} as any);
+      };
 
       const result = await toolHandler({
         name: "handoffToHuman",
@@ -315,7 +319,12 @@ describe("Agent-to-Human Handoff Integration", () => {
       eventEmitter.clear();
 
       // Call handoffToHuman tool without providing actor
-      const toolHandler = (mcpServer as any).requestHandlers?.tools?.call;
+      const toolHandler = async (req: { name: string; arguments: Record<string, unknown> }) => {
+        const tools = (mcpServer as any)._registeredTools || {};
+        const tool = tools[req.name];
+        if (!tool?.handler) throw new Error(`Tool '${req.name}' not found`);
+        return tool.handler(req.arguments, {} as any);
+      };
       const result = await toolHandler({
         name: "handoffToHuman",
         arguments: {
@@ -339,7 +348,12 @@ describe("Agent-to-Human Handoff Integration", () => {
     });
 
     it("should return error response when submission not found via MCP tool", async () => {
-      const toolHandler = (mcpServer as any).requestHandlers?.tools?.call;
+      const toolHandler = async (req: { name: string; arguments: Record<string, unknown> }) => {
+        const tools = (mcpServer as any)._registeredTools || {};
+        const tool = tools[req.name];
+        if (!tool?.handler) throw new Error(`Tool '${req.name}' not found`);
+        return tool.handler(req.arguments, {} as any);
+      };
 
       const result = await toolHandler({
         name: "handoffToHuman",

@@ -20,6 +20,20 @@ import type {
 } from '../types.js';
 
 /**
+ * Upload status tracking.
+ */
+export interface UploadStatus {
+  uploadId: string;
+  field: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  status: 'pending' | 'completed' | 'failed';
+  url?: string;
+  uploadedAt?: string;
+}
+
+/**
  * Validation result containing errors and suggested next actions.
  */
 export interface ValidationResult {
@@ -87,16 +101,33 @@ export class Validator {
    *
    * @param data - The data to validate
    * @param schema - The JSON Schema to validate against
+   * @param uploads - Optional upload status map for file field validation
    * @returns ValidationResult with errors and next actions
    */
-  validate(data: Record<string, unknown>, schema: JSONSchema): ValidationResult {
+  validate(
+    data: Record<string, unknown>,
+    schema: JSONSchema,
+    uploads?: Record<string, UploadStatus>
+  ): ValidationResult {
     // Get or compile the validation function
     const validate = this.getCompiledSchema(schema);
 
     // Run validation
     const valid = validate(data) as boolean;
 
-    if (valid) {
+    // Convert Ajv errors to our structured format
+    const ajvErrors = validate.errors ?? [];
+    const { errors, missingFields, invalidFields } = this.convertAjvErrors(ajvErrors, schema);
+
+    // Add upload validation errors if uploads are provided
+    if (uploads) {
+      const uploadErrors = this.validateUploads(data, schema, uploads);
+      errors.push(...uploadErrors.errors);
+      missingFields.push(...uploadErrors.missingFields);
+      invalidFields.push(...uploadErrors.invalidFields);
+    }
+
+    if (valid && errors.length === 0) {
       // No errors - all fields valid
       return {
         valid: true,
@@ -107,9 +138,6 @@ export class Validator {
       };
     }
 
-    // Convert Ajv errors to our structured format
-    const ajvErrors = validate.errors ?? [];
-    const { errors, missingFields, invalidFields } = this.convertAjvErrors(ajvErrors, schema);
     const nextActions = this.generateNextActions(errors, schema);
 
     return {
@@ -127,9 +155,14 @@ export class Validator {
    *
    * @param data - The data to validate
    * @param schema - The JSON Schema to validate against
+   * @param uploads - Optional upload status map for file field validation
    * @returns ValidationResult focusing on required fields
    */
-  validateRequired(data: Record<string, unknown>, schema: JSONSchema): ValidationResult {
+  validateRequired(
+    data: Record<string, unknown>,
+    schema: JSONSchema,
+    uploads?: Record<string, UploadStatus>
+  ): ValidationResult {
     const missingFields: string[] = [];
     const errors: FieldError[] = [];
 
@@ -152,6 +185,13 @@ export class Validator {
       }
     }
 
+    // Add upload validation errors if uploads are provided
+    if (uploads) {
+      const uploadErrors = this.validateUploads(data, schema, uploads);
+      errors.push(...uploadErrors.errors);
+      missingFields.push(...uploadErrors.missingFields);
+    }
+
     const nextActions = this.generateNextActions(errors, schema);
 
     return {
@@ -161,6 +201,154 @@ export class Validator {
       missingFields,
       invalidFields: [],
     };
+  }
+
+  /**
+   * Validates file field uploads against schema constraints.
+   * Checks that required file fields have completed uploads.
+   *
+   * @param data - The submission data
+   * @param schema - The JSON Schema to validate against
+   * @param uploads - Upload status map
+   * @returns Validation errors for file fields
+   */
+  validateUploads(
+    _data: Record<string, unknown>,
+    schema: JSONSchema,
+    uploads: Record<string, UploadStatus>
+  ): { errors: FieldError[]; missingFields: string[]; invalidFields: string[] } {
+    const errors: FieldError[] = [];
+    const missingFields: string[] = [];
+    const invalidFields: string[] = [];
+
+    // Get all file fields from the schema
+    const fileFields = this.getFileFields(schema);
+
+    for (const fieldPath of fileFields) {
+      const fieldSchema = this.getFieldSchema(fieldPath, schema);
+      const isRequired = schema.required?.includes(fieldPath) ?? false;
+
+      // Find all uploads for this field
+      const fieldUploads = Object.values(uploads).filter((u) => u.field === fieldPath);
+
+      if (fieldUploads.length === 0) {
+        // No upload initiated for this field
+        if (isRequired) {
+          missingFields.push(fieldPath);
+          errors.push({
+            path: fieldPath,
+            code: 'file_required',
+            message: `File upload required for '${fieldPath}'`,
+            expected: 'a completed file upload',
+            received: undefined,
+          });
+        }
+        continue;
+      }
+
+      // Check each upload's status
+      for (const upload of fieldUploads) {
+        if (upload.status === 'pending') {
+          if (isRequired) {
+            missingFields.push(fieldPath);
+            errors.push({
+              path: fieldPath,
+              code: 'file_required',
+              message: `File upload for '${fieldPath}' is still pending`,
+              expected: 'a completed file upload',
+              received: 'pending upload',
+            });
+          }
+        } else if (upload.status === 'failed') {
+          invalidFields.push(fieldPath);
+          errors.push({
+            path: fieldPath,
+            code: 'file_required',
+            message: `File upload for '${fieldPath}' failed`,
+            expected: 'a completed file upload',
+            received: 'failed upload',
+          });
+        } else if (upload.status === 'completed') {
+          // Validate file constraints
+          if (fieldSchema) {
+            const constraintErrors = this.validateFileConstraints(fieldPath, upload, fieldSchema);
+            errors.push(...constraintErrors);
+            if (constraintErrors.length > 0) {
+              invalidFields.push(fieldPath);
+            }
+          }
+        }
+      }
+    }
+
+    return { errors, missingFields, invalidFields };
+  }
+
+  /**
+   * Gets all file field paths from a schema.
+   * File fields are identified by format: 'binary'.
+   *
+   * @param schema - The JSON Schema
+   * @returns Array of field paths that are file fields
+   */
+  private getFileFields(schema: JSONSchema): string[] {
+    const fileFields: string[] = [];
+
+    if (!schema.properties) {
+      return fileFields;
+    }
+
+    for (const [fieldName, fieldSchema] of Object.entries(schema.properties)) {
+      if (fieldSchema && typeof fieldSchema === 'object') {
+        if (fieldSchema.format === 'binary') {
+          fileFields.push(fieldName);
+        }
+      }
+    }
+
+    return fileFields;
+  }
+
+  /**
+   * Validates a completed file upload against schema constraints.
+   *
+   * @param fieldPath - The field path
+   * @param upload - The upload status
+   * @param fieldSchema - The field schema
+   * @returns Array of validation errors
+   */
+  private validateFileConstraints(
+    fieldPath: string,
+    upload: UploadStatus,
+    fieldSchema: JSONSchema
+  ): FieldError[] {
+    const errors: FieldError[] = [];
+
+    // Check file size constraint
+    if (fieldSchema.maxSize && upload.sizeBytes > fieldSchema.maxSize) {
+      errors.push({
+        path: fieldPath,
+        code: 'file_too_large',
+        message: `File '${upload.filename}' is too large (maximum: ${fieldSchema.maxSize} bytes)`,
+        expected: `<= ${fieldSchema.maxSize} bytes`,
+        received: `${upload.sizeBytes} bytes`,
+      });
+    }
+
+    // Check MIME type constraint
+    if (fieldSchema.allowedTypes && Array.isArray(fieldSchema.allowedTypes)) {
+      if (!fieldSchema.allowedTypes.includes(upload.mimeType)) {
+        errors.push({
+          path: fieldPath,
+          code: 'file_wrong_type',
+          message: `File '${upload.filename}' has invalid type (allowed: ${fieldSchema.allowedTypes.join(', ')})`,
+          expected: fieldSchema.allowedTypes,
+          received: upload.mimeType,
+        });
+      }
+    }
+
+    return errors;
   }
 
   /**
@@ -226,7 +414,7 @@ export class Validator {
   /**
    * Converts a single Ajv error to our FieldError format.
    */
-  private convertSingleAjvError(error: ErrorObject, schema: JSONSchema): FieldError {
+  private convertSingleAjvError(error: ErrorObject, _schema: JSONSchema): FieldError {
     // Extract field path (remove leading slash)
     const path = error.instancePath ? error.instancePath.slice(1).replace(/\//g, '.') : '';
 
@@ -293,7 +481,7 @@ export class Validator {
           code: 'too_short',
           message: `Value is too short (minimum length: ${params.limit})`,
           expected: `at least ${params.limit} characters`,
-          received: `${error.data?.length ?? 0} characters`,
+          received: `${(error.data as any)?.length ?? 0} characters`,
         };
 
       case 'maxLength':
@@ -301,7 +489,7 @@ export class Validator {
           code: 'too_long',
           message: `Value is too long (maximum length: ${params.limit})`,
           expected: `at most ${params.limit} characters`,
-          received: `${error.data?.length ?? 0} characters`,
+          received: `${(error.data as any)?.length ?? 0} characters`,
         };
 
       case 'minimum':
@@ -394,15 +582,21 @@ export class Validator {
   private determineAction(error: FieldError, schema: JSONSchema): NextAction | null {
     const fieldSchema = this.getFieldSchema(error.path, schema);
 
-    // Check if this is a file field
-    if (fieldSchema?.format === 'uri' || fieldSchema?.contentMediaType) {
+    // Check if this is a file field (format: 'binary' or file-specific errors)
+    const isFileField =
+      fieldSchema?.format === 'binary' ||
+      error.code === 'file_required' ||
+      error.code === 'file_too_large' ||
+      error.code === 'file_wrong_type';
+
+    if (isFileField) {
       // File upload field
       return {
         action: 'request_upload',
         field: error.path,
         hint: `Upload a file for '${error.path}'`,
-        accept: fieldSchema.contentMediaType ? [fieldSchema.contentMediaType] : undefined,
-        maxBytes: fieldSchema.maxLength,
+        accept: fieldSchema?.allowedTypes,
+        maxBytes: fieldSchema?.maxSize,
       };
     }
 

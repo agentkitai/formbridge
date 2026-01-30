@@ -21,9 +21,18 @@ import type {
 import { SubmissionState } from '../types/intake-contract.js';
 import type { MCPServerConfig } from '../types/mcp-types.js';
 import { generateToolsFromIntake, parseToolName, type GeneratedTools } from './tool-generator.js';
+import { convertZodToJsonSchema } from '../schemas/json-schema-converter.js';
 import { validateSubmission, validatePartialSubmission } from '../validation/validator.js';
 import { mapToIntakeError } from '../validation/error-mapper.js';
 import { SubmissionStore } from './submission-store.js';
+
+/**
+ * Converts an IntakeError to a plain Record for use as a response object.
+ * Avoids the `as unknown as Record<string, unknown>` type erasure pattern.
+ */
+function toRecord(error: IntakeError): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(error));
+}
 
 /**
  * FormBridge MCP Server
@@ -63,6 +72,7 @@ export class FormBridgeMCPServer {
   private intakes = new Map<string, IntakeDefinition>();
   private tools = new Map<string, GeneratedTools>();
   private store = new SubmissionStore();
+  private storageBackend?: typeof this.config.storageBackend;
 
   /**
    * Creates a new FormBridge MCP server instance
@@ -71,6 +81,7 @@ export class FormBridgeMCPServer {
    */
   constructor(config: MCPServerConfig) {
     this.config = config;
+    this.storageBackend = config.storageBackend;
 
     // Initialize the MCP SDK server
     this.server = new Server(
@@ -168,6 +179,16 @@ export class FormBridgeMCPServer {
             name: generatedTools.submit.name,
             description: generatedTools.submit.description,
             inputSchema: generatedTools.submit.inputSchema
+          },
+          {
+            name: generatedTools.requestUpload.name,
+            description: generatedTools.requestUpload.description,
+            inputSchema: generatedTools.requestUpload.inputSchema
+          },
+          {
+            name: generatedTools.confirmUpload.name,
+            description: generatedTools.confirmUpload.description,
+            inputSchema: generatedTools.confirmUpload.inputSchema
           }
         );
       }
@@ -232,7 +253,7 @@ export class FormBridgeMCPServer {
     }
 
     // Execute the appropriate operation
-    let response: SubmissionResponse;
+    let response: SubmissionResponse | Record<string, unknown>;
     try {
       switch (operation) {
         case 'create':
@@ -246,6 +267,12 @@ export class FormBridgeMCPServer {
           break;
         case 'submit':
           response = await this.handleSubmit(intake, args);
+          break;
+        case 'requestUpload':
+          response = await this.handleRequestUpload(intake, args);
+          break;
+        case 'confirmUpload':
+          response = await this.handleConfirmUpload(intake, args);
           break;
         default:
           throw new Error(`Unknown operation: ${operation}`);
@@ -577,6 +604,331 @@ export class FormBridgeMCPServer {
       data: validationResult.data,
       timestamp: new Date().toISOString()
     };
+  }
+
+  /**
+   * Handles the requestUpload operation
+   *
+   * Requests a signed URL for file upload.
+   *
+   * @param intake - The intake definition for this submission
+   * @param args - Arguments containing resumeToken, field, filename, mimeType, sizeBytes
+   * @returns Upload URL information or error
+   */
+  private async handleRequestUpload(
+    intake: IntakeDefinition,
+    args: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const {
+      resumeToken,
+      field,
+      filename,
+      mimeType,
+      sizeBytes
+    } = args as {
+      resumeToken: string;
+      field: string;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+    };
+
+    // Get existing submission
+    const entry = this.store.get(resumeToken);
+    if (!entry) {
+      const error: IntakeError = {
+        type: 'invalid',
+        message: 'Invalid resume token',
+        fields: [{
+          field: 'resumeToken',
+          message: 'Resume token not found or has expired',
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'create',
+          description: 'Create a new submission'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    // Verify intake ID matches
+    if (entry.intakeId !== intake.id) {
+      const error: IntakeError = {
+        type: 'conflict',
+        message: 'Resume token belongs to a different intake form',
+        fields: [{
+          field: 'resumeToken',
+          message: `Token is for intake '${entry.intakeId}', not '${intake.id}'`,
+          type: 'conflict'
+        }],
+        nextActions: [{
+          type: 'create',
+          description: 'Create a new submission for this intake form'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    // Validate field exists in intake schema
+    const jsonSchema = convertZodToJsonSchema(intake.schema, {
+      name: intake.name,
+      includeSchemaProperty: false
+    });
+    if (!jsonSchema.properties || !(field in jsonSchema.properties)) {
+      const error: IntakeError = {
+        type: 'invalid',
+        message: `Field '${field}' not found in intake schema`,
+        fields: [{
+          field: field,
+          message: `Field '${field}' does not exist in the intake definition`,
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'validate',
+          description: 'Use a valid field name from the intake schema'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    // Check if storage backend is configured
+    if (!this.storageBackend) {
+      const error: IntakeError = {
+        type: 'invalid',
+        message: 'File upload not supported - storage backend not configured',
+        fields: [{
+          field: field,
+          message: 'Storage backend not configured for MCP server',
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'validate',
+          description: 'Configure storage backend in MCPServerConfig'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    try {
+      // Generate signed upload URL via storage backend
+      const signedUrl = await this.storageBackend.generateUploadUrl({
+        intakeId: intake.id,
+        submissionId: entry.submissionId,
+        fieldPath: field,
+        filename,
+        mimeType,
+        constraints: {
+          maxSize: sizeBytes,
+          allowedTypes: [mimeType],
+          maxCount: 1,
+        }
+      });
+
+      // Initialize uploads map if not exists
+      if (!entry.uploads) {
+        entry.uploads = {};
+      }
+
+      // Track upload in submission
+      entry.uploads[signedUrl.uploadId] = {
+        uploadId: signedUrl.uploadId,
+        field,
+        filename,
+        mimeType,
+        sizeBytes,
+        status: 'pending',
+        url: signedUrl.url,
+      };
+
+      // Update submission entry
+      this.store.update(resumeToken, { uploads: entry.uploads });
+
+      // Calculate expiration time in milliseconds
+      const expiresAt = new Date(signedUrl.expiresAt);
+      const now = new Date();
+      const expiresInMs = expiresAt.getTime() - now.getTime();
+
+      // Return signed URL info
+      return {
+        ok: true,
+        uploadId: signedUrl.uploadId,
+        method: signedUrl.method,
+        url: signedUrl.url,
+        expiresInMs: Math.max(0, expiresInMs),
+        constraints: {
+          maxBytes: sizeBytes,
+          accept: [mimeType],
+        },
+      };
+    } catch (error) {
+      const err: IntakeError = {
+        type: 'invalid',
+        message: 'Failed to generate upload URL',
+        fields: [{
+          field: field,
+          message: error instanceof Error ? error.message : 'Unknown error',
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'validate',
+          description: 'Try again or contact support'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(err);
+    }
+  }
+
+  /**
+   * Handles the confirmUpload operation
+   *
+   * Confirms completion of a file upload.
+   *
+   * @param intake - The intake definition for this submission
+   * @param args - Arguments containing resumeToken and uploadId
+   * @returns Confirmation status or error
+   */
+  private async handleConfirmUpload(
+    intake: IntakeDefinition,
+    args: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const { resumeToken, uploadId } = args as {
+      resumeToken: string;
+      uploadId: string;
+    };
+
+    // Get existing submission
+    const entry = this.store.get(resumeToken);
+    if (!entry) {
+      const error: IntakeError = {
+        type: 'invalid',
+        message: 'Invalid resume token',
+        fields: [{
+          field: 'resumeToken',
+          message: 'Resume token not found or has expired',
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'create',
+          description: 'Create a new submission'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    // Verify intake ID matches
+    if (entry.intakeId !== intake.id) {
+      const error: IntakeError = {
+        type: 'conflict',
+        message: 'Resume token belongs to a different intake form',
+        fields: [{
+          field: 'resumeToken',
+          message: `Token is for intake '${entry.intakeId}', not '${intake.id}'`,
+          type: 'conflict'
+        }],
+        nextActions: [{
+          type: 'create',
+          description: 'Create a new submission for this intake form'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    // Check if storage backend is configured
+    if (!this.storageBackend) {
+      const error: IntakeError = {
+        type: 'invalid',
+        message: 'File upload not supported - storage backend not configured',
+        fields: [{
+          field: 'uploadId',
+          message: 'Storage backend not configured for MCP server',
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'validate',
+          description: 'Configure storage backend in MCPServerConfig'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    // Check if upload exists
+    if (!entry.uploads || !entry.uploads[uploadId]) {
+      const error: IntakeError = {
+        type: 'invalid',
+        message: 'Upload not found',
+        fields: [{
+          field: 'uploadId',
+          message: `Upload ${uploadId} not found for this submission`,
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'validate',
+          description: 'Request a new upload'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(error);
+    }
+
+    try {
+      // Verify upload via storage backend
+      const uploadStatus = await this.storageBackend.verifyUpload(uploadId);
+
+      // Update upload status
+      const upload = entry.uploads[uploadId];
+      if (uploadStatus.status === 'completed' && uploadStatus.file) {
+        upload.status = 'completed';
+        upload.uploadedAt = new Date();
+
+        // Generate download URL
+        const downloadUrl = await this.storageBackend.generateDownloadUrl(uploadId);
+        if (downloadUrl) {
+          upload.downloadUrl = downloadUrl;
+        }
+      } else if (uploadStatus.status === 'failed') {
+        upload.status = 'failed';
+        upload.error = uploadStatus.error;
+      }
+
+      // Update submission entry
+      this.store.update(resumeToken, { uploads: entry.uploads });
+
+      // Return confirmation
+      return {
+        ok: true,
+        submissionId: entry.submissionId,
+        uploadId,
+        field: upload.field,
+        status: upload.status,
+        uploadedAt: upload.uploadedAt?.toISOString(),
+        downloadUrl: upload.downloadUrl,
+      };
+    } catch (error) {
+      const err: IntakeError = {
+        type: 'invalid',
+        message: 'Failed to verify upload',
+        fields: [{
+          field: 'uploadId',
+          message: error instanceof Error ? error.message : 'Unknown error',
+          type: 'invalid'
+        }],
+        nextActions: [{
+          type: 'validate',
+          description: 'Try again or request a new upload'
+        }],
+        timestamp: new Date().toISOString()
+      };
+      return toRecord(err);
+    }
   }
 
   /**

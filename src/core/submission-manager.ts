@@ -11,8 +11,11 @@ import type {
   SetFieldsRequest,
   SubmitRequest,
   IntakeError,
+  IntakeDefinition,
 } from "../types/intake-contract";
 import type { Submission, FieldAttribution } from "../types";
+import type { StorageBackend } from "../storage/storage-backend.js";
+import type { UploadStatus } from "./validator.js";
 import { randomUUID } from "crypto";
 
 export class SubmissionNotFoundError extends Error {
@@ -47,6 +50,56 @@ export interface EventEmitter {
 }
 
 /**
+ * Request input for file upload URL generation
+ */
+export interface RequestUploadInput {
+  submissionId: string;
+  resumeToken: string;
+  field: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  actor: Actor;
+}
+
+/**
+ * Response from requestUpload
+ */
+export interface RequestUploadOutput {
+  ok: true;
+  uploadId: string;
+  method: string;
+  url: string;
+  headers?: Record<string, string>;
+  expiresInMs: number;
+  constraints: {
+    accept: string[];
+    maxBytes: number;
+  };
+}
+
+/**
+ * Request input for confirming a file upload
+ */
+export interface ConfirmUploadInput {
+  submissionId: string;
+  resumeToken: string;
+  uploadId: string;
+  actor: Actor;
+}
+
+/**
+ * Response from confirmUpload
+ */
+export interface ConfirmUploadOutput {
+  ok: true;
+  submissionId: string;
+  state: string;
+  resumeToken: string;
+  field: string;
+}
+
+/**
  * SubmissionManager orchestrates the submission lifecycle
  * with field-level actor attribution for audit trails
  */
@@ -54,7 +107,8 @@ export class SubmissionManager {
   constructor(
     private store: SubmissionStore,
     private eventEmitter: EventEmitter,
-    private baseUrl: string = "http://localhost:3000"
+    private baseUrl: string = "http://localhost:3000",
+    private storageBackend?: StorageBackend
   ) {}
 
   /**
@@ -238,6 +292,257 @@ export class SubmissionManager {
       schema: {}, // TODO: Load from intake definition
       missingFields: [], // TODO: Calculate from schema
     };
+  }
+
+  /**
+   * Requests a signed upload URL for a file field.
+   * Implements the file upload negotiation protocol.
+   *
+   * @param input - RequestUpload operation input
+   * @param intakeDefinition - The intake definition for field validation
+   * @returns RequestUploadOutput or throws an error
+   */
+  async requestUpload(
+    input: RequestUploadInput,
+    intakeDefinition: IntakeDefinition
+  ): Promise<RequestUploadOutput> {
+    // Validate storage backend is configured
+    if (!this.storageBackend) {
+      throw new Error("Storage backend not configured");
+    }
+
+    // Get submission
+    const submission = await this.store.get(input.submissionId);
+    if (!submission) {
+      throw new SubmissionNotFoundError(input.submissionId);
+    }
+
+    // Verify resume token
+    if (submission.resumeToken !== input.resumeToken) {
+      throw new InvalidResumeTokenError();
+    }
+
+    // Check if submission is expired
+    if (submission.expiresAt && new Date(submission.expiresAt) < new Date()) {
+      throw new SubmissionExpiredError();
+    }
+
+    // Validate field exists in the schema
+    const schemaObj = intakeDefinition.schema as Record<string, unknown> | undefined;
+    const properties = (schemaObj as { properties?: Record<string, unknown> })?.properties;
+    const fieldSchema = properties?.[input.field];
+    if (!fieldSchema) {
+      throw new Error(`Field '${input.field}' not found in intake schema`);
+    }
+
+    // Generate signed upload URL from storage backend
+    const signedUrl = await this.storageBackend.generateUploadUrl({
+      intakeId: submission.intakeId,
+      submissionId: submission.id,
+      fieldPath: input.field,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      constraints: {
+        maxSize: input.sizeBytes,
+        allowedTypes: [input.mimeType],
+        maxCount: 1,
+      },
+    });
+
+    // Store upload status in submission
+    // We store upload tracking data in the fields object under a special key
+    const uploadStatus: UploadStatus = {
+      uploadId: signedUrl.uploadId,
+      field: input.field,
+      filename: input.filename,
+      mimeType: input.mimeType,
+      sizeBytes: input.sizeBytes,
+      status: "pending",
+    };
+
+    // Track uploads in the submission's fields under __uploads
+    const uploads = (submission.fields.__uploads as Record<string, UploadStatus>) || {};
+    uploads[signedUrl.uploadId] = uploadStatus;
+    submission.fields.__uploads = uploads;
+
+    const now = new Date().toISOString();
+    submission.updatedAt = now;
+
+    // Update state to awaiting_upload if currently in draft or in_progress
+    if (submission.state === "draft" || submission.state === "in_progress") {
+      submission.state = "awaiting_upload";
+    }
+
+    // Generate new resume token
+    const newResumeToken = `rtok_${randomUUID()}`;
+    submission.resumeToken = newResumeToken;
+
+    await this.store.save(submission);
+
+    // Emit upload requested event
+    const event: IntakeEvent = {
+      eventId: `evt_${randomUUID()}`,
+      type: "upload.requested",
+      submissionId: submission.id,
+      ts: now,
+      actor: input.actor,
+      state: submission.state,
+      payload: {
+        uploadId: signedUrl.uploadId,
+        field: input.field,
+        filename: input.filename,
+        sizeBytes: input.sizeBytes,
+      },
+    };
+
+    submission.events.push(event);
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
+
+    // Calculate expiration in milliseconds
+    const expiresInMs = new Date(signedUrl.expiresAt).getTime() - Date.now();
+
+    return {
+      ok: true,
+      uploadId: signedUrl.uploadId,
+      method: signedUrl.method,
+      url: signedUrl.url,
+      headers: signedUrl.headers,
+      expiresInMs,
+      constraints: {
+        accept: signedUrl.constraints.allowedTypes,
+        maxBytes: signedUrl.constraints.maxSize,
+      },
+    };
+  }
+
+  /**
+   * Confirms that a file upload has been completed.
+   * Implements the file upload confirmation protocol.
+   *
+   * @param input - ConfirmUpload operation input
+   * @returns ConfirmUploadOutput or throws an error
+   */
+  async confirmUpload(
+    input: ConfirmUploadInput
+  ): Promise<ConfirmUploadOutput> {
+    // Validate storage backend is configured
+    if (!this.storageBackend) {
+      throw new Error("Storage backend not configured");
+    }
+
+    // Get submission
+    const submission = await this.store.get(input.submissionId);
+    if (!submission) {
+      throw new SubmissionNotFoundError(input.submissionId);
+    }
+
+    // Verify resume token
+    if (submission.resumeToken !== input.resumeToken) {
+      throw new InvalidResumeTokenError();
+    }
+
+    // Find upload in submission
+    const uploads = (submission.fields.__uploads as Record<string, UploadStatus>) || {};
+    const uploadStatus = uploads[input.uploadId];
+    if (!uploadStatus) {
+      throw new Error(`Upload not found: ${input.uploadId}`);
+    }
+
+    // Verify upload with storage backend
+    const verificationResult = await this.storageBackend.verifyUpload(input.uploadId);
+
+    // Map storage backend status to submission upload status
+    // Note: storage backend 'expired' status is mapped to 'failed'
+    let mappedStatus: "pending" | "completed" | "failed";
+    if (verificationResult.status === "expired") {
+      mappedStatus = "failed";
+    } else {
+      mappedStatus = verificationResult.status as "pending" | "completed" | "failed";
+    }
+
+    // Update upload status based on verification
+    uploadStatus.status = mappedStatus;
+    if (verificationResult.file) {
+      uploadStatus.uploadedAt = verificationResult.file.uploadedAt;
+      uploadStatus.url = verificationResult.file.storageKey;
+    }
+
+    const now = new Date().toISOString();
+    submission.updatedAt = now;
+    submission.fields.__uploads = uploads;
+
+    // Update submission state based on upload result
+    if (mappedStatus === "completed") {
+      // Check if there are any remaining pending uploads
+      const hasPendingUploads = Object.values(uploads).some(
+        (u) => u.status === "pending"
+      );
+
+      // If no more pending uploads, transition back to in_progress
+      if (!hasPendingUploads && submission.state === "awaiting_upload") {
+        submission.state = "in_progress";
+      }
+
+      // Rotate resume token only after successful verification
+      const newResumeToken = `rtok_${randomUUID()}`;
+      submission.resumeToken = newResumeToken;
+
+      await this.store.save(submission);
+
+      // Emit upload completed event
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: "upload.completed",
+        submissionId: submission.id,
+        ts: now,
+        actor: input.actor,
+        state: submission.state,
+        payload: {
+          uploadId: input.uploadId,
+          field: uploadStatus.field,
+          filename: uploadStatus.filename,
+          sizeBytes: uploadStatus.sizeBytes,
+        },
+      };
+
+      submission.events.push(event);
+      await this.eventEmitter.emit(event);
+      await this.store.save(submission);
+
+      return {
+        ok: true,
+        submissionId: submission.id,
+        state: submission.state,
+        resumeToken: newResumeToken,
+        field: uploadStatus.field,
+      };
+    } else {
+      await this.store.save(submission);
+
+      // Emit upload failed event (do NOT rotate resume token on failure)
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: "upload.failed",
+        submissionId: submission.id,
+        ts: now,
+        actor: input.actor,
+        state: submission.state,
+        payload: {
+          uploadId: input.uploadId,
+          field: uploadStatus.field,
+          error: verificationResult.error,
+        },
+      };
+
+      submission.events.push(event);
+      await this.eventEmitter.emit(event);
+      await this.store.save(submission);
+
+      throw new Error(
+        `Upload verification failed: ${verificationResult.error ?? "Unknown error"}`
+      );
+    }
   }
 
   /**
