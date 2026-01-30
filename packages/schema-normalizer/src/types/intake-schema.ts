@@ -16,7 +16,8 @@ export type IntakeSchemaFieldType =
   | 'null'
   | 'object'
   | 'array'
-  | 'enum';
+  | 'enum'
+  | 'file';
 
 /**
  * String format hints for specialized validation
@@ -62,6 +63,15 @@ export interface ArrayConstraints {
   minItems?: number;
   maxItems?: number;
   uniqueItems?: boolean;
+}
+
+/**
+ * File-specific constraints
+ */
+export interface FileConstraints {
+  maxSize?: number;
+  allowedTypes?: string[];
+  maxCount?: number;
 }
 
 /**
@@ -163,6 +173,14 @@ export interface EnumField extends BaseField {
 }
 
 /**
+ * File field with upload constraints
+ */
+export interface FileField extends BaseField {
+  type: 'file';
+  constraints?: FileConstraints;
+}
+
+/**
  * Union of all field types
  */
 export type IntakeSchemaField =
@@ -173,7 +191,8 @@ export type IntakeSchemaField =
   | NullField
   | ObjectField
   | ArrayField
-  | EnumField;
+  | EnumField
+  | FileField;
 
 /**
  * Root IntakeSchema document
@@ -271,4 +290,11 @@ export function isArrayField(field: IntakeSchemaField): field is ArrayField {
  */
 export function isEnumField(field: IntakeSchemaField): field is EnumField {
   return field.type === 'enum';
+}
+
+/**
+ * Type guard: check if a field is a file field
+ */
+export function isFileField(field: IntakeSchemaField): field is FileField {
+  return field.type === 'file';
 }

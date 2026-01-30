@@ -8,6 +8,36 @@ import { registerTools, createMcpServer } from "../tool-generator";
 import type { SubmissionManager } from "../../core/submission-manager";
 import type { Actor } from "../../types/intake-contract";
 
+/**
+ * Helper to get registered tools from McpServer (SDK 1.x internal API)
+ */
+function getRegisteredTools(server: McpServer): Record<string, any> {
+  return (server as any)._registeredTools || {};
+}
+
+/**
+ * Helper to get server info from McpServer (SDK 1.x internal API)
+ */
+function getServerInfo(server: McpServer): { name: string; version: string } | undefined {
+  return (server as any).server?._serverInfo;
+}
+
+/**
+ * Helper to call a registered tool handler
+ */
+async function callToolHandler(
+  server: McpServer,
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<any> {
+  const tools = getRegisteredTools(server);
+  const tool = tools[toolName];
+  if (!tool?.handler) {
+    throw new Error(`Tool '${toolName}' not found or has no handler`);
+  }
+  return tool.handler(args, {} as any);
+}
+
 describe("MCP Tool Generator", () => {
   let mockSubmissionManager: SubmissionManager;
   let server: McpServer;
@@ -29,19 +59,15 @@ describe("MCP Tool Generator", () => {
     it("should register handoffToHuman tool", () => {
       registerTools(server, mockSubmissionManager);
 
-      // Verify tool is registered by checking server's tool list
-      const tools = (server as any).requestHandlers?.tools?.list || [];
-      const handoffTool = tools.find((t: any) => t.name === "handoffToHuman");
-
-      expect(handoffTool).toBeDefined();
-      expect(handoffTool?.name).toBe("handoffToHuman");
+      const tools = getRegisteredTools(server);
+      expect(tools["handoffToHuman"]).toBeDefined();
     });
 
     it("should have correct tool description", () => {
       registerTools(server, mockSubmissionManager);
 
-      const tools = (server as any).requestHandlers?.tools?.list || [];
-      const handoffTool = tools.find((t: any) => t.name === "handoffToHuman");
+      const tools = getRegisteredTools(server);
+      const handoffTool = tools["handoffToHuman"];
 
       expect(handoffTool?.description).toContain("resume URL");
       expect(handoffTool?.description).toContain("agent-to-human");
@@ -61,14 +87,7 @@ describe("MCP Tool Generator", () => {
         resumeUrl
       );
 
-      // Get the tool handler
-      const toolHandler = (server as any).requestHandlers?.tools?.call;
-      expect(toolHandler).toBeDefined();
-
-      const result = await toolHandler({
-        name: "handoffToHuman",
-        arguments: { submissionId },
-      });
+      const result = await callToolHandler(server, "handoffToHuman", { submissionId });
 
       expect(mockSubmissionManager.generateHandoffUrl).toHaveBeenCalledWith(
         submissionId,
@@ -100,11 +119,7 @@ describe("MCP Tool Generator", () => {
         resumeUrl
       );
 
-      const toolHandler = (server as any).requestHandlers?.tools?.call;
-      const result = await toolHandler({
-        name: "handoffToHuman",
-        arguments: { submissionId, actor },
-      });
+      const result = await callToolHandler(server, "handoffToHuman", { submissionId, actor });
 
       expect(mockSubmissionManager.generateHandoffUrl).toHaveBeenCalledWith(
         submissionId,
@@ -124,11 +139,7 @@ describe("MCP Tool Generator", () => {
         new Error(errorMessage)
       );
 
-      const toolHandler = (server as any).requestHandlers?.tools?.call;
-      const result = await toolHandler({
-        name: "handoffToHuman",
-        arguments: { submissionId },
-      });
+      const result = await callToolHandler(server, "handoffToHuman", { submissionId });
 
       expect(result.content).toBeDefined();
       expect(result.isError).toBe(true);
@@ -144,8 +155,9 @@ describe("MCP Tool Generator", () => {
       const server = createMcpServer(mockSubmissionManager);
 
       expect(server).toBeDefined();
-      expect((server as any).serverInfo?.name).toBe("@formbridge/mcp-server");
-      expect((server as any).serverInfo?.version).toBe("0.1.0");
+      const info = getServerInfo(server);
+      expect(info?.name).toBe("@formbridge/mcp-server");
+      expect(info?.version).toBe("0.1.0");
     });
 
     it("should create server with custom options", () => {
@@ -155,17 +167,16 @@ describe("MCP Tool Generator", () => {
       });
 
       expect(server).toBeDefined();
-      expect((server as any).serverInfo?.name).toBe("custom-server");
-      expect((server as any).serverInfo?.version).toBe("1.2.3");
+      const info = getServerInfo(server);
+      expect(info?.name).toBe("custom-server");
+      expect(info?.version).toBe("1.2.3");
     });
 
     it("should register tools on created server", () => {
       const server = createMcpServer(mockSubmissionManager);
 
-      const tools = (server as any).requestHandlers?.tools?.list || [];
-      const handoffTool = tools.find((t: any) => t.name === "handoffToHuman");
-
-      expect(handoffTool).toBeDefined();
+      const tools = getRegisteredTools(server);
+      expect(tools["handoffToHuman"]).toBeDefined();
     });
   });
 });

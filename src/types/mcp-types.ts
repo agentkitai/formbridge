@@ -7,6 +7,7 @@
 
 import type { z } from 'zod';
 import type { SubmissionResponse } from './intake-contract.js';
+import type { StorageBackend } from '../storage/storage-backend.js';
 
 /**
  * MCP Tool definition for intake forms
@@ -150,6 +151,8 @@ export interface MCPServerConfig {
   transport: TransportConfig;
   /** Optional logging level */
   logLevel?: 'debug' | 'info' | 'warn' | 'error';
+  /** Optional storage backend for file uploads */
+  storageBackend?: StorageBackend;
 }
 
 /**
@@ -204,7 +207,11 @@ export enum ToolOperation {
   /** Validate current submission state without submitting */
   VALIDATE = 'validate',
   /** Submit the intake form */
-  SUBMIT = 'submit'
+  SUBMIT = 'submit',
+  /** Request a signed URL for file upload */
+  REQUEST_UPLOAD = 'requestUpload',
+  /** Confirm completion of a file upload */
+  CONFIRM_UPLOAD = 'confirmUpload'
 }
 
 /**

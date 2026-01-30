@@ -45,6 +45,10 @@ export interface JSONSchema {
   anyOf?: JSONSchema[];
   oneOf?: JSONSchema[];
   not?: JSONSchema;
+  // File-specific constraints (for format: 'binary')
+  maxSize?: number;
+  allowedTypes?: string[];
+  maxCount?: number;
 }
 
 /**

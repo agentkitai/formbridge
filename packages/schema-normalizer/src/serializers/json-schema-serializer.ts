@@ -17,6 +17,7 @@ import type {
   ObjectField,
   ArrayField,
   EnumField,
+  FileField,
 } from '../types/intake-schema';
 
 /**
@@ -58,6 +59,11 @@ export interface JSONSchema {
 
   // Enum
   enum?: (string | number | boolean | null)[];
+
+  // File constraints (custom extension)
+  maxSize?: number;
+  allowedTypes?: string[];
+  maxCount?: number;
 
   // Schema version
   $schema?: string;
@@ -125,8 +131,8 @@ export class SerializerError extends Error {
  *
  * Serializes IntakeSchema IR into JSON Schema documents (draft-2020-12 by default):
  * - All primitive types: string, number, integer, boolean, null
- * - Complex types: object, array, enum
- * - All constraints: string, number, array
+ * - Complex types: object, array, enum, file
+ * - All constraints: string, number, array, file
  * - Metadata: title, description, default, examples
  * - Nested structures: recursive serialization
  */
@@ -208,6 +214,8 @@ export class JSONSchemaSerializer {
         return this.serializeArrayField(field);
       case 'enum':
         return this.serializeEnumField(field);
+      case 'file':
+        return this.serializeFileField(field);
       default:
         throw new SerializerError(
           `Unsupported field type: ${(field as IntakeSchemaField).type}`,
@@ -437,6 +445,34 @@ export class JSONSchemaSerializer {
     });
 
     schema.enum = enumValues;
+
+    // Add metadata
+    this.addFieldMetadata(schema, field);
+
+    return schema;
+  }
+
+  /**
+   * Serialize a file field with upload constraints
+   */
+  private serializeFileField(field: FileField): JSONSchema {
+    const schema: JSONSchema = {
+      type: 'string',
+      format: 'binary',
+    };
+
+    // Add constraints
+    if (field.constraints) {
+      if (field.constraints.maxSize !== undefined) {
+        schema.maxSize = field.constraints.maxSize;
+      }
+      if (field.constraints.allowedTypes !== undefined) {
+        schema.allowedTypes = field.constraints.allowedTypes;
+      }
+      if (field.constraints.maxCount !== undefined) {
+        schema.maxCount = field.constraints.maxCount;
+      }
+    }
 
     // Add metadata
     this.addFieldMetadata(schema, field);

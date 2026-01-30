@@ -15,7 +15,7 @@ export interface Actor {
 }
 
 /**
- * Submission lifecycle states
+ * Submission lifecycle states (type union)
  */
 export type SubmissionState =
   | "draft"
@@ -28,7 +28,44 @@ export type SubmissionState =
   | "rejected"
   | "finalized"
   | "cancelled"
-  | "expired";
+  | "expired"
+  // Upload negotiation protocol states
+  | "created"
+  | "validating"
+  | "invalid"
+  | "valid"
+  | "uploading"
+  | "submitting"
+  | "completed"
+  | "failed"
+  | "pending_approval";
+
+/**
+ * SubmissionState runtime constants for enum-like access.
+ * Use SubmissionState.DRAFT, SubmissionState.VALIDATING, etc.
+ */
+export const SubmissionState = {
+  DRAFT: "draft",
+  IN_PROGRESS: "in_progress",
+  AWAITING_INPUT: "awaiting_input",
+  AWAITING_UPLOAD: "awaiting_upload",
+  SUBMITTED: "submitted",
+  NEEDS_REVIEW: "needs_review",
+  APPROVED: "approved",
+  REJECTED: "rejected",
+  FINALIZED: "finalized",
+  CANCELLED: "cancelled",
+  EXPIRED: "expired",
+  CREATED: "created",
+  VALIDATING: "validating",
+  INVALID: "invalid",
+  VALID: "valid",
+  UPLOADING: "uploading",
+  SUBMITTING: "submitting",
+  COMPLETED: "completed",
+  FAILED: "failed",
+  PENDING_APPROVAL: "pending_approval",
+} as const;
 
 /**
  * Error types for intake validation and processing
@@ -250,4 +287,53 @@ export interface CancelRequest {
   submissionId: string;
   reason?: string;
   actor: Actor;
+}
+
+/**
+ * Successful submission response
+ * Returned when a submission operation completes successfully
+ */
+export interface SubmissionSuccess {
+  /** Submission state */
+  state: SubmissionState;
+  /** Unique submission identifier */
+  submissionId: string;
+  /** Success message */
+  message: string;
+  /** Optional data returned from the destination */
+  data?: Record<string, unknown>;
+  /** Actor who submitted */
+  actor?: Actor;
+  /** Timestamp of submission */
+  timestamp?: string;
+}
+
+/**
+ * Submission response - either success or error
+ */
+export type SubmissionResponse = SubmissionSuccess | IntakeError;
+
+/**
+ * Type guard to check if a response is an IntakeError
+ * Supports both the structured error envelope shape (ok: false)
+ * and the flat error shape (type, fields, nextActions)
+ */
+export function isIntakeError(response: unknown): response is IntakeError {
+  if (response && typeof response === "object") {
+    // Structured shape: { ok: false, error: { ... } }
+    if ("ok" in response && (response as Record<string, unknown>).ok === false) return true;
+    // Flat shape: { type, fields, nextActions }
+    if ("type" in response && "fields" in response && "nextActions" in response) return true;
+  }
+  return false;
+}
+
+/**
+ * Type guard to check if a response is a SubmissionSuccess
+ */
+export function isSubmissionSuccess(response: unknown): response is SubmissionSuccess {
+  if (response && typeof response === "object") {
+    return "state" in response && "submissionId" in response && !("ok" in response && (response as Record<string, unknown>).ok === false);
+  }
+  return false;
 }
