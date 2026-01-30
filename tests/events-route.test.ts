@@ -631,4 +631,331 @@ describe('Events Route', () => {
       expect(responseData.error).toContain('Invalid');
     });
   });
+
+  describe('GET /submissions/:id/events/export', () => {
+    it('should export events in JSONL format by default', async () => {
+      // Create a submission with events
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Add more events
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Mock Express request/response
+      const req = {
+        params: { id: submissionId },
+        query: {},
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+      let responseHeaders: Record<string, string> = {};
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        setHeader(key: string, value: string) {
+          responseHeaders[key] = value;
+          return this;
+        },
+        send(data: any) {
+          responseData = data;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      // Call the route handler
+      await routes.exportEvents(req, res, next);
+
+      // Verify response
+      expect(responseStatus).toBe(200);
+      expect(responseHeaders['Content-Type']).toBe('application/x-ndjson');
+      expect(responseHeaders['Content-Disposition']).toContain('attachment');
+      expect(responseHeaders['Content-Disposition']).toContain('.jsonl');
+      expect(responseData).toBeDefined();
+
+      // Verify JSONL format (newline-delimited JSON)
+      const lines = responseData.split('\n').filter((l: string) => l.trim());
+      expect(lines.length).toBeGreaterThan(0);
+
+      // Each line should be valid JSON
+      lines.forEach((line: string) => {
+        const event = JSON.parse(line);
+        expect(event).toHaveProperty('eventId');
+        expect(event).toHaveProperty('type');
+        expect(event).toHaveProperty('submissionId');
+      });
+    });
+
+    it('should export events in JSONL format when format=jsonl', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      const req = {
+        params: { id: submissionId },
+        query: { format: 'jsonl' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+      let responseHeaders: Record<string, string> = {};
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        setHeader(key: string, value: string) {
+          responseHeaders[key] = value;
+          return this;
+        },
+        send(data: any) {
+          responseData = data;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.exportEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseHeaders['Content-Type']).toBe('application/x-ndjson');
+      expect(responseData).toBeDefined();
+    });
+
+    it('should export events in JSON format when format=json', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      const req = {
+        params: { id: submissionId },
+        query: { format: 'json' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+      let responseHeaders: Record<string, string> = {};
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        setHeader(key: string, value: string) {
+          responseHeaders[key] = value;
+          return this;
+        },
+        send(data: any) {
+          responseData = data;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.exportEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseHeaders['Content-Type']).toBe('application/json');
+      expect(responseHeaders['Content-Disposition']).toContain('.json');
+      expect(responseData).toBeDefined();
+
+      // Should be valid JSON array
+      const events = JSON.parse(responseData);
+      expect(Array.isArray(events)).toBe(true);
+      expect(events.length).toBeGreaterThan(0);
+    });
+
+    it('should apply filters when exporting', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Add field update
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Export with filter
+      const req = {
+        params: { id: submissionId },
+        query: { format: 'json', type: 'field.updated' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        setHeader() {
+          return this;
+        },
+        send(data: any) {
+          responseData = data;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.exportEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+
+      const events = JSON.parse(responseData);
+      expect(Array.isArray(events)).toBe(true);
+
+      // All events should be of type 'field.updated'
+      events.forEach((event: any) => {
+        expect(event.type).toBe('field.updated');
+      });
+    });
+
+    it('should return 404 for non-existent submission', async () => {
+      const req = {
+        params: { id: 'sub_nonexistent' },
+        query: {},
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        setHeader() {
+          return this;
+        },
+        send(data: any) {
+          responseData = data;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.exportEvents(req, res, next);
+
+      expect(responseStatus).toBe(404);
+      expect(responseData.error).toBe('Submission not found');
+    });
+
+    it('should return 400 for invalid format', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      const req = {
+        params: { id: submissionId },
+        query: { format: 'invalid' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        setHeader() {
+          return this;
+        },
+        send(data: any) {
+          responseData = data;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.exportEvents(req, res, next);
+
+      expect(responseStatus).toBe(400);
+      expect(responseData.error).toContain('Invalid');
+    });
+  });
 });
