@@ -58,6 +58,8 @@ export const vendorOnboardingIntake: IntakeDefinition = {
       description: 'Requires approval for vendors with annual revenue over $1M',
       condition: 'annual_revenue > 1000000',
       required: true,
+      reviewers: ['finance_team', 'compliance_officer'],
+      approvalLevel: 1,
     },
   ],
   destination: {
