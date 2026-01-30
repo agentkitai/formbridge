@@ -16,6 +16,7 @@ import type {
   IntakeEvent,
   CreateSubmissionRequest,
   SetFieldsRequest,
+  SubmitRequest,
 } from "../../src/types/intake-contract";
 import type { Submission } from "../../src/types";
 
@@ -703,6 +704,183 @@ describe("Event Stream & Audit Trail Integration", () => {
       await expect(manager.getEvents("sub_nonexistent")).rejects.toThrow(
         "Submission not found"
       );
+    });
+  });
+
+  describe("End-to-End Audit Trail Verification", () => {
+    it("should capture complete audit trail from creation through submission with filtering and export", async () => {
+      // Step 1: Create submission
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_e2e_audit",
+        actor: agentActor,
+        initialFields: {
+          firstName: "John",
+          lastName: "Doe",
+          email: "john.doe@example.com",
+        },
+      };
+
+      const createResponse = await manager.createSubmission(createRequest);
+      expect(createResponse.ok).toBe(true);
+      expect(createResponse.submissionId).toMatch(/^sub_/);
+
+      // Step 2: Update fields (agent adds more data)
+      await manager.setFields({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          department: "Engineering",
+          startDate: "2024-02-01",
+          salary: "100000",
+        },
+      });
+
+      // Step 2b: Human corrects some fields
+      await manager.setFields({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: humanActor,
+        fields: {
+          department: "Product Engineering",
+          salary: "120000",
+        },
+      });
+
+      // Step 3: Submit the submission
+      const submitResponse = await manager.submit({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        idempotencyKey: "idem_e2e_audit_submit",
+        actor: humanActor,
+      });
+      expect(submitResponse.ok).toBe(true);
+
+      // Step 4: Retrieve all events
+      const allEvents = await manager.getEvents(createResponse.submissionId);
+      expect(allEvents.length).toBeGreaterThan(0);
+
+      // Verify event types are present
+      const eventTypes = new Set(allEvents.map((e) => e.type));
+      expect(eventTypes.has("submission.created")).toBe(true);
+      expect(eventTypes.has("field.updated")).toBe(true);
+      expect(eventTypes.has("submission.submitted")).toBe(true);
+
+      // Step 5: Filter by type
+      const fieldUpdatedEvents = allEvents.filter(
+        (e) => e.type === "field.updated"
+      );
+      expect(fieldUpdatedEvents.length).toBeGreaterThan(0);
+
+      const submittedEvents = allEvents.filter(
+        (e) => e.type === "submission.submitted"
+      );
+      expect(submittedEvents).toHaveLength(1);
+      expect(submittedEvents[0].actor).toEqual(humanActor);
+
+      // Filter by actor kind
+      const agentEvents = allEvents.filter((e) => e.actor.kind === "agent");
+      const humanEvents = allEvents.filter((e) => e.actor.kind === "human");
+      expect(agentEvents.length).toBeGreaterThan(0);
+      expect(humanEvents.length).toBeGreaterThan(0);
+
+      // Step 6: Export to JSONL
+      const jsonlExport = allEvents
+        .map((event) => JSON.stringify(event))
+        .join("\n");
+
+      // Verify JSONL format (one event per line)
+      const jsonlLines = jsonlExport.split("\n");
+      expect(jsonlLines.length).toBe(allEvents.length);
+
+      // Each line should be valid JSON
+      jsonlLines.forEach((line, index) => {
+        const parsed = JSON.parse(line);
+        expect(parsed.eventId).toBe(allEvents[index].eventId);
+      });
+
+      // Step 7: Verify all events captured with correct timestamps, actors, payloads
+      allEvents.forEach((event, index) => {
+        // Verify timestamps are valid and in order
+        expect(event.ts).toBeDefined();
+        const eventTime = new Date(event.ts);
+        expect(eventTime.getTime()).toBeGreaterThan(0);
+
+        if (index > 0) {
+          const prevTime = new Date(allEvents[index - 1].ts);
+          expect(eventTime.getTime()).toBeGreaterThanOrEqual(prevTime.getTime());
+        }
+
+        // Verify actors
+        expect(event.actor).toBeDefined();
+        expect(event.actor.kind).toMatch(/^(agent|human|system)$/);
+        expect(event.actor.id).toBeDefined();
+        expect(event.actor.name).toBeDefined();
+
+        // Verify payloads for specific event types
+        if (event.type === "field.updated") {
+          expect(event.payload).toBeDefined();
+          expect(event.payload!.fieldPath).toBeDefined();
+          expect(event.payload!.newValue).toBeDefined();
+          // oldValue can be undefined for new fields
+        }
+
+        if (event.type === "submission.created") {
+          expect(event.payload).toBeDefined();
+          expect(event.payload!.intakeId).toBe(createRequest.intakeId);
+          expect(event.payload!.initialFields).toBeDefined();
+        }
+
+        if (event.type === "submission.submitted") {
+          expect(event.state).toBe("submitted");
+        }
+
+        // Verify event structure
+        expect(event.eventId).toMatch(/^evt_/);
+        expect(event.submissionId).toBe(createResponse.submissionId);
+        expect(event.state).toBeDefined();
+      });
+
+      // Verify field-level diffs in field.updated events
+      const departmentUpdates = fieldUpdatedEvents.filter(
+        (e) => e.payload?.fieldPath === "department"
+      );
+      expect(departmentUpdates.length).toBe(2);
+
+      // First update: undefined -> "Engineering" (agent)
+      expect(departmentUpdates[0].payload!.oldValue).toBeUndefined();
+      expect(departmentUpdates[0].payload!.newValue).toBe("Engineering");
+      expect(departmentUpdates[0].actor).toEqual(agentActor);
+
+      // Second update: "Engineering" -> "Product Engineering" (human)
+      expect(departmentUpdates[1].payload!.oldValue).toBe("Engineering");
+      expect(departmentUpdates[1].payload!.newValue).toBe("Product Engineering");
+      expect(departmentUpdates[1].actor).toEqual(humanActor);
+
+      // Verify salary updates
+      const salaryUpdates = fieldUpdatedEvents.filter(
+        (e) => e.payload?.fieldPath === "salary"
+      );
+      expect(salaryUpdates.length).toBe(2);
+      expect(salaryUpdates[0].payload!.oldValue).toBeUndefined();
+      expect(salaryUpdates[0].payload!.newValue).toBe("100000");
+      expect(salaryUpdates[1].payload!.oldValue).toBe("100000");
+      expect(salaryUpdates[1].payload!.newValue).toBe("120000");
+
+      // Verify complete audit trail compliance
+      // - Events are append-only (no modifications)
+      // - Events have unique IDs
+      // - Events are chronologically ordered
+      // - All actors are tracked
+      // - All state transitions are captured
+      const eventIds = allEvents.map((e) => e.eventId);
+      const uniqueIds = new Set(eventIds);
+      expect(uniqueIds.size).toBe(eventIds.length);
+
+      // Verify state progression
+      const states = allEvents.map((e) => e.state);
+      expect(states[0]).toBe("draft");
+      expect(states[states.length - 1]).toBe("submitted");
     });
   });
 });
