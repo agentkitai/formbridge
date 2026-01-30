@@ -68,40 +68,69 @@ export const SubmissionState = {
 } as const;
 
 /**
+ * Error types for intake validation and processing
+ */
+export type IntakeErrorType =
+  | "missing"
+  | "invalid"
+  | "conflict"
+  | "needs_approval"
+  | "upload_pending"
+  | "delivery_failed"
+  | "expired"
+  | "cancelled";
+
+/**
  * Field-level error details
  */
 export interface FieldError {
-  path: string;
-  code:
-    | "required"
-    | "invalid_type"
-    | "invalid_format"
-    | "invalid_value"
-    | "too_long"
-    | "too_short"
-    | "file_required"
-    | "file_too_large"
-    | "file_wrong_type"
-    | "custom";
+  field: string;
   message: string;
-  expected?: unknown;
-  received?: unknown;
+  type: IntakeErrorType;
+  constraint?: string;
+  value?: unknown;
 }
+
+/**
+ * Action types for next steps
+ */
+export type NextActionType =
+  | "provide_missing_fields"
+  | "correct_invalid_fields"
+  | "fix_email_format"
+  | "meet_minimum_requirements"
+  | "fix_validation_errors"
+  | "wait_for_review"
+  | "collect_field"
+  | "request_upload"
+  | "retry_delivery"
+  | "cancel";
 
 /**
  * Next action guidance for agent loops
  */
 export interface NextAction {
-  action:
-    | "collect_field"
-    | "request_upload"
-    | "wait_for_review"
-    | "retry_delivery"
-    | "cancel";
+  type: NextActionType;
+  description?: string;
   field?: string;
+  fields?: string[];
   hint?: string;
   accept?: string[];
   maxBytes?: number;
+  params?: Record<string, unknown>;
+}
+
+/**
+ * Validation error response (used internally by error mappers)
+ */
+export interface ValidationErrorResponse {
+  type: IntakeErrorType;
+  message?: string;
+  fields?: FieldError[];
+  nextActions?: NextAction[];
+  resumeToken?: string;
+  idempotencyKey?: string;
+  timestamp?: string;
 }
 
 /**
@@ -113,15 +142,7 @@ export interface IntakeError {
   state: SubmissionState;
   resumeToken: string;
   error: {
-    type:
-      | "missing"
-      | "invalid"
-      | "conflict"
-      | "needs_approval"
-      | "upload_pending"
-      | "delivery_failed"
-      | "expired"
-      | "cancelled";
+    type: IntakeErrorType;
     message?: string;
     fields?: FieldError[];
     nextActions?: NextAction[];

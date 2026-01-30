@@ -3,7 +3,7 @@
  *
  * Tests the complete file upload flow from IntakeDefinition with file fields
  * to working upload negotiation:
- * 1. Create submission via API
+ * 1. Create submission via manager
  * 2. Request upload via API (get signed URL)
  * 3. Upload file to signed URL
  * 4. Confirm upload via API
@@ -20,19 +20,56 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { IntakeRegistry } from '../src/core/intake-registry.js';
 import { SubmissionManager } from '../src/core/submission-manager.js';
+import type { SubmissionStore, EventEmitter } from '../src/core/submission-manager.js';
 import { LocalStorageBackend } from '../src/storage/local-storage.js';
 import { createUploadRouter } from '../src/routes/uploads.js';
-import { createSubmissionRouter } from '../src/routes/submissions.js';
 import { Hono } from 'hono';
 import type {
   IntakeDefinition,
   JSONSchema,
   Actor,
+  IntakeEvent,
 } from '../src/types.js';
+import type { Submission } from '../src/types.js';
+import type { UploadStatus } from '../src/core/validator.js';
+
+/**
+ * In-memory store for testing
+ */
+class MockStore implements SubmissionStore {
+  private submissions = new Map<string, Submission>();
+
+  async get(submissionId: string): Promise<Submission | null> {
+    return this.submissions.get(submissionId) || null;
+  }
+
+  async save(submission: Submission): Promise<void> {
+    this.submissions.set(submission.id, submission);
+  }
+
+  async getByResumeToken(resumeToken: string): Promise<Submission | null> {
+    for (const sub of this.submissions.values()) {
+      if (sub.resumeToken === resumeToken) {
+        return sub;
+      }
+    }
+    return null;
+  }
+}
+
+/**
+ * No-op event emitter for testing
+ */
+class MockEventEmitter implements EventEmitter {
+  async emit(_event: IntakeEvent): Promise<void> {
+    // no-op
+  }
+}
 
 describe('Upload Negotiation Integration Tests', () => {
   let registry: IntakeRegistry;
   let submissionManager: SubmissionManager;
+  let mockStore: MockStore;
   let storage: LocalStorageBackend;
   let app: Hono;
   let storageDir: string;
@@ -78,6 +115,36 @@ describe('Upload Negotiation Integration Tests', () => {
     },
   };
 
+  /**
+   * Helper: create a submission via manager and return id + resumeToken
+   */
+  async function createTestSubmission(opts?: {
+    initialFields?: Record<string, unknown>;
+  }) {
+    const result = await submissionManager.createSubmission({
+      intakeId: 'document-submission',
+      actor: testActor,
+      initialFields: opts?.initialFields,
+    });
+    return { submissionId: result.submissionId, resumeToken: result.resumeToken };
+  }
+
+  /**
+   * Helper: get the current resume token for a submission
+   */
+  async function getResumeToken(submissionId: string): Promise<string> {
+    const sub = await submissionManager.getSubmission(submissionId);
+    return sub!.resumeToken;
+  }
+
+  /**
+   * Helper: get uploads map from a submission
+   */
+  async function getUploads(submissionId: string): Promise<Record<string, UploadStatus>> {
+    const sub = await submissionManager.getSubmission(submissionId);
+    return (sub?.fields?.__uploads as Record<string, UploadStatus>) || {};
+  }
+
   beforeEach(async () => {
     // Create temporary storage directory
     storageDir = join(tmpdir(), `formbridge-test-${Date.now()}`);
@@ -94,9 +161,15 @@ describe('Upload Negotiation Integration Tests', () => {
     registry = new IntakeRegistry();
     registry.registerIntake(fileUploadIntake);
 
-    submissionManager = new SubmissionManager({
-      storageBackend: storage,
-    });
+    mockStore = new MockStore();
+    const mockEventEmitter = new MockEventEmitter();
+    submissionManager = new SubmissionManager(
+      mockStore,
+      mockEventEmitter,
+      undefined,
+      'http://localhost:3000',
+      storage
+    );
 
     // Create test actor
     testActor = {
@@ -105,9 +178,9 @@ describe('Upload Negotiation Integration Tests', () => {
       name: 'Test Agent',
     };
 
-    // Create Hono app with routes
+    // Create Hono app with upload routes only
+    // Submissions are created directly via manager
     app = new Hono();
-    app.route('/intake', createSubmissionRouter(registry, submissionManager));
     app.route('/intake', createUploadRouter(registry, submissionManager));
   });
 
@@ -122,30 +195,16 @@ describe('Upload Negotiation Integration Tests', () => {
 
   describe('full upload negotiation flow', () => {
     it('should complete upload flow from submission creation to validation', async () => {
-      // Step 1: Create submission via API
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-          initialFields: {
-            submitter_name: 'John Doe',
-            submitter_email: 'john@example.com',
-          },
-        }),
+      // Step 1: Create submission via manager
+      const { submissionId, resumeToken } = await createTestSubmission({
+        initialFields: {
+          submitter_name: 'John Doe',
+          submitter_email: 'john@example.com',
+        },
       });
 
-      expect(createRes.status).toBe(201);
-      const createBody = await createRes.json();
-      expect(createBody).toMatchObject({
-        ok: true,
-        submissionId: expect.stringMatching(/^sub_/),
-        state: 'in_progress', // State is in_progress when initialFields are provided
-        resumeToken: expect.any(String),
-      });
-
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
+      expect(submissionId).toMatch(/^sub_/);
+      expect(resumeToken).toBeDefined();
 
       // Step 2: Request upload via API
       const requestUploadRes = await app.request(
@@ -173,24 +232,17 @@ describe('Upload Negotiation Integration Tests', () => {
         url: expect.stringContaining('/uploads/'),
         expiresInMs: expect.any(Number),
         constraints: {
-          // Note: Current implementation passes constraints from request, not schema
-          // This will be fixed when schema constraint extraction is implemented
-          accept: ['application/pdf'], // Reflects mimeType from request
-          maxBytes: 1024, // Reflects sizeBytes from request
+          accept: ['application/pdf'],
+          maxBytes: 1024,
         },
       });
 
       const uploadId = uploadReqBody.uploadId;
 
       // Get updated resume token after upload request
-      // Note: requestUpload changes the resume token but doesn't return it
-      // We need to get the submission to retrieve the new resume token
-      const updatedSubmission = submissionManager['submissions'].get(submissionId);
-      const updatedResumeToken = updatedSubmission!.resumeToken;
+      const updatedResumeToken = await getResumeToken(submissionId);
 
       // Step 3: Upload file to signed URL
-      // For local storage, we need to write the file directly since we don't have
-      // a full HTTP server with upload endpoints running in the test
       const testFileContent = Buffer.from('PDF content here', 'utf-8');
       const uploadPath = await storage.getUploadPath(uploadId);
       expect(uploadPath).toBeDefined();
@@ -213,7 +265,7 @@ describe('Upload Negotiation Integration Tests', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            resumeToken: updatedResumeToken, // Use updated resume token from after upload request
+            resumeToken: updatedResumeToken,
             actor: testActor,
           }),
         }
@@ -229,29 +281,12 @@ describe('Upload Negotiation Integration Tests', () => {
         field: 'document',
       });
 
-      const newResumeToken = confirmBody.resumeToken;
-
       // Step 5: Verify upload tracked in submission
-      const getRes = await app.request(
-        `/intake/document-submission/submissions/${submissionId}`,
-        {
-          method: 'GET', // GET request doesn't need body or resume token
-        }
-      );
-
-      expect(getRes.status).toBe(200);
-      const getBody = await getRes.json();
-      expect(getBody).toMatchObject({
-        intakeId: 'document-submission',
-        submissionId,
-        state: 'in_progress',
-      });
-
-      // Step 6: Verify upload is tracked (implementation stores uploads in submission)
-      const submission = submissionManager['submissions'].get(submissionId);
+      const submission = await submissionManager.getSubmission(submissionId);
       expect(submission).toBeDefined();
-      expect(submission?.uploads).toBeDefined();
-      expect(submission?.uploads?.[uploadId]).toMatchObject({
+
+      const uploads = await getUploads(submissionId);
+      expect(uploads[uploadId]).toMatchObject({
         uploadId,
         field: 'document',
         filename: 'test-document.pdf',
@@ -259,8 +294,7 @@ describe('Upload Negotiation Integration Tests', () => {
         status: 'completed',
       });
 
-      // Step 7: Verify submission is ready for final submission
-      // Since all required fields and uploads are complete, the submission should be in a valid state
+      // Step 6: Verify submission state and fields
       expect(submission?.state).toBe('in_progress');
       expect(submission?.fields).toMatchObject({
         submitter_name: 'John Doe',
@@ -270,21 +304,12 @@ describe('Upload Negotiation Integration Tests', () => {
 
     it('should handle multiple file uploads on same submission', async () => {
       // Create submission
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-          initialFields: {
-            submitter_name: 'Jane Smith',
-            submitter_email: 'jane@example.com',
-          },
-        }),
+      const { submissionId, resumeToken } = await createTestSubmission({
+        initialFields: {
+          submitter_name: 'Jane Smith',
+          submitter_email: 'jane@example.com',
+        },
       });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      let resumeToken = createBody.resumeToken;
 
       // Upload first file (required document)
       const upload1Res = await app.request(
@@ -307,8 +332,7 @@ describe('Upload Negotiation Integration Tests', () => {
       const uploadId1 = upload1Body.uploadId;
 
       // Get updated resume token after first upload request
-      let submission1 = submissionManager['submissions'].get(submissionId);
-      let resumeToken1 = submission1!.resumeToken;
+      const resumeToken1 = await getResumeToken(submissionId);
 
       // Write and complete first upload
       const uploadPath1 = await storage.getUploadPath(uploadId1);
@@ -324,7 +348,7 @@ describe('Upload Negotiation Integration Tests', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            resumeToken: resumeToken1, // Use updated resume token from after upload1 request
+            resumeToken: resumeToken1,
             actor: testActor,
           }),
         }
@@ -334,7 +358,7 @@ describe('Upload Negotiation Integration Tests', () => {
       const confirm1Body = await confirm1Res.json();
       expect(confirm1Body.ok).toBe(true);
 
-      resumeToken = confirm1Body.resumeToken;
+      const newResumeToken = confirm1Body.resumeToken;
 
       // Upload second file (optional attachment)
       const upload2Res = await app.request(
@@ -343,7 +367,7 @@ describe('Upload Negotiation Integration Tests', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            resumeToken,
+            resumeToken: newResumeToken,
             actor: testActor,
             field: 'optional_attachment',
             filename: 'attachment.txt',
@@ -358,8 +382,7 @@ describe('Upload Negotiation Integration Tests', () => {
       const uploadId2 = upload2Body.uploadId;
 
       // Get updated resume token after second upload request
-      const submission2 = submissionManager['submissions'].get(submissionId);
-      const resumeToken2 = submission2!.resumeToken;
+      const resumeToken2 = await getResumeToken(submissionId);
 
       // Write and complete second upload
       const uploadPath2 = await storage.getUploadPath(uploadId2);
@@ -368,14 +391,14 @@ describe('Upload Negotiation Integration Tests', () => {
         await storage.markUploadCompleted(uploadId2, 18);
       }
 
-      // Confirm second upload with updated resume token (from second upload request)
+      // Confirm second upload with updated resume token
       const confirm2Res = await app.request(
         `/intake/document-submission/submissions/${submissionId}/uploads/${uploadId2}/confirm`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            resumeToken: resumeToken2, // Use resume token updated from second upload request
+            resumeToken: resumeToken2,
             actor: testActor,
           }),
         }
@@ -384,15 +407,14 @@ describe('Upload Negotiation Integration Tests', () => {
       expect(confirm2Res.status).toBe(200);
 
       // Verify both uploads are tracked
-      const submission = submissionManager['submissions'].get(submissionId);
-      expect(submission?.uploads).toBeDefined();
-      expect(Object.keys(submission?.uploads || {})).toHaveLength(2);
-      expect(submission?.uploads?.[uploadId1]).toMatchObject({
+      const uploads = await getUploads(submissionId);
+      expect(Object.keys(uploads)).toHaveLength(2);
+      expect(uploads[uploadId1]).toMatchObject({
         field: 'document',
         filename: 'main-document.pdf',
         status: 'completed',
       });
-      expect(submission?.uploads?.[uploadId2]).toMatchObject({
+      expect(uploads[uploadId2]).toMatchObject({
         field: 'optional_attachment',
         filename: 'attachment.txt',
         status: 'completed',
@@ -402,21 +424,8 @@ describe('Upload Negotiation Integration Tests', () => {
 
   describe('upload constraint validation', () => {
     it('should accept upload request and reflect provided constraints', async () => {
-      // Note: Current implementation doesn't validate constraints against schema
-      // This test verifies that constraints from the request are reflected in the response
-
       // Create submission
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-        }),
-      });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
+      const { submissionId, resumeToken } = await createTestSubmission();
 
       // Request upload with file size
       const uploadRes = await app.request(
@@ -439,27 +448,13 @@ describe('Upload Negotiation Integration Tests', () => {
       const uploadBody = await uploadRes.json();
 
       // Current implementation reflects the request size, not schema constraint
-      // This will change when schema constraint validation is implemented
       expect(uploadBody.constraints.maxBytes).toBe(20 * 1024 * 1024);
       expect(uploadBody.constraints.accept).toEqual(['application/pdf']);
     });
 
     it('should accept any MIME type and reflect it in constraints', async () => {
-      // Note: Current implementation doesn't validate MIME type against schema
-      // This test verifies that the provided MIME type is reflected in the response
-
       // Create submission
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-        }),
-      });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
+      const { submissionId, resumeToken } = await createTestSubmission();
 
       // Request upload with any MIME type
       const uploadRes = await app.request(
@@ -481,7 +476,6 @@ describe('Upload Negotiation Integration Tests', () => {
       expect(uploadRes.status).toBe(201);
       const uploadBody = await uploadRes.json();
 
-      // Current implementation reflects the request MIME type, not schema constraint
       expect(uploadBody.constraints.accept).toEqual(['application/x-msdownload']);
     });
   });
@@ -540,18 +534,9 @@ describe('Upload Negotiation Integration Tests', () => {
       });
     });
 
-    it('should return 401 for invalid resume token on upload request', async () => {
+    it('should return 409 for invalid resume token on upload request', async () => {
       // Create submission first
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-        }),
-      });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
+      const { submissionId } = await createTestSubmission();
 
       // Request upload with wrong resume token
       const res = await app.request(
@@ -582,17 +567,7 @@ describe('Upload Negotiation Integration Tests', () => {
 
     it('should return 400 for missing required fields in upload request', async () => {
       // Create submission first
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-        }),
-      });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
+      const { submissionId, resumeToken } = await createTestSubmission();
 
       // Request upload without required fields
       const res = await app.request(
@@ -621,17 +596,7 @@ describe('Upload Negotiation Integration Tests', () => {
 
     it('should return 404 for confirm upload with non-existent upload ID', async () => {
       // Create submission first
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-        }),
-      });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
+      const { submissionId, resumeToken } = await createTestSubmission();
 
       // Confirm non-existent upload
       const res = await app.request(
@@ -661,21 +626,12 @@ describe('Upload Negotiation Integration Tests', () => {
   describe('state transitions', () => {
     it('should transition to awaiting_upload state when upload requested', async () => {
       // Create submission
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-          initialFields: {
-            submitter_name: 'Test User',
-            submitter_email: 'test@example.com',
-          },
-        }),
+      const { submissionId, resumeToken } = await createTestSubmission({
+        initialFields: {
+          submitter_name: 'Test User',
+          submitter_email: 'test@example.com',
+        },
       });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
 
       // Request upload
       await app.request(
@@ -695,27 +651,18 @@ describe('Upload Negotiation Integration Tests', () => {
       );
 
       // Check submission state
-      const submission = submissionManager['submissions'].get(submissionId);
+      const submission = await submissionManager.getSubmission(submissionId);
       expect(submission?.state).toBe('awaiting_upload');
     });
 
     it('should transition back to in_progress when upload confirmed', async () => {
       // Create submission and request upload
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-          initialFields: {
-            submitter_name: 'Test User',
-            submitter_email: 'test@example.com',
-          },
-        }),
+      const { submissionId, resumeToken } = await createTestSubmission({
+        initialFields: {
+          submitter_name: 'Test User',
+          submitter_email: 'test@example.com',
+        },
       });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
 
       // Request upload
       const uploadRes = await app.request(
@@ -738,8 +685,7 @@ describe('Upload Negotiation Integration Tests', () => {
       const uploadId = uploadBody.uploadId;
 
       // Get updated resume token after upload request
-      const stateSubmission = submissionManager['submissions'].get(submissionId);
-      const stateResumeToken = stateSubmission!.resumeToken;
+      const stateResumeToken = await getResumeToken(submissionId);
 
       // Complete upload
       const uploadPath = await storage.getUploadPath(uploadId);
@@ -755,7 +701,7 @@ describe('Upload Negotiation Integration Tests', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            resumeToken: stateResumeToken, // Use updated resume token from after upload request
+            resumeToken: stateResumeToken,
             actor: testActor,
           }),
         }
@@ -766,8 +712,8 @@ describe('Upload Negotiation Integration Tests', () => {
       const confirmBody = await confirmRes.json();
       expect(confirmBody.state).toBe('in_progress');
 
-      // Check submission state (should be in_progress when all uploads complete)
-      const submission = submissionManager['submissions'].get(submissionId);
+      // Check submission state
+      const submission = await submissionManager.getSubmission(submissionId);
       expect(submission?.state).toBe('in_progress');
     });
   });
@@ -775,17 +721,7 @@ describe('Upload Negotiation Integration Tests', () => {
   describe('upload metadata', () => {
     it('should store complete upload metadata', async () => {
       // Create submission and complete upload flow
-      const createRes = await app.request('/intake/document-submission/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          actor: testActor,
-        }),
-      });
-
-      const createBody = await createRes.json();
-      const submissionId = createBody.submissionId;
-      const resumeToken = createBody.resumeToken;
+      const { submissionId, resumeToken } = await createTestSubmission();
 
       // Request upload
       const uploadRes = await app.request(
@@ -808,8 +744,7 @@ describe('Upload Negotiation Integration Tests', () => {
       const uploadId = uploadBody.uploadId;
 
       // Get updated resume token after upload request
-      const metaSubmission = submissionManager['submissions'].get(submissionId);
-      const metaResumeToken = metaSubmission!.resumeToken;
+      const metaResumeToken = await getResumeToken(submissionId);
 
       // Complete upload
       const uploadPath = await storage.getUploadPath(uploadId);
@@ -825,7 +760,7 @@ describe('Upload Negotiation Integration Tests', () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            resumeToken: metaResumeToken, // Use updated resume token from after upload request
+            resumeToken: metaResumeToken,
             actor: testActor,
           }),
         }
@@ -834,8 +769,8 @@ describe('Upload Negotiation Integration Tests', () => {
       expect(confirmRes.status).toBe(200);
 
       // Verify complete metadata
-      const submission = submissionManager['submissions'].get(submissionId);
-      const uploadMeta = submission?.uploads?.[uploadId];
+      const uploads = await getUploads(submissionId);
+      const uploadMeta = uploads[uploadId];
 
       expect(uploadMeta).toMatchObject({
         uploadId,

@@ -16,11 +16,11 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { IntakeRegistry } from '../core/intake-registry.js';
 import { IntakeNotFoundError } from '../core/intake-registry.js';
-import type { SubmissionManager } from '../core/submission-manager.js';
 import type {
+  SubmissionManager,
   RequestUploadInput,
   ConfirmUploadInput,
-} from '../types.js';
+} from '../core/submission-manager.js';
 
 /**
  * Error response structure for upload endpoints

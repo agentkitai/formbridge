@@ -2,11 +2,12 @@
  * Tests for FormBridge API Client
  */
 
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { FormBridgeApiClient, createApiClient, defaultApiClient } from '../client';
 import type { Actor } from '../../types';
 
 // Mock fetch globally
-const mockFetch = jest.fn();
+const mockFetch = vi.fn();
 global.fetch = mockFetch as any;
 
 describe('FormBridgeApiClient', () => {
@@ -19,7 +20,7 @@ describe('FormBridgeApiClient', () => {
 
   beforeEach(() => {
     // Reset mocks before each test
-    mockFetch.mockReset();
+    mockFetch.mockClear();
     client = new FormBridgeApiClient({
       endpoint: 'http://localhost:3000',
     });
@@ -311,6 +312,408 @@ describe('FormBridgeApiClient', () => {
 
       expect(result.ok).toBe(true);
       expect(result.eventId).toBe('evt_default');
+    });
+  });
+
+  describe('approve', () => {
+    it('should approve submission successfully', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'approved',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.approve('sub_123', 'rtok_abc123', testActor, 'Looks good!');
+
+      expect(result.ok).toBe(true);
+      expect(result.submissionId).toBe('sub_123');
+      expect(result.state).toBe('approved');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/api/submissions/sub_123/approve',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({ resumeToken: 'rtok_abc123', actor: testActor, comment: 'Looks good!' }),
+        })
+      );
+    });
+
+    it('should approve submission without comment', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'approved',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.approve('sub_123', 'rtok_abc123', testActor);
+
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({ resumeToken: 'rtok_abc123', actor: testActor, comment: undefined }),
+        })
+      );
+    });
+
+    it('should handle 404 error when submission not found', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({ error: 'Submission not found' }),
+      });
+
+      const result = await client.approve('sub_invalid', 'rtok_abc123', testActor);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Submission not found');
+    });
+
+    it('should handle 403 error when access denied', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: async () => ({ error: 'Access denied' }),
+      });
+
+      const result = await client.approve('sub_123', 'rtok_invalid', testActor);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Access denied');
+    });
+
+    it('should handle network errors', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network error'));
+
+      const result = await client.approve('sub_123', 'rtok_abc123', testActor);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Network error');
+    });
+
+    it('should URL encode submission ID', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub/123',
+        state: 'approved',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      await client.approve('sub/with/special?chars', 'rtok_abc123', testActor);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('sub%2Fwith%2Fspecial%3Fchars'),
+        expect.any(Object)
+      );
+    });
+  });
+
+  describe('reject', () => {
+    it('should reject submission successfully', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'rejected',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.reject('sub_123', 'rtok_abc123', testActor, 'Missing required documents');
+
+      expect(result.ok).toBe(true);
+      expect(result.submissionId).toBe('sub_123');
+      expect(result.state).toBe('rejected');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/api/submissions/sub_123/reject',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({
+            resumeToken: 'rtok_abc123',
+            actor: testActor,
+            reason: 'Missing required documents',
+            comment: undefined
+          }),
+        })
+      );
+    });
+
+    it('should reject submission with comment', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'rejected',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.reject('sub_123', 'rtok_abc123', testActor, 'Invalid data', 'Please review and resubmit');
+
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            resumeToken: 'rtok_abc123',
+            actor: testActor,
+            reason: 'Invalid data',
+            comment: 'Please review and resubmit'
+          }),
+        })
+      );
+    });
+
+    it('should handle 404 error when submission not found', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({ error: 'Submission not found' }),
+      });
+
+      const result = await client.reject('sub_invalid', 'rtok_abc123', testActor, 'Reason');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Submission not found');
+    });
+
+    it('should handle 409 error for invalid state', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 409,
+        statusText: 'Conflict',
+        json: async () => ({ error: 'Submission is not in needs_review state' }),
+      });
+
+      const result = await client.reject('sub_123', 'rtok_abc123', testActor, 'Reason');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Submission is not in needs_review state');
+    });
+
+    it('should handle network errors', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Network failure'));
+
+      const result = await client.reject('sub_123', 'rtok_abc123', testActor, 'Reason');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Network failure');
+    });
+
+    it('should handle non-Error exceptions', async () => {
+      mockFetch.mockRejectedValueOnce('Unknown error');
+
+      const result = await client.reject('sub_123', 'rtok_abc123', testActor, 'Reason');
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Unknown error occurred');
+    });
+  });
+
+  describe('requestChanges', () => {
+    it('should request changes successfully', async () => {
+      const fieldComments = [
+        { fieldPath: 'vendorName', comment: 'Please provide full legal name' },
+        { fieldPath: 'email', comment: 'Invalid email format', suggestedValue: 'user@example.com' },
+      ];
+
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'draft',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.requestChanges('sub_123', 'rtok_abc123', testActor, fieldComments);
+
+      expect(result.ok).toBe(true);
+      expect(result.submissionId).toBe('sub_123');
+      expect(result.state).toBe('draft');
+      expect(mockFetch).toHaveBeenCalledWith(
+        'http://localhost:3000/api/submissions/sub_123/request-changes',
+        expect.objectContaining({
+          method: 'POST',
+          headers: expect.objectContaining({
+            'Content-Type': 'application/json',
+          }),
+          body: JSON.stringify({
+            resumeToken: 'rtok_abc123',
+            actor: testActor,
+            fieldComments,
+            comment: undefined
+          }),
+        })
+      );
+    });
+
+    it('should request changes with overall comment', async () => {
+      const fieldComments = [
+        { fieldPath: 'vendorName', comment: 'Please provide full legal name' },
+      ];
+
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'draft',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.requestChanges('sub_123', 'rtok_abc123', testActor, fieldComments, 'Please address all comments');
+
+      expect(result.ok).toBe(true);
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.objectContaining({
+          body: JSON.stringify({
+            resumeToken: 'rtok_abc123',
+            actor: testActor,
+            fieldComments,
+            comment: 'Please address all comments'
+          }),
+        })
+      );
+    });
+
+    it('should handle empty field comments array', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub_123',
+        state: 'draft',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      const result = await client.requestChanges('sub_123', 'rtok_abc123', testActor, []);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('should handle 404 error when submission not found', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 404,
+        statusText: 'Not Found',
+        json: async () => ({ error: 'Submission not found' }),
+      });
+
+      const result = await client.requestChanges('sub_invalid', 'rtok_abc123', testActor, []);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Submission not found');
+    });
+
+    it('should handle 403 error when access denied', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        statusText: 'Forbidden',
+        json: async () => ({ error: 'Invalid resume token' }),
+      });
+
+      const result = await client.requestChanges('sub_123', 'rtok_invalid', testActor, []);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Invalid resume token');
+    });
+
+    it('should handle network errors', async () => {
+      mockFetch.mockRejectedValueOnce(new Error('Connection timeout'));
+
+      const result = await client.requestChanges('sub_123', 'rtok_abc123', testActor, []);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toBe('Connection timeout');
+    });
+
+    it('should handle JSON parse errors in error response', async () => {
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 400,
+        statusText: 'Bad Request',
+        json: async () => {
+          throw new Error('Invalid JSON');
+        },
+      });
+
+      const result = await client.requestChanges('sub_123', 'rtok_abc123', testActor, []);
+
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain('HTTP 400');
+    });
+
+    it('should URL encode submission ID', async () => {
+      const mockResponse = {
+        ok: true,
+        submissionId: 'sub/123',
+        state: 'draft',
+        resumeToken: 'rtok_abc123',
+      };
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => mockResponse,
+      });
+
+      await client.requestChanges('sub/with/special?chars', 'rtok_abc123', testActor, []);
+
+      expect(mockFetch).toHaveBeenCalledWith(
+        expect.stringContaining('sub%2Fwith%2Fspecial%3Fchars'),
+        expect.any(Object)
+      );
     });
   });
 });

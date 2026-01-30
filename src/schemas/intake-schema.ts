@@ -27,6 +27,14 @@ export interface ApprovalGate {
   triggerFields?: string[];
   /** Whether this gate is required (defaults to true) */
   required?: boolean;
+  /** List of reviewer IDs who can approve/reject submissions */
+  reviewers?: string[];
+  /** Number of approvals required (defaults to 1) */
+  approvalLevel?: number;
+  /** Optional auto-approval threshold for confidence scores */
+  autoApproveThreshold?: number;
+  /** Optional notification configuration for reviewers */
+  notificationConfig?: Record<string, unknown>;
 }
 
 /**

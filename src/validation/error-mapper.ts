@@ -7,19 +7,19 @@
  */
 
 import { z } from 'zod';
-import type { IntakeError, FieldError, NextAction, IntakeErrorType } from '../types/intake-contract.js';
+import type { ValidationErrorResponse, FieldError, NextAction, IntakeErrorType } from '../types/intake-contract.js';
 
 /**
- * Maps a Zod validation error to an IntakeError
+ * Maps a Zod validation error to a ValidationErrorResponse
  *
  * This function takes a ZodError from validation and converts it into
- * a structured IntakeError following the Intake Contract specification.
- * It categorizes each Zod error by type (missing, invalid, etc.) and
+ * a structured ValidationErrorResponse following the Intake Contract specification.
+ * It categorizes each Zod error by type (missing, invalid, needs_approval, etc.) and
  * generates appropriate next actions to guide error resolution.
  *
  * @param zodError - The Zod validation error to map
  * @param options - Optional configuration for error mapping
- * @returns A structured IntakeError with field errors and next actions
+ * @returns A structured ValidationErrorResponse with field errors and next actions
  *
  * @example
  * ```typescript
@@ -36,8 +36,8 @@ import type { IntakeError, FieldError, NextAction, IntakeErrorType } from '../ty
  * const result = validateSubmission(schema, { name: '', age: 15 });
  *
  * if (!result.success) {
- *   const intakeError = mapToIntakeError(result.error);
- *   console.log('Error:', intakeError);
+ *   const validationError = mapToIntakeError(result.error);
+ *   console.log('Error:', validationError);
  *   // {
  *   //   type: 'invalid',
  *   //   message: 'Validation failed for 3 fields',
@@ -50,10 +50,11 @@ import type { IntakeError, FieldError, NextAction, IntakeErrorType } from '../ty
 export function mapToIntakeError(
   zodError: z.ZodError,
   options?: ErrorMapperOptions
-): IntakeError {
+): ValidationErrorResponse {
   const fieldErrors: FieldError[] = [];
   const missingFields: string[] = [];
   const invalidFields: string[] = [];
+  const approvalFields: string[] = [];
 
   // Process each Zod issue into a FieldError
   for (const issue of zodError.issues) {
@@ -75,17 +76,22 @@ export function mapToIntakeError(
       missingFields.push(fieldPath);
     } else if (errorType === 'invalid') {
       invalidFields.push(fieldPath);
+    } else if (errorType === 'needs_approval') {
+      approvalFields.push(fieldPath);
     }
   }
 
-  // Determine overall error type (prioritize missing over invalid)
-  const overallType: IntakeErrorType = missingFields.length > 0 ? 'missing' : 'invalid';
+  // Determine overall error type (prioritize missing > needs_approval > invalid)
+  const overallType: IntakeErrorType =
+    missingFields.length > 0 ? 'missing' :
+    approvalFields.length > 0 ? 'needs_approval' :
+    'invalid';
 
   // Generate high-level message
   const message = generateErrorMessage(fieldErrors, overallType);
 
   // Generate next actions
-  const nextActions = generateNextActions(missingFields, invalidFields, fieldErrors);
+  const nextActions = generateNextActions(missingFields, invalidFields, approvalFields, fieldErrors);
 
   return {
     type: overallType,
@@ -246,6 +252,11 @@ function generateErrorMessage(fieldErrors: FieldError[], overallType: IntakeErro
     return `Validation failed: ${missingCount} required ${fieldWord} missing, ${count - missingCount} ${fieldWord} invalid`;
   }
 
+  if (overallType === 'needs_approval') {
+    const approvalCount = fieldErrors.filter(e => e.type === 'needs_approval').length;
+    return `Submission requires approval for ${approvalCount} ${fieldWord}`;
+  }
+
   return `Validation failed for ${count} ${fieldWord}`;
 }
 
@@ -254,15 +265,26 @@ function generateErrorMessage(fieldErrors: FieldError[], overallType: IntakeErro
  *
  * @param missingFields - List of missing field names
  * @param invalidFields - List of invalid field names
+ * @param approvalFields - List of fields requiring approval
  * @param allErrors - All field errors
  * @returns Array of suggested next actions
  */
 function generateNextActions(
   missingFields: string[],
   invalidFields: string[],
+  approvalFields: string[],
   allErrors: FieldError[]
 ): NextAction[] {
   const actions: NextAction[] = [];
+
+  // Action for fields requiring approval (highest priority)
+  if (approvalFields.length > 0) {
+    actions.push({
+      type: 'wait_for_review',
+      description: `Submission requires review for ${approvalFields.length} ${approvalFields.length === 1 ? 'field' : 'fields'}`,
+      fields: approvalFields
+    });
+  }
 
   // Action for missing fields
   if (missingFields.length > 0) {
@@ -324,12 +346,12 @@ function generateNextActions(
  *
  * @param zodErrors - Array of Zod errors to map
  * @param options - Optional configuration for error mapping
- * @returns A single IntakeError combining all validation failures
+ * @returns A single ValidationErrorResponse combining all validation failures
  */
 export function mapMultipleToIntakeError(
   zodErrors: z.ZodError[],
   options?: ErrorMapperOptions
-): IntakeError {
+): ValidationErrorResponse {
   // Combine all issues from all errors
   const allIssues = zodErrors.flatMap(err => err.issues);
 

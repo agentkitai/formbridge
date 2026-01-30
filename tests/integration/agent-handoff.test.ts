@@ -78,7 +78,7 @@ describe("Agent-to-Human Handoff Integration", () => {
   beforeEach(() => {
     store = new InMemorySubmissionStore();
     eventEmitter = new InMemoryEventEmitter();
-    manager = new SubmissionManager(store, eventEmitter, "http://localhost:3000");
+    manager = new SubmissionManager(store, eventEmitter, undefined, "http://localhost:3000");
     mcpServer = createMcpServer(manager);
   });
 
@@ -506,6 +506,7 @@ describe("Agent-to-Human Handoff Integration", () => {
       const customManager = new SubmissionManager(
         store,
         eventEmitter,
+        undefined,
         "https://forms.example.com"
       );
 

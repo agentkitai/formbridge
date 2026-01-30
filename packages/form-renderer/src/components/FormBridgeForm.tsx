@@ -5,6 +5,8 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { FieldWrapper } from './FieldWrapper';
+import { ReviewerView } from './ReviewerView';
+import type { ReviewSubmission } from './ReviewerView';
 import type { Actor, FieldAttribution } from '../types';
 
 /**
@@ -55,6 +57,10 @@ export interface FormBridgeFormProps {
   readOnly?: boolean;
   /** Field-level errors */
   errors?: Record<string, string>;
+  /** Optional submission object for review workflows */
+  submission?: ReviewSubmission;
+  /** Optional slot for approval action buttons (used in reviewer mode) */
+  approvalActions?: React.ReactNode;
 }
 
 /**
@@ -66,8 +72,13 @@ export interface FormBridgeFormProps {
  * field, enabling humans to see pre-filled data from agents and complete
  * remaining fields.
  *
+ * When a submission is provided and is in the 'needs_review' state, this
+ * component automatically renders the ReviewerView component instead of the
+ * regular form, enabling approval workflow functionality.
+ *
  * @example
  * ```tsx
+ * // Regular form mode
  * <FormBridgeForm
  *   schema={{
  *     type: 'object',
@@ -88,6 +99,16 @@ export interface FormBridgeFormProps {
  *   onFieldChange={(path, value, actor) => console.log('Field changed', path, value)}
  *   onSubmit={(fields) => console.log('Form submitted', fields)}
  * />
+ *
+ * // Reviewer mode (when submission is in needs_review state)
+ * <FormBridgeForm
+ *   schema={schema}
+ *   fields={submission.fields}
+ *   fieldAttribution={submission.fieldAttribution}
+ *   currentActor={{ kind: 'human', id: 'reviewer_789', name: 'Jane Doe' }}
+ *   submission={submission}
+ *   approvalActions={<ApprovalActions onApprove={...} onReject={...} />}
+ * />
  * ```
  */
 export const FormBridgeForm: React.FC<FormBridgeFormProps> = ({
@@ -100,6 +121,8 @@ export const FormBridgeForm: React.FC<FormBridgeFormProps> = ({
   className = '',
   readOnly = false,
   errors = {},
+  submission,
+  approvalActions,
 }) => {
   const [localFields, setLocalFields] = useState<Record<string, unknown>>(fields);
 
@@ -107,6 +130,19 @@ export const FormBridgeForm: React.FC<FormBridgeFormProps> = ({
   useEffect(() => {
     setLocalFields(fields);
   }, [fields]);
+
+  // If submission exists and is in needs_review state, render ReviewerView
+  if (submission && submission.state === 'needs_review') {
+    return (
+      <ReviewerView
+        submission={submission}
+        schema={schema}
+        reviewer={currentActor}
+        className={className}
+        approvalActions={approvalActions}
+      />
+    );
+  }
 
   /**
    * Handle field value change
