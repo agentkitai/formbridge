@@ -85,6 +85,15 @@ const HomePage: React.FC = () => {
             This demo showcases how an AI agent can start a form submission, fill the fields it knows,
             and generate a shareable resume URL for a human to complete the remaining fields.
           </p>
+          <ul>
+            <li><strong>String fields</strong> with various formats (email, URL, tel)</li>
+            <li><strong>Number fields</strong> (integer and decimal) with min/max constraints</li>
+            <li><strong>Boolean fields</strong> (checkboxes)</li>
+            <li><strong>Enum fields</strong> as select dropdowns and radio buttons</li>
+            <li><strong>Nested object fields</strong> (Address section)</li>
+            <li><strong>Array fields</strong> for repeatable data (Certifications, Service Categories)</li>
+            <li><strong>File upload fields</strong> with drag-and-drop support and constraints</li>
+          </ul>
         </section>
 
         <section className="demo-section demo-simulation">

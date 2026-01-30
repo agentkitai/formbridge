@@ -159,6 +159,19 @@ export interface ArrayFieldProps extends BaseFieldProps {
   maxItems?: number;
 }
 
+export interface FileFieldProps extends BaseFieldProps {
+  value: File | File[] | null;
+  onChange: (value: File | File[] | null) => void;
+  /** Maximum file size in bytes */
+  maxSize?: number;
+  /** Allowed MIME types */
+  allowedTypes?: string[];
+  /** Maximum number of files (if multiple allowed) */
+  maxCount?: number;
+  /** Whether multiple files are allowed */
+  multiple?: boolean;
+}
+
 /**
  * Hook return types
  */
