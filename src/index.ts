@@ -114,3 +114,4 @@ export type {
 export { createIntakeRouter } from './routes/intake.js';
 export { createSubmissionRouter } from './routes/submissions.js';
 export { createUploadRouter } from './routes/uploads.js';
+export { createEventRouter } from './routes/events.js';
