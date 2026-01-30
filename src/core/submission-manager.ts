@@ -16,6 +16,7 @@ import type {
 import type { Submission, FieldAttribution } from "../types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";
+import { Validator } from "../validation/validator.js";
 import { randomUUID } from "crypto";
 
 export class SubmissionNotFoundError extends Error {
@@ -104,12 +105,17 @@ export interface ConfirmUploadOutput {
  * with field-level actor attribution for audit trails
  */
 export class SubmissionManager {
+  private validator: Validator;
+
   constructor(
     private store: SubmissionStore,
     private eventEmitter: EventEmitter,
     private baseUrl: string = "http://localhost:3000",
     private storageBackend?: StorageBackend
-  ) {}
+  ) {
+    // Initialize validator with event emitter for audit trail
+    this.validator = new Validator(eventEmitter);
+  }
 
   /**
    * Create a new submission

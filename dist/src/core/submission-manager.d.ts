@@ -57,6 +57,7 @@ export declare class SubmissionManager {
     private eventEmitter;
     private baseUrl;
     private storageBackend?;
+    private validator;
     constructor(store: SubmissionStore, eventEmitter: EventEmitter, baseUrl?: string, storageBackend?: StorageBackend | undefined);
     createSubmission(request: CreateSubmissionRequest): Promise<CreateSubmissionResponse>;
     setFields(request: SetFieldsRequest): Promise<CreateSubmissionResponse | IntakeError>;

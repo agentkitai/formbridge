@@ -1,3 +1,4 @@
+import { Validator } from "../validation/validator.js";
 import { randomUUID } from "crypto";
 export class SubmissionNotFoundError extends Error {
     constructor(identifier) {
@@ -22,11 +23,13 @@ export class SubmissionManager {
     eventEmitter;
     baseUrl;
     storageBackend;
+    validator;
     constructor(store, eventEmitter, baseUrl = "http://localhost:3000", storageBackend) {
         this.store = store;
         this.eventEmitter = eventEmitter;
         this.baseUrl = baseUrl;
         this.storageBackend = storageBackend;
+        this.validator = new Validator(eventEmitter);
     }
     async createSubmission(request) {
         const submissionId = `sub_${randomUUID()}`;
@@ -122,11 +125,12 @@ export class SubmissionManager {
             return error;
         }
         const now = new Date().toISOString();
-        const updatedFields = [];
+        const fieldUpdates = [];
         Object.entries(request.fields).forEach(([fieldPath, value]) => {
+            const oldValue = submission.fields[fieldPath];
             submission.fields[fieldPath] = value;
             submission.fieldAttribution[fieldPath] = request.actor;
-            updatedFields.push(fieldPath);
+            fieldUpdates.push({ fieldPath, oldValue, newValue: value });
         });
         submission.updatedAt = now;
         submission.updatedBy = request.actor;
@@ -134,7 +138,7 @@ export class SubmissionManager {
             submission.state = "in_progress";
         }
         await this.store.save(submission);
-        for (const fieldPath of updatedFields) {
+        for (const fieldUpdate of fieldUpdates) {
             const event = {
                 eventId: `evt_${randomUUID()}`,
                 type: "field.updated",
@@ -143,8 +147,9 @@ export class SubmissionManager {
                 actor: request.actor,
                 state: submission.state,
                 payload: {
-                    fieldPath,
-                    value: request.fields[fieldPath],
+                    fieldPath: fieldUpdate.fieldPath,
+                    oldValue: fieldUpdate.oldValue,
+                    newValue: fieldUpdate.newValue,
                 },
             };
             submission.events.push(event);

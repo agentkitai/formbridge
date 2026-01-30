@@ -1506,20 +1506,20 @@ export declare const UploadStatusSchema: z.ZodObject<{
     uploadedAt: z.ZodOptional<z.ZodString>;
 }, "strip", z.ZodTypeAny, {
     field: string;
+    status: "completed" | "failed" | "pending";
     uploadId: string;
     filename: string;
     sizeBytes: number;
     mimeType: string;
-    status: "completed" | "failed" | "pending";
     url?: string | undefined;
     uploadedAt?: string | undefined;
 }, {
     field: string;
+    status: "completed" | "failed" | "pending";
     uploadId: string;
     filename: string;
     sizeBytes: number;
     mimeType: string;
-    status: "completed" | "failed" | "pending";
     url?: string | undefined;
     uploadedAt?: string | undefined;
 }>;
@@ -1584,20 +1584,20 @@ export declare const SubmissionSchema: z.ZodObject<{
         uploadedAt: z.ZodOptional<z.ZodString>;
     }, "strip", z.ZodTypeAny, {
         field: string;
+        status: "completed" | "failed" | "pending";
         uploadId: string;
         filename: string;
         sizeBytes: number;
         mimeType: string;
-        status: "completed" | "failed" | "pending";
         url?: string | undefined;
         uploadedAt?: string | undefined;
     }, {
         field: string;
+        status: "completed" | "failed" | "pending";
         uploadId: string;
         filename: string;
         sizeBytes: number;
         mimeType: string;
-        status: "completed" | "failed" | "pending";
         url?: string | undefined;
         uploadedAt?: string | undefined;
     }>>>;
@@ -1621,11 +1621,11 @@ export declare const SubmissionSchema: z.ZodObject<{
     resumeToken: string;
     uploads?: Record<string, {
         field: string;
+        status: "completed" | "failed" | "pending";
         uploadId: string;
         filename: string;
         sizeBytes: number;
         mimeType: string;
-        status: "completed" | "failed" | "pending";
         url?: string | undefined;
         uploadedAt?: string | undefined;
     }> | undefined;
@@ -1649,11 +1649,11 @@ export declare const SubmissionSchema: z.ZodObject<{
     resumeToken: string;
     uploads?: Record<string, {
         field: string;
+        status: "completed" | "failed" | "pending";
         uploadId: string;
         filename: string;
         sizeBytes: number;
         mimeType: string;
-        status: "completed" | "failed" | "pending";
         url?: string | undefined;
         uploadedAt?: string | undefined;
     }> | undefined;
