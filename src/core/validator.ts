@@ -213,7 +213,7 @@ export class Validator {
    * @returns Validation errors for file fields
    */
   validateUploads(
-    data: Record<string, unknown>,
+    _data: Record<string, unknown>,
     schema: JSONSchema,
     uploads: Record<string, UploadStatus>
   ): { errors: FieldError[]; missingFields: string[]; invalidFields: string[] } {
@@ -412,7 +412,7 @@ export class Validator {
   /**
    * Converts a single Ajv error to our FieldError format.
    */
-  private convertSingleAjvError(error: ErrorObject, schema: JSONSchema): FieldError {
+  private convertSingleAjvError(error: ErrorObject, _schema: JSONSchema): FieldError {
     // Extract field path (remove leading slash)
     const path = error.instancePath ? error.instancePath.slice(1).replace(/\//g, '.') : '';
 
@@ -479,7 +479,7 @@ export class Validator {
           code: 'too_short',
           message: `Value is too short (minimum length: ${params.limit})`,
           expected: `at least ${params.limit} characters`,
-          received: `${error.data?.length ?? 0} characters`,
+          received: `${(error.data as any)?.length ?? 0} characters`,
         };
 
       case 'maxLength':
@@ -487,7 +487,7 @@ export class Validator {
           code: 'too_long',
           message: `Value is too long (maximum length: ${params.limit})`,
           expected: `at most ${params.limit} characters`,
-          received: `${error.data?.length ?? 0} characters`,
+          received: `${(error.data as any)?.length ?? 0} characters`,
         };
 
       case 'minimum':

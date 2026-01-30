@@ -19,9 +19,7 @@ import { IntakeNotFoundError } from '../core/intake-registry.js';
 import type { SubmissionManager } from '../core/submission-manager.js';
 import type {
   RequestUploadInput,
-  RequestUploadOutput,
   ConfirmUploadInput,
-  ConfirmUploadOutput,
 } from '../types.js';
 
 /**

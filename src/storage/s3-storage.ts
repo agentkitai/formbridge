@@ -322,6 +322,11 @@ export class S3StorageBackend implements StorageBackend {
       metadata.uploadedAt = response.LastModified?.toISOString() ?? new Date().toISOString();
       this.uploads.set(uploadId, metadata);
 
+      // Ensure required properties are set before returning
+      if (!metadata.size || !metadata.uploadedAt) {
+        throw new Error(`Upload metadata incomplete for ${uploadId}`);
+      }
+
       return {
         status: 'completed',
         file: {

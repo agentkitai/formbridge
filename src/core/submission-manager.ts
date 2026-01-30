@@ -590,7 +590,7 @@ export class SubmissionManager {
    * Determines the appropriate event type for a state transition.
    */
   private getEventTypeForStateTransition(
-    oldState: SubmissionState,
+    _oldState: SubmissionState,
     newState: SubmissionState
   ): IntakeEventType {
     if (newState === 'submitted') return 'submission.submitted';
