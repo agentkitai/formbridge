@@ -82,6 +82,7 @@ describe('Events Route', () => {
       // Mock Express request/response
       const req = {
         params: { id: submissionId },
+        query: {},
       } as any;
 
       let responseData: any;
@@ -124,6 +125,7 @@ describe('Events Route', () => {
     it('should return 404 for non-existent submission', async () => {
       const req = {
         params: { id: 'sub_nonexistent' },
+        query: {},
       } as any;
 
       let responseData: any;
@@ -152,6 +154,7 @@ describe('Events Route', () => {
     it('should return 400 if submission ID is missing', async () => {
       const req = {
         params: {},
+        query: {},
       } as any;
 
       let responseData: any;
@@ -175,6 +178,297 @@ describe('Events Route', () => {
       expect(responseStatus).toBe(400);
       expect(responseData).toBeDefined();
       expect(responseData.error).toBe('Missing submission ID');
+    });
+
+    it('should filter events by type', async () => {
+      // Create a submission with multiple events
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Add more events (field.updated)
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Mock request with type filter
+      const req = {
+        params: { id: submissionId },
+        query: { type: 'field.updated' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.getEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseData.events).toBeDefined();
+      expect(Array.isArray(responseData.events)).toBe(true);
+
+      // All events should be of type 'field.updated'
+      responseData.events.forEach((event: IntakeEvent) => {
+        expect(event.type).toBe('field.updated');
+      });
+    });
+
+    it('should filter events by multiple types (comma-separated)', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Add field update
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Mock request with multiple type filters
+      const req = {
+        params: { id: submissionId },
+        query: { type: 'submission.created,field.updated' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.getEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseData.events).toBeDefined();
+      expect(Array.isArray(responseData.events)).toBe(true);
+      expect(responseData.events.length).toBeGreaterThan(0);
+
+      // All events should be either 'submission.created' or 'field.updated'
+      responseData.events.forEach((event: IntakeEvent) => {
+        expect(['submission.created', 'field.updated']).toContain(event.type);
+      });
+    });
+
+    it('should filter events by actorKind', async () => {
+      const humanActor: Actor = {
+        kind: 'human',
+        id: 'user-123',
+        name: 'Human User',
+      };
+
+      // Create submission with agent actor
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Add field update with human actor
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: humanActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Filter by agent actor
+      const req = {
+        params: { id: submissionId },
+        query: { actorKind: 'agent' },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.getEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseData.events).toBeDefined();
+
+      // All events should have actor.kind === 'agent'
+      responseData.events.forEach((event: IntakeEvent) => {
+        expect(event.actor.kind).toBe('agent');
+      });
+    });
+
+    it('should filter events by time range', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Get the current timestamp
+      const now = new Date().toISOString();
+
+      // Add another event after recording timestamp
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Filter events after 'now'
+      const req = {
+        params: { id: submissionId },
+        query: { since: now },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.getEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseData.events).toBeDefined();
+
+      // All returned events should be after 'now'
+      responseData.events.forEach((event: IntakeEvent) => {
+        expect(new Date(event.ts).getTime()).toBeGreaterThanOrEqual(new Date(now).getTime());
+      });
+    });
+
+    it('should combine multiple filters', async () => {
+      // Create a submission
+      const createResponse = await manager.createSubmission({
+        intakeId: 'intake_test',
+        actor: agentActor,
+        initialFields: {
+          name: 'Test',
+        },
+      });
+
+      const submissionId = createResponse.submissionId;
+
+      // Add multiple events
+      await manager.setFields({
+        submissionId,
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
+        fields: {
+          email: 'test@example.com',
+        },
+      });
+
+      // Filter by type AND actorKind
+      const req = {
+        params: { id: submissionId },
+        query: {
+          type: 'field.updated',
+          actorKind: 'agent',
+        },
+      } as any;
+
+      let responseData: any;
+      let responseStatus: number = 0;
+
+      const res = {
+        status(code: number) {
+          responseStatus = code;
+          return this;
+        },
+        json(data: any) {
+          responseData = data;
+          return this;
+        },
+      } as any;
+
+      const next = () => {};
+
+      await routes.getEvents(req, res, next);
+
+      expect(responseStatus).toBe(200);
+      expect(responseData.events).toBeDefined();
+
+      // All events should match both filters
+      responseData.events.forEach((event: IntakeEvent) => {
+        expect(event.type).toBe('field.updated');
+        expect(event.actor.kind).toBe('agent');
+      });
     });
   });
 });

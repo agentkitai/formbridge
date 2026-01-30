@@ -6,6 +6,7 @@
 import express from "express";
 import { SubmissionManager } from "./core/submission-manager";
 import { createSubmissionRoutes } from "./routes/submissions";
+import { createEventRoutes } from "./routes/events";
 
 // Mock store and event emitter for testing
 class MockStore {
@@ -46,6 +47,9 @@ const manager = new SubmissionManager(store, eventEmitter, "http://localhost:300
 // Setup routes
 const routes = createSubmissionRoutes(manager);
 app.post("/submissions/:id/handoff", routes.generateHandoff);
+
+const eventRoutes = createEventRoutes(manager);
+app.get("/submissions/:id/events", eventRoutes.getEvents);
 
 // Health check
 app.get("/health", (req, res) => {
