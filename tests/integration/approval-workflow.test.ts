@@ -310,13 +310,41 @@ describe('Approval Workflow End-to-End', () => {
         createResponse.submissionId
       );
       expect(rejectedSubmission!.state).toBe('rejected');
+      expect(rejectedSubmission!.updatedBy).toEqual(reviewerActor);
 
+      // Verify review.rejected event was emitted
       const reviewRejectedEvents =
         eventEmitter.getEventsByType('review.rejected');
       expect(reviewRejectedEvents).toHaveLength(1);
+      expect(reviewRejectedEvents[0].submissionId).toBe(
+        createResponse.submissionId
+      );
+      expect(reviewRejectedEvents[0].actor).toEqual(reviewerActor);
+      expect(reviewRejectedEvents[0].state).toBe('rejected');
       expect(reviewRejectedEvents[0].payload?.reason).toBe(
         'Tax ID format is invalid'
       );
+      expect(reviewRejectedEvents[0].payload?.comment).toBe(
+        'Please provide a valid EIN format (XX-XXXXXXX)'
+      );
+
+      // Verify rejection reason is stored in submission metadata
+      const reviewDecisions = (rejectedSubmission as any).reviewDecisions;
+      expect(reviewDecisions).toBeDefined();
+      expect(reviewDecisions).toHaveLength(1);
+      expect(reviewDecisions[0].action).toBe('reject');
+      expect(reviewDecisions[0].actor).toEqual(reviewerActor);
+      expect(reviewDecisions[0].reason).toBe('Tax ID format is invalid');
+      expect(reviewDecisions[0].comment).toBe(
+        'Please provide a valid EIN format (XX-XXXXXXX)'
+      );
+      expect(reviewDecisions[0].timestamp).toBeDefined();
+
+      // Verify all events are in submission event history
+      expect(rejectedSubmission!.events).toHaveLength(3);
+      expect(rejectedSubmission!.events[0].type).toBe('submission.created');
+      expect(rejectedSubmission!.events[1].type).toBe('review.requested');
+      expect(rejectedSubmission!.events[2].type).toBe('review.rejected');
     });
 
     it('should handle request_changes workflow: needs_review → draft', async () => {
