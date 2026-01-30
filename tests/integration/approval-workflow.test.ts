@@ -425,6 +425,233 @@ describe('Approval Workflow End-to-End', () => {
       expect(requestChangesEvent?.payload?.fieldComments).toHaveLength(2);
     });
 
+    it('should handle complete request_changes cycle with field-level comments', async () => {
+      // Step 1: Setup intake with approval gates
+      const intake: IntakeDefinition = {
+        id: 'vendor_onboarding',
+        version: '1.0.0',
+        name: 'Vendor Onboarding',
+        description: 'Onboard new vendors with compliance review',
+        schema: {},
+        approvalGates: [
+          {
+            name: 'compliance_review',
+            reviewers: ['reviewer-001'],
+            requiredApprovals: 1,
+          },
+        ],
+        destination: {
+          kind: 'webhook',
+          url: 'https://api.example.com/vendors',
+        },
+      };
+
+      intakeRegistry.register(intake);
+
+      // Step 2: Agent creates and submits initial submission
+      const createResponse = await submissionManager.createSubmission({
+        intakeId: 'vendor_onboarding',
+        actor: agentActor,
+        initialFields: {
+          companyName: 'Acme Corporation',
+          taxId: '12-345678',
+          address: '123 Main St',
+          email: 'contact@acme',
+        },
+      });
+
+      expect(createResponse.ok).toBe(true);
+      const submissionId = createResponse.submissionId;
+      const resumeToken = createResponse.resumeToken;
+
+      const submitResponse = await submissionManager.submit({
+        submissionId,
+        resumeToken,
+        idempotencyKey: 'idem_submit_1',
+        actor: agentActor,
+      });
+
+      // Step 3: Verify submission transitions to needs_review
+      expect(submitResponse.ok).toBe(false);
+      if (!submitResponse.ok) {
+        expect(submitResponse.state).toBe('needs_review');
+        expect(submitResponse.error.type).toBe('needs_approval');
+      }
+
+      // Step 4: Reviewer requests changes on specific fields
+      const requestChangesResponse = await approvalManager.requestChanges({
+        submissionId,
+        resumeToken,
+        actor: reviewerActor,
+        fieldComments: [
+          {
+            fieldPath: 'taxId',
+            comment: 'Tax ID format is incorrect. Should be XX-XXXXXXX',
+            suggestedValue: '12-3456789',
+          },
+          {
+            fieldPath: 'address',
+            comment: 'Address is incomplete. Please include city and state',
+            suggestedValue: '123 Main St, Springfield, IL 62701',
+          },
+          {
+            fieldPath: 'email',
+            comment: 'Email address is invalid',
+            suggestedValue: 'contact@acme.com',
+          },
+        ],
+        comment: 'Please fix the validation issues noted in the field comments',
+      });
+
+      expect(requestChangesResponse.ok).toBe(true);
+      if (requestChangesResponse.ok) {
+        expect(requestChangesResponse.state).toBe('draft');
+      }
+
+      // Step 5: Verify field-level comments are stored in submission
+      const submissionAfterChanges = await store.get(submissionId);
+      expect(submissionAfterChanges).toBeDefined();
+      expect(submissionAfterChanges!.state).toBe('draft');
+
+      // Verify review decision with field comments is recorded
+      const reviewDecisions = (submissionAfterChanges as any).reviewDecisions;
+      expect(reviewDecisions).toBeDefined();
+      expect(reviewDecisions).toHaveLength(1);
+      expect(reviewDecisions[0].action).toBe('request_changes');
+      expect(reviewDecisions[0].actor).toEqual(reviewerActor);
+      expect(reviewDecisions[0].comment).toBe(
+        'Please fix the validation issues noted in the field comments'
+      );
+      expect(reviewDecisions[0].fieldComments).toBeDefined();
+      expect(reviewDecisions[0].fieldComments).toHaveLength(3);
+
+      // Verify each field comment is stored correctly
+      const taxIdComment = reviewDecisions[0].fieldComments.find(
+        (fc: any) => fc.fieldPath === 'taxId'
+      );
+      expect(taxIdComment).toBeDefined();
+      expect(taxIdComment.comment).toBe(
+        'Tax ID format is incorrect. Should be XX-XXXXXXX'
+      );
+      expect(taxIdComment.suggestedValue).toBe('12-3456789');
+
+      const addressComment = reviewDecisions[0].fieldComments.find(
+        (fc: any) => fc.fieldPath === 'address'
+      );
+      expect(addressComment).toBeDefined();
+      expect(addressComment.comment).toBe(
+        'Address is incomplete. Please include city and state'
+      );
+      expect(addressComment.suggestedValue).toBe(
+        '123 Main St, Springfield, IL 62701'
+      );
+
+      const emailComment = reviewDecisions[0].fieldComments.find(
+        (fc: any) => fc.fieldPath === 'email'
+      );
+      expect(emailComment).toBeDefined();
+      expect(emailComment.comment).toBe('Email address is invalid');
+      expect(emailComment.suggestedValue).toBe('contact@acme.com');
+
+      // Step 6: Verify field.updated event with request_changes action was emitted
+      const fieldUpdatedEvents = eventEmitter.getEventsByType('field.updated');
+      const changesRequestedEvent = fieldUpdatedEvents.find(
+        (e) => e.payload?.action === 'request_changes'
+      );
+      expect(changesRequestedEvent).toBeDefined();
+      expect(changesRequestedEvent!.submissionId).toBe(submissionId);
+      expect(changesRequestedEvent!.actor).toEqual(reviewerActor);
+      expect(changesRequestedEvent!.state).toBe('draft');
+      expect(changesRequestedEvent!.payload?.fieldComments).toHaveLength(3);
+      expect(changesRequestedEvent!.payload?.comment).toBe(
+        'Please fix the validation issues noted in the field comments'
+      );
+
+      // Step 7: Agent updates fields based on reviewer comments
+      const setFieldsResponse = await submissionManager.setFields({
+        submissionId,
+        resumeToken,
+        actor: agentActor,
+        fields: {
+          taxId: '12-3456789',
+          address: '123 Main St, Springfield, IL 62701',
+          email: 'contact@acme.com',
+        },
+      });
+
+      expect(setFieldsResponse.ok).toBe(true);
+
+      // Verify fields were updated
+      const submissionAfterUpdates = await store.get(submissionId);
+      expect(submissionAfterUpdates!.fields.taxId).toBe('12-3456789');
+      expect(submissionAfterUpdates!.fields.address).toBe(
+        '123 Main St, Springfield, IL 62701'
+      );
+      expect(submissionAfterUpdates!.fields.email).toBe('contact@acme.com');
+
+      // Step 8: Agent resubmits the corrected submission
+      const resubmitResponse = await submissionManager.submit({
+        submissionId,
+        resumeToken,
+        idempotencyKey: 'idem_submit_2',
+        actor: agentActor,
+      });
+
+      // Verify submission transitions back to needs_review
+      expect(resubmitResponse.ok).toBe(false);
+      if (!resubmitResponse.ok) {
+        expect(resubmitResponse.state).toBe('needs_review');
+        expect(resubmitResponse.error.type).toBe('needs_approval');
+      }
+
+      // Step 9: Reviewer approves the updated submission
+      const approveResponse = await approvalManager.approve({
+        submissionId,
+        resumeToken,
+        actor: reviewerActor,
+        comment: 'All corrections look good. Approved.',
+      });
+
+      expect(approveResponse.ok).toBe(true);
+      if (approveResponse.ok) {
+        expect(approveResponse.state).toBe('approved');
+      }
+
+      // Step 10: Verify final submission state
+      const finalSubmission = await store.get(submissionId);
+      expect(finalSubmission).toBeDefined();
+      expect(finalSubmission!.state).toBe('approved');
+      expect(finalSubmission!.updatedBy).toEqual(reviewerActor);
+
+      // Verify both review decisions are stored (request_changes and approve)
+      const finalReviewDecisions = (finalSubmission as any).reviewDecisions;
+      expect(finalReviewDecisions).toHaveLength(2);
+      expect(finalReviewDecisions[0].action).toBe('request_changes');
+      expect(finalReviewDecisions[1].action).toBe('approve');
+      expect(finalReviewDecisions[1].comment).toBe(
+        'All corrections look good. Approved.'
+      );
+
+      // Step 11: Verify complete event history
+      expect(finalSubmission!.events.length).toBeGreaterThanOrEqual(5);
+      const eventTypes = finalSubmission!.events.map((e) => e.type);
+      expect(eventTypes).toContain('submission.created');
+      expect(eventTypes).toContain('review.requested');
+      expect(eventTypes).toContain('field.updated'); // request_changes emits field.updated
+      expect(eventTypes).toContain('review.approved');
+
+      // Verify there's a field.updated event with request_changes action
+      const requestChangesEvents = finalSubmission!.events.filter(
+        (e) => e.type === 'field.updated' && e.payload?.action === 'request_changes'
+      );
+      expect(requestChangesEvents).toHaveLength(1);
+
+      // Verify final event is review.approved
+      const lastEvent = finalSubmission!.events[finalSubmission!.events.length - 1];
+      expect(lastEvent.type).toBe('review.approved');
+      expect(lastEvent.actor).toEqual(reviewerActor);
+    });
+
     it('should work with agent setting additional fields before submit', async () => {
       // Setup
       const intake: IntakeDefinition = {
