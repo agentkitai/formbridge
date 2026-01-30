@@ -126,3 +126,223 @@ export interface EventStore {
    */
   cleanupOld(olderThanMs: number): Promise<number>;
 }
+
+// =============================================================================
+// § InMemoryEventStore Implementation
+// =============================================================================
+
+/**
+ * InMemoryEventStore - In-memory storage for development and testing.
+ *
+ * Implements:
+ * - Append-only event storage in memory
+ * - Efficient querying by submission ID
+ * - Server-side filtering by type, actor, and time range
+ * - Statistics calculation
+ * - Event cleanup for testing/development
+ *
+ * Performance characteristics:
+ * - Append: O(1)
+ * - Query: O(n) where n = events for submission
+ * - Filter: O(n) where n = events matching submission
+ * - Stats: O(n) where n = total events
+ *
+ * Storage:
+ * - Events are stored in a Map keyed by submissionId
+ * - Each submission has an array of events in chronological order
+ * - All events are also tracked in a Set for duplicate detection
+ *
+ * Thread safety:
+ * - Safe for concurrent reads
+ * - Writes are synchronized (JavaScript single-threaded nature)
+ *
+ * Limitations:
+ * - Data is lost on process restart (not persistent)
+ * - Memory usage grows unbounded without cleanup
+ * - Not suitable for production use
+ */
+export class InMemoryEventStore implements EventStore {
+  /** Events grouped by submission ID, ordered chronologically */
+  private readonly eventsBySubmission: Map<string, IntakeEvent[]> = new Map();
+
+  /** Set of all event IDs for duplicate detection */
+  private readonly eventIds: Set<string> = new Set();
+
+  /**
+   * Append a new event to the store.
+   *
+   * The event must have a unique eventId. Duplicate eventIds will throw an error.
+   * Events are stored in chronological order by timestamp.
+   *
+   * @param event The event to append
+   * @throws Error if eventId is duplicate or event is invalid
+   */
+  async appendEvent(event: IntakeEvent): Promise<void> {
+    // Validate event has required fields
+    if (!event.eventId) {
+      throw new Error('Event must have eventId');
+    }
+    if (!event.submissionId) {
+      throw new Error('Event must have submissionId');
+    }
+    if (!event.ts) {
+      throw new Error('Event must have timestamp (ts)');
+    }
+
+    // Check for duplicate eventId
+    if (this.eventIds.has(event.eventId)) {
+      throw new Error(`Duplicate eventId: ${event.eventId}`);
+    }
+
+    // Get or create event array for this submission
+    let events = this.eventsBySubmission.get(event.submissionId);
+    if (!events) {
+      events = [];
+      this.eventsBySubmission.set(event.submissionId, events);
+    }
+
+    // Append event (events are already ordered by timestamp in practice)
+    events.push(event);
+    this.eventIds.add(event.eventId);
+
+    // Sort to maintain chronological order (defensive - handles out-of-order appends)
+    events.sort((a, b) => a.ts.localeCompare(b.ts));
+  }
+
+  /**
+   * Get all events for a submission, optionally filtered.
+   *
+   * Events are returned in chronological order (oldest first).
+   * All filters are optional and can be combined:
+   * - types: Include only events with these types
+   * - actorKind: Include only events from this actor kind
+   * - since: Include only events at or after this timestamp (inclusive)
+   * - until: Include only events at or before this timestamp (inclusive)
+   *
+   * @param submissionId The submission ID to query
+   * @param filters Optional filters to narrow results
+   * @returns Array of events matching the query (empty if submission not found)
+   */
+  async getEvents(
+    submissionId: string,
+    filters?: EventFilters
+  ): Promise<IntakeEvent[]> {
+    const events = this.eventsBySubmission.get(submissionId) ?? [];
+
+    // Return all events if no filters
+    if (!filters) {
+      return [...events]; // Return copy to prevent external modification
+    }
+
+    // Apply filters
+    return events.filter((event) => {
+      // Filter by event types
+      if (filters.types && filters.types.length > 0) {
+        if (!filters.types.includes(event.type)) {
+          return false;
+        }
+      }
+
+      // Filter by actor kind
+      if (filters.actorKind && event.actor.kind !== filters.actorKind) {
+        return false;
+      }
+
+      // Filter by time range (since)
+      if (filters.since && event.ts < filters.since) {
+        return false;
+      }
+
+      // Filter by time range (until)
+      if (filters.until && event.ts > filters.until) {
+        return false;
+      }
+
+      return true;
+    });
+  }
+
+  /**
+   * Get store statistics.
+   *
+   * Calculates:
+   * - Total number of events across all submissions
+   * - Number of unique submissions with events
+   * - Oldest event timestamp (if any events exist)
+   * - Newest event timestamp (if any events exist)
+   *
+   * @returns Statistics about the event store
+   */
+  async getStats(): Promise<EventStoreStats> {
+    let totalEvents = 0;
+    let oldestTs: string | undefined;
+    let newestTs: string | undefined;
+
+    // Iterate through all submissions and their events
+    for (const events of this.eventsBySubmission.values()) {
+      totalEvents += events.length;
+
+      if (events.length > 0) {
+        // First event is oldest (sorted chronologically)
+        const firstTs = events[0]!.ts;
+        if (!oldestTs || firstTs < oldestTs) {
+          oldestTs = firstTs;
+        }
+
+        // Last event is newest (sorted chronologically)
+        const lastTs = events[events.length - 1]!.ts;
+        if (!newestTs || lastTs > newestTs) {
+          newestTs = lastTs;
+        }
+      }
+    }
+
+    return {
+      totalEvents,
+      submissionCount: this.eventsBySubmission.size,
+      oldestEvent: oldestTs,
+      newestEvent: newestTs,
+    };
+  }
+
+  /**
+   * Clean up old events for storage maintenance.
+   *
+   * Removes events older than the specified age.
+   * If a submission has no events after cleanup, it is removed entirely.
+   *
+   * Use cases:
+   * - Testing cleanup between test runs
+   * - Development environment maintenance
+   * - Simulating retention policies
+   *
+   * @param olderThanMs Age threshold in milliseconds (events older than this are deleted)
+   * @returns Number of events deleted
+   */
+  async cleanupOld(olderThanMs: number): Promise<number> {
+    const cutoffTime = new Date(Date.now() - olderThanMs).toISOString();
+    let deletedCount = 0;
+
+    // Iterate through all submissions
+    for (const [submissionId, events] of this.eventsBySubmission.entries()) {
+      // Filter out old events
+      const retainedEvents = events.filter((event) => {
+        const shouldDelete = event.ts < cutoffTime;
+        if (shouldDelete) {
+          this.eventIds.delete(event.eventId);
+          deletedCount++;
+        }
+        return !shouldDelete;
+      });
+
+      // Update or remove the submission's event array
+      if (retainedEvents.length === 0) {
+        this.eventsBySubmission.delete(submissionId);
+      } else if (retainedEvents.length < events.length) {
+        this.eventsBySubmission.set(submissionId, retainedEvents);
+      }
+    }
+
+    return deletedCount;
+  }
+}
