@@ -46,6 +46,10 @@ export interface EventEmitter {
   emit(event: IntakeEvent): Promise<void>;
 }
 
+export interface IntakeRegistry {
+  getIntake(intakeId: string): { approvalGates?: unknown[] };
+}
+
 /**
  * SubmissionManager orchestrates the submission lifecycle
  * with field-level actor attribution for audit trails
@@ -54,6 +58,7 @@ export class SubmissionManager {
   constructor(
     private store: SubmissionStore,
     private eventEmitter: EventEmitter,
+    private intakeRegistry?: IntakeRegistry,
     private baseUrl: string = "http://localhost:3000"
   ) {}
 
@@ -242,6 +247,7 @@ export class SubmissionManager {
 
   /**
    * Submit a submission for processing
+   * If approval gates are configured, transitions to needs_review instead of submitted
    */
   async submit(
     request: SubmitRequest
@@ -275,7 +281,68 @@ export class SubmissionManager {
 
     const now = new Date().toISOString();
 
-    // Update state
+    // Check if approval is required for this intake
+    let requiresApproval = false;
+    if (this.intakeRegistry) {
+      try {
+        const intake = this.intakeRegistry.getIntake(submission.intakeId);
+        requiresApproval = Boolean(
+          intake.approvalGates && intake.approvalGates.length > 0
+        );
+      } catch {
+        // If intake not found, proceed without approval check
+        requiresApproval = false;
+      }
+    }
+
+    // If approval is required, transition to needs_review and return needs_approval error
+    if (requiresApproval) {
+      submission.state = "needs_review";
+      submission.updatedAt = now;
+      submission.updatedBy = request.actor;
+
+      await this.store.save(submission);
+
+      // Emit review.requested event
+      const reviewEvent: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: "review.requested",
+        submissionId: submission.id,
+        ts: now,
+        actor: request.actor,
+        state: "needs_review",
+        payload: {
+          idempotencyKey: request.idempotencyKey,
+        },
+      };
+
+      submission.events.push(reviewEvent);
+      await this.eventEmitter.emit(reviewEvent);
+      await this.store.save(submission);
+
+      // Return needs_approval error with next action guidance
+      const error: IntakeError = {
+        ok: false,
+        submissionId: submission.id,
+        state: "needs_review",
+        resumeToken: submission.resumeToken,
+        error: {
+          type: "needs_approval",
+          message:
+            "Submission requires human review before it can be finalized",
+          retryable: false,
+          nextActions: [
+            {
+              action: "wait_for_review",
+              hint: "A human reviewer will approve or reject this submission",
+            },
+          ],
+        },
+      };
+      return error;
+    }
+
+    // Normal submission flow - no approval required
     submission.state = "submitted";
     submission.updatedAt = now;
     submission.updatedBy = request.actor;
