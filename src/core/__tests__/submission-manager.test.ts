@@ -326,6 +326,7 @@ describe("SubmissionManager", () => {
       const customManager = new SubmissionManager(
         store,
         eventEmitter,
+        undefined,
         "https://forms.example.com"
       );
 
@@ -519,6 +520,199 @@ describe("SubmissionManager", () => {
       // Verify updatedBy reflects most recent actor (human)
       expect(submission!.updatedBy).toEqual(humanActor);
       expect(submission!.createdBy).toEqual(agentActor);
+    });
+  });
+
+  describe("submit with approval gates", () => {
+    it("should transition to needs_review when approval gates are configured", async () => {
+      // Mock intake registry with approval gates
+      const mockIntakeRegistry = {
+        getIntake: (intakeId: string) => ({
+          id: intakeId,
+          approvalGates: [
+            {
+              name: "Compliance Review",
+              reviewers: { kind: "role", id: "compliance-team" },
+            },
+          ],
+        }),
+      };
+
+      const managerWithApproval = new SubmissionManager(
+        store,
+        eventEmitter,
+        mockIntakeRegistry
+      );
+
+      // Create a submission
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Acme Corp",
+        },
+      };
+
+      const createResponse = await managerWithApproval.createSubmission(createRequest);
+      eventEmitter.clear();
+
+      // Submit the submission
+      const submitResponse = await managerWithApproval.submit({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        idempotencyKey: "key_123",
+        actor: agentActor,
+      });
+
+      // Verify needs_approval error is returned
+      expect(submitResponse.ok).toBe(false);
+      if (!submitResponse.ok) {
+        expect(submitResponse.error.type).toBe("needs_approval");
+        expect(submitResponse.state).toBe("needs_review");
+        expect(submitResponse.error.message).toContain("requires human review");
+        expect(submitResponse.error.retryable).toBe(false);
+        expect(submitResponse.error.nextActions).toHaveLength(1);
+        expect(submitResponse.error.nextActions![0].action).toBe(
+          "wait_for_review"
+        );
+      }
+
+      // Verify submission state changed to needs_review
+      const submission = await store.get(createResponse.submissionId);
+      expect(submission!.state).toBe("needs_review");
+
+      // Verify review.requested event was emitted
+      expect(eventEmitter.events).toHaveLength(1);
+      expect(eventEmitter.events[0].type).toBe("review.requested");
+      expect(eventEmitter.events[0].state).toBe("needs_review");
+    });
+
+    it("should proceed with normal submission when no approval gates configured", async () => {
+      // Mock intake registry without approval gates
+      const mockIntakeRegistry = {
+        getIntake: (intakeId: string) => ({
+          id: intakeId,
+          approvalGates: [],
+        }),
+      };
+
+      const managerWithoutApproval = new SubmissionManager(
+        store,
+        eventEmitter,
+        mockIntakeRegistry
+      );
+
+      // Create a submission
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Acme Corp",
+        },
+      };
+
+      const createResponse = await managerWithoutApproval.createSubmission(createRequest);
+      eventEmitter.clear();
+
+      // Submit the submission
+      const submitResponse = await managerWithoutApproval.submit({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        idempotencyKey: "key_123",
+        actor: agentActor,
+      });
+
+      // Verify normal success response
+      expect(submitResponse.ok).toBe(true);
+      if (submitResponse.ok) {
+        expect(submitResponse.state).toBe("submitted");
+      }
+
+      // Verify submission state changed to submitted
+      const submission = await store.get(createResponse.submissionId);
+      expect(submission!.state).toBe("submitted");
+
+      // Verify submission.submitted event was emitted
+      expect(eventEmitter.events).toHaveLength(1);
+      expect(eventEmitter.events[0].type).toBe("submission.submitted");
+      expect(eventEmitter.events[0].state).toBe("submitted");
+    });
+
+    it("should proceed with normal submission when intake registry is not provided", async () => {
+      // Use manager without intake registry (default behavior)
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Acme Corp",
+        },
+      };
+
+      const createResponse = await manager.createSubmission(createRequest);
+      eventEmitter.clear();
+
+      // Submit the submission
+      const submitResponse = await manager.submit({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        idempotencyKey: "key_123",
+        actor: agentActor,
+      });
+
+      // Verify normal success response
+      expect(submitResponse.ok).toBe(true);
+      if (submitResponse.ok) {
+        expect(submitResponse.state).toBe("submitted");
+      }
+
+      // Verify submission state changed to submitted
+      const submission = await store.get(createResponse.submissionId);
+      expect(submission!.state).toBe("submitted");
+    });
+
+    it("should proceed with normal submission when intake not found in registry", async () => {
+      // Mock intake registry that throws IntakeNotFoundError
+      const mockIntakeRegistry = {
+        getIntake: (intakeId: string) => {
+          throw new Error("Intake not found");
+        },
+      };
+
+      const managerWithRegistry = new SubmissionManager(
+        store,
+        eventEmitter,
+        mockIntakeRegistry
+      );
+
+      // Create a submission
+      const createRequest: CreateSubmissionRequest = {
+        intakeId: "intake_vendor_onboarding",
+        actor: agentActor,
+        initialFields: {
+          companyName: "Acme Corp",
+        },
+      };
+
+      const createResponse = await managerWithRegistry.createSubmission(createRequest);
+      eventEmitter.clear();
+
+      // Submit the submission - should proceed normally despite intake not found
+      const submitResponse = await managerWithRegistry.submit({
+        submissionId: createResponse.submissionId,
+        resumeToken: createResponse.resumeToken,
+        idempotencyKey: "key_123",
+        actor: agentActor,
+      });
+
+      // Verify normal success response
+      expect(submitResponse.ok).toBe(true);
+      if (submitResponse.ok) {
+        expect(submitResponse.state).toBe("submitted");
+      }
+
+      // Verify submission state changed to submitted
+      const submission = await store.get(createResponse.submissionId);
+      expect(submission!.state).toBe("submitted");
     });
   });
 });
