@@ -16,7 +16,9 @@ import type {
 import type { Submission, FieldAttribution } from "../types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";
+import type { EventStore } from "./event-store.js";
 import { Validator } from "../validation/validator.js";
+import { InMemoryEventStore } from "./event-store.js";
 import { randomUUID } from "crypto";
 
 export class SubmissionNotFoundError extends Error {
@@ -105,16 +107,20 @@ export interface ConfirmUploadOutput {
  * with field-level actor attribution for audit trails
  */
 export class SubmissionManager {
-  private validator: Validator;
+  private _validator: Validator;
+  private eventStore: EventStore;
 
   constructor(
     private store: SubmissionStore,
-    private eventEmitter: EventEmitter,
+    private _eventEmitter: EventEmitter,
     private baseUrl: string = "http://localhost:3000",
-    private storageBackend?: StorageBackend
+    private storageBackend?: StorageBackend,
+    eventStore?: EventStore
   ) {
     // Initialize validator with event emitter for audit trail
-    this.validator = new Validator(eventEmitter);
+    this._validator = new Validator(_eventEmitter);
+    // Initialize event store (defaults to in-memory implementation)
+    this.eventStore = eventStore ?? new InMemoryEventStore();
   }
 
   /**
@@ -176,9 +182,7 @@ export class SubmissionManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.eventStore.appendEvent(event);
 
     return {
       ok: true,
@@ -290,8 +294,7 @@ export class SubmissionManager {
         },
       };
 
-      submission.events.push(event);
-      await this.eventEmitter.emit(event);
+      await this.eventStore.appendEvent(event);
     }
 
     await this.store.save(submission);
@@ -407,9 +410,7 @@ export class SubmissionManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.eventStore.appendEvent(event);
 
     // Calculate expiration in milliseconds
     const expiresInMs = new Date(signedUrl.expiresAt).getTime() - Date.now();
@@ -518,9 +519,7 @@ export class SubmissionManager {
         },
       };
 
-      submission.events.push(event);
-      await this.eventEmitter.emit(event);
-      await this.store.save(submission);
+      await this.eventStore.appendEvent(event);
 
       return {
         ok: true,
@@ -547,9 +546,7 @@ export class SubmissionManager {
         },
       };
 
-      submission.events.push(event);
-      await this.eventEmitter.emit(event);
-      await this.store.save(submission);
+      await this.eventStore.appendEvent(event);
 
       throw new Error(
         `Upload verification failed: ${verificationResult.error ?? "Unknown error"}`
@@ -612,9 +609,7 @@ export class SubmissionManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.eventStore.appendEvent(event);
 
     return {
       ok: true,
@@ -647,13 +642,15 @@ export class SubmissionManager {
    * Returns the full event stream for audit trail purposes
    */
   async getEvents(submissionId: string): Promise<IntakeEvent[]> {
+    // Verify submission exists before returning events
     const submission = await this.store.get(submissionId);
 
     if (!submission) {
       throw new SubmissionNotFoundError(submissionId);
     }
 
-    return submission.events || [];
+    // Retrieve events from EventStore instead of submission.events
+    return this.eventStore.getEvents(submissionId);
   }
 
   /**
@@ -689,9 +686,7 @@ export class SubmissionManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.eventStore.appendEvent(event);
 
     return resumeUrl;
   }
@@ -730,9 +725,7 @@ export class SubmissionManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.eventStore.appendEvent(event);
 
     return event.eventId;
   }
