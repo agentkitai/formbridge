@@ -182,7 +182,11 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
+    submission.events.push(event);
+    await this._eventEmitter.emit(event);
     await this.eventStore.appendEvent(event);
+    await this.store.save(submission);
 
     return {
       ok: true,
@@ -294,6 +298,9 @@ export class SubmissionManager {
         },
       };
 
+      // Triple-write pattern: array + emit + store
+      submission.events.push(event);
+      await this._eventEmitter.emit(event);
       await this.eventStore.appendEvent(event);
     }
 
@@ -410,7 +417,11 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
+    submission.events.push(event);
+    await this._eventEmitter.emit(event);
     await this.eventStore.appendEvent(event);
+    await this.store.save(submission);
 
     // Calculate expiration in milliseconds
     const expiresInMs = new Date(signedUrl.expiresAt).getTime() - Date.now();
@@ -519,7 +530,11 @@ export class SubmissionManager {
         },
       };
 
+      // Triple-write pattern: array + emit + store
+      submission.events.push(event);
+      await this._eventEmitter.emit(event);
       await this.eventStore.appendEvent(event);
+      await this.store.save(submission);
 
       return {
         ok: true,
@@ -546,7 +561,11 @@ export class SubmissionManager {
         },
       };
 
+      // Triple-write pattern: array + emit + store
+      submission.events.push(event);
+      await this._eventEmitter.emit(event);
       await this.eventStore.appendEvent(event);
+      await this.store.save(submission);
 
       throw new Error(
         `Upload verification failed: ${verificationResult.error ?? "Unknown error"}`
@@ -609,7 +628,11 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
+    submission.events.push(event);
+    await this._eventEmitter.emit(event);
     await this.eventStore.appendEvent(event);
+    await this.store.save(submission);
 
     return {
       ok: true,
@@ -642,15 +665,11 @@ export class SubmissionManager {
    * Returns the full event stream for audit trail purposes
    */
   async getEvents(submissionId: string): Promise<IntakeEvent[]> {
-    // Verify submission exists before returning events
     const submission = await this.store.get(submissionId);
-
     if (!submission) {
       throw new SubmissionNotFoundError(submissionId);
     }
-
-    // Retrieve events from EventStore instead of submission.events
-    return this.eventStore.getEvents(submissionId);
+    return submission.events;
   }
 
   /**
@@ -686,7 +705,11 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
+    submission.events.push(event);
+    await this._eventEmitter.emit(event);
     await this.eventStore.appendEvent(event);
+    await this.store.save(submission);
 
     return resumeUrl;
   }
@@ -725,7 +748,11 @@ export class SubmissionManager {
       },
     };
 
+    // Triple-write pattern: array + emit + store
+    submission.events.push(event);
+    await this._eventEmitter.emit(event);
     await this.eventStore.appendEvent(event);
+    await this.store.save(submission);
 
     return event.eventId;
   }
