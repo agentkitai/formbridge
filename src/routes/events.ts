@@ -83,6 +83,13 @@ const queryParamsSchema = z
   .strict();
 
 /**
+ * Export query parameter validation schema
+ */
+const exportQueryParamsSchema = queryParamsSchema.extend({
+  format: z.enum(["json", "jsonl"]).optional().default("jsonl"),
+});
+
+/**
  * Event filter options parsed from query parameters
  */
 interface EventFilterOptions {
@@ -202,6 +209,25 @@ function applyEventFilters(
 }
 
 /**
+ * Serialize events to JSONL format (newline-delimited JSON)
+ * Each event is serialized as a single-line JSON object
+ * @param events - Events to serialize
+ * @returns JSONL string with one event per line
+ */
+function serializeToJsonl(events: IntakeEvent[]): string {
+  return events.map((event) => JSON.stringify(event)).join("\n");
+}
+
+/**
+ * Serialize events to JSON array format
+ * @param events - Events to serialize
+ * @returns JSON array string
+ */
+function serializeToJson(events: IntakeEvent[]): string {
+  return JSON.stringify(events, null, 2);
+}
+
+/**
  * Create event routes
  * @param manager - SubmissionManager instance for handling submission operations
  */
@@ -262,6 +288,104 @@ export function createEventRoutes(manager: SubmissionManager) {
           submissionId: submission.id,
           events: filteredEvents,
         });
+      } catch (error) {
+        if (error instanceof SubmissionNotFoundError) {
+          res.status(404).json({ error: error.message });
+          return;
+        }
+        next(error);
+      }
+    },
+
+    /**
+     * GET /submissions/:id/events/export
+     * Export event stream in JSONL or JSON format
+     *
+     * Request params:
+     *   - id: submission ID
+     *
+     * Query parameters:
+     *   - format: Export format (jsonl | json), defaults to jsonl
+     *   - type: Filter by event type (comma-separated for multiple)
+     *   - actorKind: Filter by actor kind (agent, human, system)
+     *   - since: Filter by start time (ISO 8601 timestamp)
+     *   - until: Filter by end time (ISO 8601 timestamp)
+     *
+     * Response:
+     *   - JSONL: Newline-delimited JSON events (one per line)
+     *   - JSON: Standard JSON array of events
+     */
+    async exportEvents(req: Request, res: Response, next: NextFunction) {
+      try {
+        const { id: submissionId } = req.params;
+
+        if (!submissionId) {
+          res.status(400).json({
+            error: "Missing submission ID",
+          });
+          return;
+        }
+
+        // Fetch submission by ID
+        const submission = await manager.getSubmission(submissionId);
+
+        if (!submission) {
+          res.status(404).json({
+            error: "Submission not found",
+          });
+          return;
+        }
+
+        // Parse and validate query parameters including format
+        const queryResult = exportQueryParamsSchema.safeParse(req.query);
+        if (!queryResult.success) {
+          res.status(400).json({
+            error: `Invalid query parameters: ${queryResult.error.issues[0].message}`,
+          });
+          return;
+        }
+
+        const { format, ...filterParams } = queryResult.data;
+
+        // Parse filter parameters
+        const filters: EventFilterOptions = {};
+        if (filterParams.type) {
+          filters.type = filterParams.type.includes(",")
+            ? (filterParams.type.split(",") as IntakeEventType[])
+            : (filterParams.type as IntakeEventType);
+        }
+        if (filterParams.actorKind) {
+          filters.actorKind = filterParams.actorKind;
+        }
+        if (filterParams.since) {
+          filters.since = filterParams.since;
+        }
+        if (filterParams.until) {
+          filters.until = filterParams.until;
+        }
+
+        // Apply filters to event stream
+        const events = submission.events || [];
+        const filteredEvents = applyEventFilters(events, filters);
+
+        // Serialize based on format
+        if (format === "jsonl") {
+          const jsonl = serializeToJsonl(filteredEvents);
+          res.setHeader("Content-Type", "application/x-ndjson");
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="events-${submissionId}.jsonl"`
+          );
+          res.status(200).send(jsonl);
+        } else {
+          const json = serializeToJson(filteredEvents);
+          res.setHeader("Content-Type", "application/json");
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="events-${submissionId}.json"`
+          );
+          res.status(200).send(json);
+        }
       } catch (error) {
         if (error instanceof SubmissionNotFoundError) {
           res.status(404).json({ error: error.message });
