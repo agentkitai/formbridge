@@ -8,3 +8,20 @@
 
 # Development verification artifacts
 *VERIFICATION*.md
+
+# Dependencies
+node_modules/
+
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Coverage reports
+.coverage
+coverage/
+
+# Build outputs
+dist/
+*.tsbuildinfo
