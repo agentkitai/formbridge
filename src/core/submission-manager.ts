@@ -631,6 +631,20 @@ export class SubmissionManager {
   }
 
   /**
+   * Get events for a submission
+   * Returns the full event stream for audit trail purposes
+   */
+  async getEvents(submissionId: string): Promise<IntakeEvent[]> {
+    const submission = await this.store.get(submissionId);
+
+    if (!submission) {
+      throw new SubmissionNotFoundError(submissionId);
+    }
+
+    return submission.events || [];
+  }
+
+  /**
    * Generate a handoff URL for agent-to-human collaboration
    * Returns a shareable resume URL that allows a human to continue filling the form
    */
