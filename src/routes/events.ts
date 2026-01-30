@@ -209,13 +209,23 @@ function applyEventFilters(
 }
 
 /**
+ * Convert a single event to JSONL format (single-line JSON)
+ * Follows the to_jsonl pattern from formbridge/events.py
+ * @param event - Event to convert
+ * @returns Single-line JSON string suitable for appending to JSONL event stream
+ */
+function toJsonl(event: IntakeEvent): string {
+  return JSON.stringify(event);
+}
+
+/**
  * Serialize events to JSONL format (newline-delimited JSON)
  * Each event is serialized as a single-line JSON object
  * @param events - Events to serialize
  * @returns JSONL string with one event per line
  */
 function serializeToJsonl(events: IntakeEvent[]): string {
-  return events.map((event) => JSON.stringify(event)).join("\n");
+  return events.map((event) => toJsonl(event)).join("\n");
 }
 
 /**
