@@ -7,7 +7,8 @@
  */
 
 import { z } from 'zod';
-import type { IntakeEvent } from '../types/intake-contract';
+import type { IntakeEvent, Actor, SubmissionState } from '../types/intake-contract';
+import { randomUUID } from 'crypto';
 
 /**
  * Event emitter interface for validation events
@@ -227,13 +228,38 @@ export class Validator {
    *
    * @param schema - The Zod schema to validate against
    * @param data - The submission data to validate
+   * @param submissionId - The submission ID for event emission
+   * @param actor - The actor performing the validation
+   * @param state - The current submission state
    * @returns Validation result with success status and either data or error
    */
-  validateSubmission<T = any>(
+  async validateSubmission<T = any>(
     schema: z.ZodType<T>,
-    data: unknown
-  ): ValidationResult<T> {
-    return validateSubmission(schema, data);
+    data: unknown,
+    submissionId: string,
+    actor: Actor,
+    state: SubmissionState
+  ): Promise<ValidationResult<T>> {
+    const result = validateSubmission(schema, data);
+
+    // Emit validation.passed event on successful validation
+    if (result.success) {
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: 'validation.passed',
+        submissionId,
+        ts: new Date().toISOString(),
+        actor,
+        state,
+        payload: {
+          data: result.data,
+        },
+      };
+
+      await this.emitEvent(event);
+    }
+
+    return result;
   }
 
   /**
@@ -241,14 +267,41 @@ export class Validator {
    *
    * @param schema - The Zod schema to validate against
    * @param data - The submission data to validate
+   * @param submissionId - The submission ID for event emission
+   * @param actor - The actor performing the validation
+   * @param state - The current submission state
    * @returns The validated and parsed data
    * @throws {z.ZodError} If validation fails
    */
-  validateSubmissionOrThrow<T = any>(
+  async validateSubmissionOrThrow<T = any>(
     schema: z.ZodType<T>,
-    data: unknown
-  ): T {
-    return validateSubmissionOrThrow(schema, data);
+    data: unknown,
+    submissionId: string,
+    actor: Actor,
+    state: SubmissionState
+  ): Promise<T> {
+    const result = validateSubmission(schema, data);
+
+    // Emit validation.passed event on successful validation
+    if (result.success) {
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: 'validation.passed',
+        submissionId,
+        ts: new Date().toISOString(),
+        actor,
+        state,
+        payload: {
+          data: result.data,
+        },
+      };
+
+      await this.emitEvent(event);
+      return result.data;
+    }
+
+    // On failure, throw the error (no event emitted here - that's for next subtask)
+    throw result.error;
   }
 
   /**
@@ -256,12 +309,37 @@ export class Validator {
    *
    * @param schema - The Zod schema to validate against
    * @param data - The partial submission data to validate
+   * @param submissionId - The submission ID for event emission
+   * @param actor - The actor performing the validation
+   * @param state - The current submission state
    * @returns Validation result with success status and either data or error
    */
-  validatePartialSubmission<T = any>(
+  async validatePartialSubmission<T = any>(
     schema: z.ZodType<T>,
-    data: unknown
-  ): ValidationResult<Partial<T>> {
-    return validatePartialSubmission(schema, data);
+    data: unknown,
+    submissionId: string,
+    actor: Actor,
+    state: SubmissionState
+  ): Promise<ValidationResult<Partial<T>>> {
+    const result = validatePartialSubmission(schema, data);
+
+    // Emit validation.passed event on successful validation
+    if (result.success) {
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: 'validation.passed',
+        submissionId,
+        ts: new Date().toISOString(),
+        actor,
+        state,
+        payload: {
+          data: result.data,
+        },
+      };
+
+      await this.emitEvent(event);
+    }
+
+    return result;
   }
 }
