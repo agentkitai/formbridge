@@ -13,6 +13,7 @@ import type { Context } from "hono";
 import type { SubmissionManager } from "../core/submission-manager.js";
 import { SubmissionNotFoundError } from "../core/submission-manager.js";
 import type { IntakeEventType } from "../types/intake-contract.js";
+import { redactEventTokens } from "./event-utils.js";
 import type { EventFilters } from "../core/event-store.js";
 import { z } from "zod";
 
@@ -185,7 +186,7 @@ export function createHonoEventRouter(
 
       return c.json({
         submissionId,
-        events,
+        events: events.map(redactEventTokens),
         pagination: {
           offset,
           limit,
@@ -236,7 +237,7 @@ export function createHonoEventRouter(
 
     try {
       const filters = buildEventFilters(filterParams);
-      const events = await manager.getEvents(submissionId, filters);
+      const events = (await manager.getEvents(submissionId, filters)).map(redactEventTokens);
 
       if (format === "jsonl") {
         const jsonl = events.map((e) => JSON.stringify(e)).join("\n");

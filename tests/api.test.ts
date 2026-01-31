@@ -326,7 +326,6 @@ describe('GET /intake/:id/submissions/:submissionId', () => {
       submissionId,
       state: 'in_progress',
       intakeId: 'simple-contact',
-      resumeToken: expect.any(String),
       fields: {
         name: 'Jane Doe',
         email: 'jane@example.com',
@@ -340,6 +339,8 @@ describe('GET /intake/:id/submissions/:submissionId', () => {
         },
       },
     });
+    // resumeToken should NOT be in GET response (security)
+    expect(body.resumeToken).toBeUndefined();
   });
 
   it('should return 404 for non-existent submission', async () => {
@@ -886,6 +887,186 @@ describe('Error Response Format', () => {
         message: expect.any(String),
       },
     });
+  });
+});
+
+describe('Security: Reserved Field Names and Schema Validation', () => {
+  let app: Awaited<ReturnType<typeof createFormBridgeAppWithIntakes>>;
+
+  beforeEach(() => {
+    app = createFormBridgeAppWithIntakes([simpleIntake]);
+  });
+
+  it('should reject constructor as a field name in POST', async () => {
+    const res = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+        initialFields: { constructor: 'malicious' },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.message).toContain('constructor');
+  });
+
+  it('should reject __uploads as a field name in PATCH', async () => {
+    const createRes = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+    const createBody = await createRes.json();
+
+    const res = await app.request(`/intake/simple-contact/submissions/${createBody.submissionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resumeToken: createBody.resumeToken,
+        actor: { kind: 'agent', id: 'test' },
+        fields: { __uploads: {} },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.message).toContain('__uploads');
+  });
+
+  it('should reject invalid field types in PATCH', async () => {
+    const createRes = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+    const createBody = await createRes.json();
+
+    const res = await app.request(`/intake/simple-contact/submissions/${createBody.submissionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resumeToken: createBody.resumeToken,
+        actor: { kind: 'agent', id: 'test' },
+        fields: { name: 12345 }, // name should be string
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.type).toBe('validation_error');
+  });
+
+  it('should reject actor with invalid kind', async () => {
+    const res = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'bot', id: 'test' },
+      }),
+    });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+});
+
+describe('Security: Resume Token Leakage Prevention', () => {
+  let app: Awaited<ReturnType<typeof createFormBridgeAppWithIntakes>>;
+
+  beforeEach(() => {
+    app = createFormBridgeAppWithIntakes([simpleIntake]);
+  });
+
+  it('should NOT include resumeToken in GET submission response', async () => {
+    const createRes = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+    const createBody = await createRes.json();
+    expect(createBody.resumeToken).toBeDefined(); // POST should return it
+
+    const getRes = await app.request(`/intake/simple-contact/submissions/${createBody.submissionId}`);
+    const getBody = await getRes.json();
+    expect(getBody.ok).toBe(true);
+    expect(getBody.resumeToken).toBeUndefined(); // GET should NOT return it
+  });
+
+  it('should still return resumeToken in POST create response', async () => {
+    const createRes = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+    const createBody = await createRes.json();
+    expect(createBody.resumeToken).toBeDefined();
+    expect(createBody.resumeToken).toMatch(/^rtok_/);
+  });
+
+  it('should still return resumeToken in PATCH update response', async () => {
+    const createRes = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+    const createBody = await createRes.json();
+
+    const updateRes = await app.request(`/intake/simple-contact/submissions/${createBody.submissionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resumeToken: createBody.resumeToken,
+        actor: { kind: 'agent', id: 'test' },
+        fields: { name: 'Test' },
+      }),
+    });
+    const updateBody = await updateRes.json();
+    expect(updateBody.resumeToken).toBeDefined();
+    expect(updateBody.resumeToken).toMatch(/^rtok_/);
+  });
+
+  it('should redact resumeToken from events in GET submission response', async () => {
+    const createRes = await app.request('/intake/simple-contact/submissions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+    const createBody = await createRes.json();
+    const submissionId = createBody.submissionId;
+
+    // Generate a handoff URL (emits handoff.link_issued event with resumeToken in payload)
+    await app.request(`/submissions/${submissionId}/handoff`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        actor: { kind: 'agent', id: 'test' },
+      }),
+    });
+
+    // GET submission and check events have no resumeToken in payloads
+    const getRes = await app.request(`/intake/simple-contact/submissions/${submissionId}`);
+    const getBody = await getRes.json();
+    expect(getBody.events).toBeDefined();
+
+    for (const event of getBody.events) {
+      if (event.payload) {
+        expect(event.payload.resumeToken).toBeUndefined();
+      }
+    }
   });
 });
 

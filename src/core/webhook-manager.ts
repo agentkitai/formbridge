@@ -9,7 +9,7 @@
  * - Delivery event emission (delivery.attempted, delivery.succeeded, delivery.failed)
  */
 
-import { createHmac, randomUUID } from "crypto";
+import { createHmac, randomUUID, timingSafeEqual } from "crypto";
 import type {
   IntakeEvent,
   DeliveryRecord,
@@ -24,6 +24,7 @@ import {
   DEFAULT_RETRY_POLICY,
   calculateRetryDelay,
 } from "./delivery-queue.js";
+import { validateWebhookUrl, sanitizeDestinationHeaders } from "./url-validation.js";
 
 // =============================================================================
 // § Types
@@ -84,13 +85,8 @@ export function verifySignature(
   secret: string
 ): boolean {
   const expected = signPayload(payload, secret);
-  // Constant-time comparison
   if (expected.length !== signature.length) return false;
-  let result = 0;
-  for (let i = 0; i < expected.length; i++) {
-    result |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-  }
-  return result === 0;
+  return timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 
 // =============================================================================
@@ -138,10 +134,12 @@ export class WebhookManager {
    */
   buildHeaders(body: string, destination: Destination): Record<string, string> {
     const timestamp = new Date().toISOString();
+    // Sanitize destination headers to prevent header injection
+    const sanitizedHeaders = sanitizeDestinationHeaders(destination.headers as Record<string, string> | undefined);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-FormBridge-Timestamp": timestamp,
-      ...(destination.headers ?? {}),
+      ...sanitizedHeaders,
     };
 
     if (this.signingSecret) {
@@ -206,6 +204,20 @@ export class WebhookManager {
     submission: Submission,
     destination: Destination
   ): Promise<void> {
+    // SSRF validation at delivery time (prevents DNS rebinding attacks)
+    const ssrfError = validateWebhookUrl(destination.url ?? "");
+    if (ssrfError) {
+      record.status = "failed";
+      record.error = `SSRF blocked: ${ssrfError}`;
+      await this.queue.update(record);
+      await this.emitDeliveryEvent("delivery.failed", submission, {
+        deliveryId: record.deliveryId,
+        attempt: 0,
+        error: record.error,
+      });
+      return;
+    }
+
     const payload = this.buildPayload(submission);
     const body = JSON.stringify(payload);
 

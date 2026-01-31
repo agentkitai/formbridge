@@ -11,6 +11,7 @@
  */
 
 import type { IntakeDefinition, JSONSchema } from '../types.js';
+import { validateWebhookUrl } from './url-validation.js';
 
 /**
  * Configuration options for IntakeRegistry
@@ -273,6 +274,12 @@ export class IntakeRegistry {
         new URL(destination.url);
       } catch {
         throw new IntakeValidationError(intakeId, 'destination.url must be a valid URL');
+      }
+
+      // SSRF protection: block private/internal URLs
+      const ssrfError = validateWebhookUrl(destination.url);
+      if (ssrfError) {
+        throw new IntakeValidationError(intakeId, `destination.url blocked: ${ssrfError}`);
       }
     }
 

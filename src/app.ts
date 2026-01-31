@@ -6,6 +6,8 @@
  */
 
 import { Hono } from 'hono';
+import { secureHeaders } from 'hono/secure-headers';
+import { bodyLimit } from 'hono/body-limit';
 import { createHealthRouter } from './routes/health.js';
 import { createIntakeRouter } from './routes/intake.js';
 import { createUploadRouter } from './routes/uploads.js';
@@ -25,12 +27,44 @@ import {
 import { ApprovalManager } from './core/approval-manager.js';
 import { InMemoryEventStore } from './core/event-store.js';
 import { WebhookManager } from './core/webhook-manager.js';
+import { Validator } from './core/validator.js';
+import { z } from 'zod';
 import type { IntakeDefinition } from './types.js';
 import type { Submission } from './types.js';
 import type {
   Actor,
   IntakeEvent,
 } from './types/intake-contract.js';
+import { redactEventTokens } from './routes/event-utils.js';
+
+/** Reserved field names that cannot be set via API */
+const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
+
+/** Zod schema for actor validation */
+const actorSchema = z.object({
+  kind: z.enum(['agent', 'human', 'system']),
+  id: z.string().min(1).max(255),
+  name: z.string().max(255).optional(),
+}).strict();
+
+/** Parse and validate actor from request body */
+function parseActor(raw: unknown): { ok: true; actor: Actor } | { ok: false; error: string } {
+  const result = actorSchema.safeParse(raw);
+  if (!result.success) {
+    return { ok: false, error: result.error.issues[0]?.message ?? 'Invalid actor' };
+  }
+  return { ok: true, actor: result.data as Actor };
+}
+
+/** Check for reserved field names in fields object */
+function hasReservedFieldNames(fields: Record<string, unknown>): string | null {
+  for (const key of Object.keys(fields)) {
+    if (RESERVED_FIELD_NAMES.has(key)) {
+      return key;
+    }
+  }
+  return null;
+}
 
 /**
  * In-memory SubmissionStore for the app factory
@@ -100,6 +134,12 @@ export interface FormBridgeAppOptions {
 export function createFormBridgeApp(options?: FormBridgeAppOptions): Hono {
   const app = new Hono();
 
+  // Security headers
+  app.use('*', secureHeaders());
+
+  // Body size limit (1MB default)
+  app.use('*', bodyLimit({ maxSize: 1024 * 1024 }));
+
   // Error handler
   app.onError(createErrorHandler({ logErrors: false }));
 
@@ -123,6 +163,12 @@ export function createFormBridgeAppWithIntakes(
   options?: FormBridgeAppOptions
 ): Hono {
   const app = new Hono();
+
+  // Security headers
+  app.use('*', secureHeaders());
+
+  // Body size limit (1MB default)
+  app.use('*', bodyLimit({ maxSize: 1024 * 1024 }));
 
   // Error handler
   app.onError(createErrorHandler({ logErrors: false }));
@@ -156,7 +202,14 @@ export function createFormBridgeAppWithIntakes(
   const approvalManager = new ApprovalManager(store, emitter);
 
   // Webhook manager — wired to receive events from the bridging emitter
-  const webhookManager = new WebhookManager(undefined, { eventEmitter: emitter });
+  const signingSecret = process.env['FORMBRIDGE_WEBHOOK_SECRET'];
+  if (!signingSecret) {
+    console.warn('[FormBridge] WARNING: FORMBRIDGE_WEBHOOK_SECRET is not set. Webhooks will be delivered unsigned.');
+  }
+  const webhookManager = new WebhookManager(undefined, { signingSecret, eventEmitter: emitter });
+
+  // Schema validator for HTTP API field validation
+  const validator = new Validator({ strict: false, allowAdditionalProperties: true });
 
   // Analytics provider — reads from shared store
   const analyticsProvider: AnalyticsDataProvider = {
@@ -219,18 +272,18 @@ export function createFormBridgeAppWithIntakes(
 
     const body = await c.req.json();
 
-    // Validate actor
-    if (!body.actor || !body.actor.kind || !body.actor.id) {
+    // Validate actor using Zod schema
+    const actorResult = parseActor(body.actor);
+    if (!actorResult.ok) {
       return c.json(
         {
           ok: false,
-          error: { type: 'invalid_request', message: 'actor with kind and id is required' },
+          error: { type: 'invalid_request', message: `Invalid actor: ${actorResult.error}` },
         },
         400
       );
     }
-
-    const actor = body.actor as Actor;
+    const actor = actorResult.actor;
 
     // Handle idempotency: check if submission already exists for this key
     if (body.idempotencyKey) {
@@ -256,6 +309,50 @@ export function createFormBridgeAppWithIntakes(
       }
     }
 
+    // Check initial fields for reserved names and validate against schema
+    const initFields = body.initialFields || body.fields;
+    if (initFields && typeof initFields === 'object') {
+      const reservedKey = hasReservedFieldNames(initFields as Record<string, unknown>);
+      if (reservedKey) {
+        return c.json(
+          {
+            ok: false,
+            error: { type: 'invalid_request', message: `Reserved field name '${reservedKey}' cannot be used` },
+          },
+          400
+        );
+      }
+
+      // Validate initial fields against intake schema
+      const intake = registry.getIntake(intakeId);
+      const intakeSchema = intake.schema as import('./types.js').JSONSchema;
+      if (intakeSchema.properties) {
+        const partialSchema: import('./types.js').JSONSchema = {
+          type: 'object',
+          properties: {},
+        };
+        for (const fieldName of Object.keys(initFields as Record<string, unknown>)) {
+          if (intakeSchema.properties[fieldName]) {
+            partialSchema.properties![fieldName] = intakeSchema.properties[fieldName];
+          }
+        }
+        const validationResult = validator.validate(initFields as Record<string, unknown>, partialSchema);
+        if (!validationResult.valid) {
+          return c.json(
+            {
+              ok: false,
+              error: {
+                type: 'validation_error',
+                message: 'Initial field validation failed',
+                fieldErrors: validationResult.errors,
+              },
+            },
+            400
+          );
+        }
+      }
+    }
+
     // Create submission
     const result = await manager.createSubmission({
       intakeId,
@@ -264,7 +361,6 @@ export function createFormBridgeAppWithIntakes(
     });
 
     // If initial fields provided, set them via setFields to trigger state transition + token rotation
-    const initFields = body.initialFields || body.fields;
     if (initFields && Object.keys(initFields).length > 0) {
       const setResult = await manager.setFields({
         submissionId: result.submissionId,
@@ -277,7 +373,7 @@ export function createFormBridgeAppWithIntakes(
         const intake = registry.getIntake(intakeId);
         const schema = intake.schema as { required?: string[] };
         const requiredFields = schema.required ?? [];
-        const providedFields = Object.keys(initFields);
+        const providedFields = Object.keys(initFields as Record<string, unknown>);
         const missingFields = requiredFields.filter((f: string) => !providedFields.includes(f));
 
         return c.json(
@@ -342,7 +438,6 @@ export function createFormBridgeAppWithIntakes(
       submissionId: submission.id,
       intakeId: submission.intakeId,
       state: submission.state,
-      resumeToken: submission.resumeToken,
       fields: submission.fields,
       fieldAttribution: submission.fieldAttribution,
       metadata: {
@@ -350,7 +445,7 @@ export function createFormBridgeAppWithIntakes(
         updatedAt: submission.updatedAt,
         createdBy: submission.createdBy,
       },
-      events: submission.events,
+      events: (submission.events ?? []).map(redactEventTokens),
     });
   });
 
@@ -380,11 +475,13 @@ export function createFormBridgeAppWithIntakes(
       );
     }
 
-    if (!body.actor || !body.actor.kind || !body.actor.id) {
+    // Validate actor using Zod schema
+    const actorResult = parseActor(body.actor);
+    if (!actorResult.ok) {
       return c.json(
         {
           ok: false,
-          error: { type: 'invalid_request', message: 'actor with kind and id is required' },
+          error: { type: 'invalid_request', message: `Invalid actor: ${actorResult.error}` },
         },
         400
       );
@@ -400,11 +497,52 @@ export function createFormBridgeAppWithIntakes(
       );
     }
 
+    // Check for reserved field names
+    const reservedKey = hasReservedFieldNames(body.fields as Record<string, unknown>);
+    if (reservedKey) {
+      return c.json(
+        {
+          ok: false,
+          error: { type: 'invalid_request', message: `Reserved field name '${reservedKey}' cannot be used` },
+        },
+        400
+      );
+    }
+
+    // Validate fields against intake schema (partial validation — only validate provided fields)
+    const intake = registry.getIntake(intakeId);
+    const intakeSchema = intake.schema as import('./types.js').JSONSchema;
+    if (intakeSchema.properties) {
+      const partialSchema: import('./types.js').JSONSchema = {
+        type: 'object',
+        properties: {},
+      };
+      for (const fieldName of Object.keys(body.fields as Record<string, unknown>)) {
+        if (intakeSchema.properties[fieldName]) {
+          partialSchema.properties![fieldName] = intakeSchema.properties[fieldName];
+        }
+      }
+      const validationResult = validator.validate(body.fields as Record<string, unknown>, partialSchema);
+      if (!validationResult.valid) {
+        return c.json(
+          {
+            ok: false,
+            error: {
+              type: 'validation_error',
+              message: 'Field validation failed',
+              fieldErrors: validationResult.errors,
+            },
+          },
+          400
+        );
+      }
+    }
+
     try {
       const result = await manager.setFields({
         submissionId,
         resumeToken: body.resumeToken,
-        actor: body.actor as Actor,
+        actor: actorResult.actor,
         fields: body.fields,
       });
 

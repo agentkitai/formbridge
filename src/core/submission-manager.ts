@@ -21,6 +21,9 @@ import { InMemoryEventStore } from "./event-store.js";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 
+/** Reserved field names that cannot be set via the API */
+const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
+
 export class SubmissionNotFoundError extends Error {
   constructor(identifier: string) {
     super(`Submission not found: ${identifier}`);
@@ -285,6 +288,23 @@ export class SubmissionManager {
         },
       };
       return error;
+    }
+
+    // Reject reserved field names
+    for (const fieldPath of Object.keys(request.fields)) {
+      if (RESERVED_FIELD_NAMES.has(fieldPath)) {
+        return {
+          ok: false,
+          submissionId: submission.id,
+          state: submission.state,
+          resumeToken: submission.resumeToken,
+          error: {
+            type: "invalid",
+            message: `Reserved field name '${fieldPath}' cannot be used`,
+            retryable: false,
+          },
+        } as IntakeError;
+      }
     }
 
     // Update fields and record actor attribution
