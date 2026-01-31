@@ -76,6 +76,19 @@ export interface VolumeDataPoint {
   count: number;
 }
 
+export interface IntakeMetrics {
+  intakeId: string;
+  total: number;
+  byState: Record<string, number>;
+  completionRate: number;
+}
+
+export interface FunnelDataPoint {
+  state: string;
+  count: number;
+  percentage: number;
+}
+
 export interface PaginatedResponse<T> {
   data: T[];
   total: number;
@@ -227,6 +240,14 @@ export class FormBridgeApiClient {
     return this.fetch<VolumeDataPoint[]>(
       `/analytics/volume?days=${days}`
     );
+  }
+
+  async getIntakeMetrics(): Promise<IntakeMetrics[]> {
+    return this.fetch<IntakeMetrics[]>("/analytics/intakes");
+  }
+
+  async getFunnelData(): Promise<FunnelDataPoint[]> {
+    return this.fetch<FunnelDataPoint[]>("/analytics/funnel");
   }
 }
 

@@ -14,6 +14,14 @@ import type { IntakeEvent } from "../types/intake-contract.js";
  * Decouples the analytics route from specific storage implementations.
  * Consumers provide callbacks to query their data.
  */
+/** Per-intake breakdown metrics */
+export interface IntakeMetrics {
+  intakeId: string;
+  total: number;
+  byState: Record<string, number>;
+  completionRate: number;
+}
+
 export interface AnalyticsDataProvider {
   /** Returns all registered intake IDs */
   getIntakeIds(): string[];
@@ -27,6 +35,10 @@ export interface AnalyticsDataProvider {
   getRecentEvents(limit: number): IntakeEvent[];
   /** Returns events of a given type */
   getEventsByType(type: string): IntakeEvent[];
+  /** Returns per-intake submission breakdown */
+  getSubmissionsByIntake(): IntakeMetrics[];
+  /** Returns state-transition funnel data */
+  getCompletionRates(): { state: string; count: number; percentage: number }[];
 }
 
 export function createHonoAnalyticsRouter(
@@ -93,6 +105,27 @@ export function createHonoAnalyticsRouter(
     }));
 
     return c.json(volumeData);
+  });
+
+  /**
+   * GET /analytics/intakes
+   *
+   * Returns per-intake breakdown: total, byState, completionRate.
+   */
+  app.get("/analytics/intakes", async (c) => {
+    const metrics = provider.getSubmissionsByIntake();
+    return c.json(metrics);
+  });
+
+  /**
+   * GET /analytics/funnel
+   *
+   * Returns state-transition funnel data showing how many submissions
+   * reached each state and the percentage relative to total.
+   */
+  app.get("/analytics/funnel", async (c) => {
+    const funnel = provider.getCompletionRates();
+    return c.json(funnel);
   });
 
   return app;

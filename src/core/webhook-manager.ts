@@ -23,6 +23,7 @@ import {
   InMemoryDeliveryQueue,
   DEFAULT_RETRY_POLICY,
   calculateRetryDelay,
+  type DeliveryContext,
 } from "./delivery-queue.js";
 import { validateWebhookUrl, sanitizeDestinationHeaders } from "./url-validation.js";
 
@@ -99,6 +100,7 @@ export class WebhookManager {
   private retryPolicy: RetryPolicy;
   private fetchFn: typeof fetch;
   private eventEmitter?: WebhookEventEmitter;
+  private retryTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     queue?: DeliveryQueue,
@@ -186,7 +188,26 @@ export class WebhookManager {
       createdAt: now,
     };
 
-    await this.queue.enqueue(record);
+    // Store context for retries
+    const context: DeliveryContext = {
+      submission: {
+        id: submission.id,
+        intakeId: submission.intakeId,
+        state: submission.state,
+        fields: submission.fields,
+        fieldAttribution: submission.fieldAttribution,
+        createdAt: submission.createdAt,
+        updatedAt: submission.updatedAt,
+        createdBy: submission.createdBy,
+      },
+      destination: {
+        kind: destination.kind,
+        url: destination.url,
+        headers: destination.headers as Record<string, string> | undefined,
+      },
+    };
+
+    await this.queue.enqueue(record, context);
 
     // Process asynchronously (non-blocking)
     this.processDelivery(record, submission, destination).catch(() => {
@@ -325,6 +346,65 @@ export class WebhookManager {
    */
   getQueue(): DeliveryQueue {
     return this.queue;
+  }
+
+  /**
+   * Start the background retry scheduler.
+   * Polls for pending retries at the given interval and reprocesses them.
+   */
+  startRetryScheduler(intervalMs: number = 30_000): void {
+    if (this.retryTimer) return;
+    this.retryTimer = setInterval(() => {
+      this.retryPendingDeliveries().catch((err) => {
+        console.error('[WebhookManager] Retry scheduler error:', err);
+      });
+    }, intervalMs);
+    // unref() so the timer doesn't prevent process/test exit
+    if (this.retryTimer && typeof this.retryTimer === 'object' && 'unref' in this.retryTimer) {
+      this.retryTimer.unref();
+    }
+  }
+
+  /**
+   * Stop the background retry scheduler.
+   */
+  stopRetryScheduler(): void {
+    if (this.retryTimer) {
+      clearInterval(this.retryTimer);
+      this.retryTimer = null;
+    }
+  }
+
+  /**
+   * Process all pending deliveries that are ready for retry.
+   */
+  private async retryPendingDeliveries(): Promise<void> {
+    const pending = await this.queue.getPendingRetries();
+
+    for (const record of pending) {
+      // Get stored context for the delivery
+      const ctx = (this.queue as InMemoryDeliveryQueue).getContext?.(record.deliveryId);
+      if (!ctx) continue;
+
+      // Reconstruct submission and destination from stored context
+      const submission = {
+        ...ctx.submission,
+        resumeToken: '',
+        updatedBy: ctx.submission.createdBy as Actor,
+        events: [],
+      } as Submission;
+
+      const destination: Destination = {
+        kind: ctx.destination.kind as Destination['kind'],
+        url: ctx.destination.url,
+        headers: ctx.destination.headers,
+      };
+
+      // Process the delivery (non-blocking)
+      this.processDelivery(record, submission, destination).catch(() => {
+        // Errors tracked in delivery record
+      });
+    }
   }
 
   /**

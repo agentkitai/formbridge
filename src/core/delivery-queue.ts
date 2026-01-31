@@ -10,8 +10,8 @@ import type { DeliveryRecord, RetryPolicy } from "../types/intake-contract.js";
 // =============================================================================
 
 export interface DeliveryQueue {
-  /** Enqueue a new delivery for processing */
-  enqueue(record: DeliveryRecord): Promise<void>;
+  /** Enqueue a new delivery for processing, with optional context for retries */
+  enqueue(record: DeliveryRecord, context?: DeliveryContext): Promise<void>;
 
   /** Get a delivery by ID */
   get(deliveryId: string): Promise<DeliveryRecord | null>;
@@ -65,12 +65,22 @@ export function calculateRetryDelay(
 // § InMemoryDeliveryQueue
 // =============================================================================
 
+/** Stored context needed to retry a delivery */
+export interface DeliveryContext {
+  submission: { id: string; intakeId: string; state: string; fields: Record<string, unknown>; fieldAttribution: Record<string, unknown>; createdAt: string; updatedAt: string; createdBy: unknown };
+  destination: { kind: string; url?: string; headers?: Record<string, string> };
+}
+
 export class InMemoryDeliveryQueue implements DeliveryQueue {
   private deliveries = new Map<string, DeliveryRecord>();
   private bySubmission = new Map<string, Set<string>>();
+  private contexts = new Map<string, DeliveryContext>();
 
-  async enqueue(record: DeliveryRecord): Promise<void> {
+  async enqueue(record: DeliveryRecord, context?: DeliveryContext): Promise<void> {
     this.deliveries.set(record.deliveryId, record);
+    if (context) {
+      this.contexts.set(record.deliveryId, context);
+    }
 
     let submissionSet = this.bySubmission.get(record.submissionId);
     if (!submissionSet) {
@@ -78,6 +88,11 @@ export class InMemoryDeliveryQueue implements DeliveryQueue {
       this.bySubmission.set(record.submissionId, submissionSet);
     }
     submissionSet.add(record.deliveryId);
+  }
+
+  /** Get stored context for a delivery (needed for retries) */
+  getContext(deliveryId: string): DeliveryContext | undefined {
+    return this.contexts.get(deliveryId);
   }
 
   async get(deliveryId: string): Promise<DeliveryRecord | null> {

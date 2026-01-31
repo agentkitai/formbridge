@@ -33,11 +33,16 @@ export { SubmissionNotFoundError, SubmissionExpiredError, InvalidResumeTokenErro
 /** Reserved field names that cannot be set via the API */
 const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
 
+/** Terminal states that should not be expired */
+const TERMINAL_STATES = new Set(['rejected', 'finalized', 'cancelled', 'expired']);
+
 export interface SubmissionStore {
   get(submissionId: string): Promise<Submission | null>;
   save(submission: Submission): Promise<void>;
   getByResumeToken(resumeToken: string): Promise<Submission | null>;
   getByIdempotencyKey(key: string): Promise<Submission | null>;
+  /** Returns submissions with expiresAt in the past that are not in a terminal state */
+  getExpired?(): Promise<Submission[]>;
 }
 
 export interface EventEmitter {
@@ -850,5 +855,59 @@ export class SubmissionManager {
     await this.recordEvent(submission, event);
 
     return event.eventId;
+  }
+
+  /**
+   * Expire stale submissions whose TTL has elapsed.
+   * Scans for submissions with expiresAt in the past that are not in a terminal state,
+   * transitions them to 'expired', and emits submission.expired events.
+   * Returns the number of submissions expired.
+   */
+  async expireStaleSubmissions(): Promise<number> {
+    if (!this.store.getExpired) return 0;
+
+    const expired = await this.store.getExpired();
+    let count = 0;
+
+    const systemActor: Actor = {
+      kind: 'system',
+      id: 'expiry-scheduler',
+      name: 'Expiry Scheduler',
+    };
+
+    for (const submission of expired) {
+      // Double-check not already terminal
+      if (TERMINAL_STATES.has(submission.state)) continue;
+
+      try {
+        assertValidTransition(submission.state, 'expired');
+      } catch {
+        // State doesn't support transition to expired — skip
+        continue;
+      }
+
+      const now = new Date().toISOString();
+      submission.state = 'expired';
+      submission.updatedAt = now;
+      submission.updatedBy = systemActor;
+
+      const event: IntakeEvent = {
+        eventId: `evt_${randomUUID()}`,
+        type: 'submission.expired',
+        submissionId: submission.id,
+        ts: now,
+        actor: systemActor,
+        state: 'expired',
+        payload: {
+          reason: 'TTL elapsed',
+          expiresAt: submission.expiresAt,
+        },
+      };
+
+      await this.recordEvent(submission, event);
+      count++;
+    }
+
+    return count;
   }
 }

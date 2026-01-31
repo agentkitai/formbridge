@@ -15,7 +15,7 @@ import { createHonoSubmissionRouter } from './routes/hono-submissions.js';
 import { createHonoEventRouter } from './routes/hono-events.js';
 import { createHonoApprovalRouter } from './routes/hono-approvals.js';
 import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
-import { createHonoAnalyticsRouter, type AnalyticsDataProvider } from './routes/hono-analytics.js';
+import { createHonoAnalyticsRouter, type AnalyticsDataProvider, type IntakeMetrics } from './routes/hono-analytics.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { createCorsMiddleware, type CorsOptions } from './middleware/cors.js';
 import { IntakeRegistry } from './core/intake-registry.js';
@@ -32,7 +32,9 @@ import type { IntakeDefinition } from './types.js';
 import type { Submission } from './types.js';
 import type {
   IntakeEvent,
+  Destination,
 } from './types/intake-contract.js';
+import type { WebhookNotifier, ReviewerNotification } from './core/approval-manager.js';
 import { redactEventTokens } from './routes/event-utils.js';
 import { parseActor } from './routes/shared/actor-validation.js';
 
@@ -107,6 +109,19 @@ class InMemorySubmissionStore {
     return Array.from(this.submissions.values());
   }
 
+  /** Returns submissions with expiresAt in the past that are not in a terminal state */
+  async getExpired(): Promise<Submission[]> {
+    const now = new Date();
+    const terminal = new Set(['rejected', 'finalized', 'cancelled', 'expired']);
+    const result: Submission[] = [];
+    for (const sub of this.submissions.values()) {
+      if (sub.expiresAt && new Date(sub.expiresAt) < now && !terminal.has(sub.state)) {
+        result.push(sub);
+      }
+    }
+    return result;
+  }
+
   /** O(1) total submission count */
   getTotalCount(): number {
     return this.submissions.size;
@@ -144,6 +159,77 @@ class BridgingEventEmitter {
       if (result.status === 'rejected') {
         console.error('[BridgingEventEmitter] Listener error:', result.reason);
       }
+    }
+  }
+}
+
+/**
+ * WebhookNotifierImpl — bridges ApprovalManager's WebhookNotifier to WebhookManager.
+ * Formats ReviewerNotification payloads and delivers via the existing webhook infrastructure
+ * (HMAC signing, exponential backoff retry, delivery queue tracking).
+ */
+class WebhookNotifierImpl implements WebhookNotifier {
+  constructor(
+    private webhookManager: WebhookManager,
+    private notificationUrl?: string
+  ) {}
+
+  async notifyReviewers(notification: ReviewerNotification): Promise<void> {
+    if (!this.notificationUrl) return;
+
+    // Build a synthetic Submission-like object for the webhook manager
+    const syntheticSubmission: Submission = {
+      id: notification.submissionId,
+      intakeId: notification.intakeId,
+      state: notification.state,
+      resumeToken: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      fields: notification.fields,
+      fieldAttribution: {},
+      createdBy: notification.createdBy,
+      updatedBy: notification.createdBy,
+      events: [],
+    };
+
+    const destination: Destination = {
+      kind: 'webhook',
+      url: this.notificationUrl,
+    };
+
+    await this.webhookManager.enqueueDelivery(syntheticSubmission, destination);
+  }
+}
+
+/**
+ * ExpiryScheduler — periodically expires stale submissions via SubmissionManager.
+ * Uses setInterval with configurable interval (default 60s).
+ */
+class ExpiryScheduler {
+  private timer: ReturnType<typeof setInterval> | null = null;
+
+  constructor(
+    private manager: SubmissionManager,
+    private intervalMs: number = 60_000
+  ) {}
+
+  start(): void {
+    if (this.timer) return;
+    this.timer = setInterval(() => {
+      this.manager.expireStaleSubmissions().catch((err) => {
+        console.error('[ExpiryScheduler] Error expiring submissions:', err);
+      });
+    }, this.intervalMs);
+    // unref() so the timer doesn't prevent Node.js process/test exit
+    if (this.timer && typeof this.timer === 'object' && 'unref' in this.timer) {
+      this.timer.unref();
+    }
+  }
+
+  stop(): void {
+    if (this.timer) {
+      clearInterval(this.timer);
+      this.timer = null;
     }
   }
 }
@@ -228,7 +314,6 @@ export function createFormBridgeAppWithIntakes(
   // via its triple-write pattern (submission.events + emitter.emit + eventStore.appendEvent).
   // No need for an additional listener on the emitter to avoid duplicates.
   const manager = new SubmissionManager(store, emitter, registry, 'http://localhost:3000', undefined, eventStore);
-  const approvalManager = new ApprovalManager(store, emitter);
 
   // Webhook manager — wired to receive events from the bridging emitter
   const signingSecret = process.env['FORMBRIDGE_WEBHOOK_SECRET'];
@@ -237,8 +322,23 @@ export function createFormBridgeAppWithIntakes(
   }
   const webhookManager = new WebhookManager(undefined, { signingSecret, eventEmitter: emitter });
 
+  // Start webhook delivery retry scheduler (checks every 30s)
+  webhookManager.startRetryScheduler();
+
+  // Webhook notifier for approval reviewer notifications
+  const reviewerNotificationUrl = process.env['FORMBRIDGE_REVIEWER_WEBHOOK_URL'];
+  const webhookNotifier = new WebhookNotifierImpl(webhookManager, reviewerNotificationUrl);
+  const approvalManager = new ApprovalManager(store, emitter, webhookNotifier);
+
+  // Submission TTL expiry scheduler (checks every 60s)
+  const expiryScheduler = new ExpiryScheduler(manager);
+  expiryScheduler.start();
+
   // Schema validator for HTTP API field validation
   const validator = new Validator({ strict: false, allowAdditionalProperties: true });
+
+  // Terminal states for completion rate calculation
+  const completedStates = new Set(['submitted', 'finalized', 'approved']);
 
   // Analytics provider — uses pre-computed indexes for O(1) reads
   const analyticsProvider: AnalyticsDataProvider = {
@@ -248,6 +348,43 @@ export function createFormBridgeAppWithIntakes(
     getSubmissionsByState: () => store.getStateCounts(),
     getRecentEvents: (limit) => eventStore.getRecentEventsAll(limit),
     getEventsByType: (type) => eventStore.getEventsByTypeAll(type),
+    getSubmissionsByIntake: (): IntakeMetrics[] => {
+      const all = store.getAll();
+      const byIntake = new Map<string, { total: number; byState: Record<string, number>; completed: number }>();
+      for (const sub of all) {
+        let entry = byIntake.get(sub.intakeId);
+        if (!entry) {
+          entry = { total: 0, byState: {}, completed: 0 };
+          byIntake.set(sub.intakeId, entry);
+        }
+        entry.total++;
+        entry.byState[sub.state] = (entry.byState[sub.state] ?? 0) + 1;
+        if (completedStates.has(sub.state)) entry.completed++;
+      }
+      const result: IntakeMetrics[] = [];
+      for (const [intakeId, entry] of byIntake) {
+        result.push({
+          intakeId,
+          total: entry.total,
+          byState: entry.byState,
+          completionRate: entry.total > 0 ? entry.completed / entry.total : 0,
+        });
+      }
+      return result;
+    },
+    getCompletionRates: () => {
+      const stateCounts = store.getStateCounts();
+      const total = store.getTotalCount();
+      // Define funnel order
+      const funnelOrder = ['draft', 'in_progress', 'awaiting_upload', 'needs_review', 'approved', 'submitted', 'finalized', 'rejected', 'cancelled', 'expired'];
+      return funnelOrder
+        .filter((state) => (stateCounts[state] ?? 0) > 0)
+        .map((state) => ({
+          state,
+          count: stateCounts[state] ?? 0,
+          percentage: total > 0 ? ((stateCounts[state] ?? 0) / total) * 100 : 0,
+        }));
+    },
   };
 
   // Hono route modules
