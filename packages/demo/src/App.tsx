@@ -387,7 +387,7 @@ export const App: React.FC = () => {
         <Route path="/" element={<HomePage />} />
 
         {/* Resume form page - accepts ?token=rtok_xxx query param */}
-        <Route path="/resume" element={<ResumeFormPage />} />
+        <Route path="/resume" element={<ResumeFormPage endpoint="" />} />
 
         {/* Reviewer page - demonstrates approval workflow */}
         <Route path="/reviewer" element={<ReviewerPage />} />

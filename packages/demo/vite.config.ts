@@ -11,8 +11,14 @@ export default defineConfig({
     },
   },
   server: {
-    port: 3000,
-    open: true,
+    port: 3001,
+    host: '0.0.0.0',
+    open: false,
+    proxy: {
+      '/intake': 'http://localhost:3000',
+      '/health': 'http://localhost:3000',
+      '/submissions': 'http://localhost:3000',
+    },
   },
   build: {
     outDir: 'dist',

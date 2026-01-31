@@ -126,7 +126,7 @@ export const ResumeFormPage: React.FC<ResumeFormPageProps> = ({
       <div className="formbridge-resume-page__container">
         <h2 className="formbridge-resume-page__title">Resume Form</h2>
         <FormBridgeForm
-          schema={{ type: 'object', properties: {} }}
+          schema={submission.schema || { type: 'object', properties: {} }}
           fields={submission.fields}
           fieldAttribution={submission.fieldAttribution}
           currentActor={{ kind: 'human', id: 'human-web', name: 'Human User' }}

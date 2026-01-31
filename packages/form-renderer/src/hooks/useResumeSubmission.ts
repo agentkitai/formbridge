@@ -25,17 +25,18 @@ export interface Submission {
     id: string;
     name: string;
   }>;
-  createdBy: {
+  schema: unknown; // The intake schema from the API
+  createdBy?: {
     kind: 'agent' | 'human' | 'system';
     id: string;
     name: string;
   };
-  updatedBy: {
+  updatedBy?: {
     kind: 'agent' | 'human' | 'system';
     id: string;
     name: string;
   };
-  events: Array<{
+  events?: Array<{
     eventId: string;
     type: string;
     timestamp: string;

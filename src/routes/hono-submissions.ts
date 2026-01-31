@@ -149,12 +149,17 @@ export function createHonoSubmissionRouter(
       );
     }
 
+    // Get intake schema and details from the manager
+    const intakeDetails = await manager.getIntakeDetailsForSubmission(submission);
+
     return c.json({
       id: submission.id,
+      intakeId: submission.intakeId,
       state: submission.state,
       fields: submission.fields,
       fieldAttribution: submission.fieldAttribution,
       expiresAt: submission.expiresAt,
+      schema: intakeDetails.schema,
     });
   });
 

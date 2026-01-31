@@ -742,6 +742,28 @@ export class SubmissionManager {
   }
 
   /**
+   * Get intake details for a submission (schema and metadata)
+   */
+  async getIntakeDetailsForSubmission(submission: Submission): Promise<{ schema: unknown; intakeDefinition?: IntakeDefinition }> {
+    // If intake registry is available, get the full intake definition
+    if (this.intakeRegistry) {
+      try {
+        const intakeDefinition = this.intakeRegistry.getIntake(submission.intakeId);
+        return {
+          schema: intakeDefinition.schema,
+          intakeDefinition
+        };
+      } catch {
+        // If intake not found in registry, return empty schema
+        return { schema: { type: 'object', properties: {} } };
+      }
+    }
+    
+    // Fallback to empty schema if no intake registry
+    return { schema: { type: 'object', properties: {} } };
+  }
+
+  /**
    * Get events for a submission
    * Returns the event stream from the EventStore for audit trail purposes
    */
