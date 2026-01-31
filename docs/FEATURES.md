@@ -598,7 +598,7 @@ Enterprise governance for agent-submitted data. No tool provides approval gates 
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 3 |
 | **Priority** | should |
 | **Complexity**| medium |
@@ -622,14 +622,14 @@ Enterprise compliance-grade audit trails. No intake tool provides typed event st
 
 **Acceptance Criteria**
 
-- [ ] Every transition emits typed event
-- [ ] Events include type, timestamp, actor, payload, version
-- [ ] Append-only (no modify/delete)
-- [ ] GET endpoint returns full event stream
-- [ ] Filterable by type, actor, time
-- [ ] Field-level diffs for updates
-- [ ] Serializable for export
-- [ ] Pluggable storage
+- [x] Every transition emits typed event
+- [x] Events include type, timestamp, actor, payload, version
+- [x] Append-only (no modify/delete)
+- [x] GET endpoint returns full event stream
+- [x] Filterable by type, actor, time
+- [x] Field-level diffs for updates
+- [x] Serializable for export
+- [x] Pluggable storage
 
 ---
 
@@ -637,7 +637,7 @@ Enterprise compliance-grade audit trails. No intake tool provides typed event st
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 3 |
 | **Priority** | should |
 | **Complexity**| medium |
@@ -661,14 +661,14 @@ Jotform webhooks don't fire for API submissions. FormBridge treats all sources e
 
 **Acceptance Criteria**
 
-- [ ] Configure destination webhook URLs
-- [ ] Auto-forward as JSON POST
-- [ ] HMAC-SHA256 signature header
-- [ ] Exponential backoff retries (default 5)
-- [ ] Delivery tracking (pending/delivered/failed)
-- [ ] Identical for all submission sources
-- [ ] Dry-run mode
-- [ ] Custom headers per destination
+- [x] Configure destination webhook URLs
+- [x] Auto-forward as JSON POST
+- [x] HMAC-SHA256 signature header
+- [x] Exponential backoff retries (default 5)
+- [x] Delivery tracking (pending/delivered/failed)
+- [x] Identical for all submission sources
+- [x] Dry-run mode
+- [x] Custom headers per destination
 
 ---
 
@@ -680,7 +680,7 @@ Documentation, npm publishing CI/CD, CLI scaffolding, and example templates.
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 4 |
 | **Priority** | should |
 | **Complexity**| medium |
@@ -704,16 +704,16 @@ Form.io's biggest complaint is poor docs. Documentation is the primary acquisiti
 
 **Acceptance Criteria**
 
-- [ ] 10-minute quickstart guide
-- [ ] Full API reference across packages
-- [ ] Zod/JSON Schema/OpenAPI examples
-- [ ] State diagrams and error taxonomy reference
-- [ ] MCP integration guide
-- [ ] React component API docs
-- [ ] 3+ end-to-end walkthroughs
-- [ ] All code examples tested
-- [ ] Documentation site deployed
-- [ ] Search functionality
+- [x] 10-minute quickstart guide
+- [x] Full API reference across packages
+- [x] Zod/JSON Schema/OpenAPI examples
+- [x] State diagrams and error taxonomy reference
+- [x] MCP integration guide
+- [x] React component API docs
+- [x] 3+ end-to-end walkthroughs
+- [x] All code examples tested
+- [x] Documentation site deployed
+- [x] Search functionality
 
 ---
 
@@ -721,7 +721,7 @@ Form.io's biggest complaint is poor docs. Documentation is the primary acquisiti
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 4 |
 | **Priority** | should |
 | **Complexity**| medium |
@@ -745,15 +745,15 @@ Bridge between internal development and community adoption.
 
 **Acceptance Criteria**
 
-- [ ] GitHub Actions on every PR
-- [ ] ESM/CJS with TypeScript declarations
-- [ ] Automated npm publish on tagged releases
-- [ ] Provenance attestation
-- [ ] Conventional commit changelog
-- [ ] Semver enforcement
-- [ ] @formbridge scope
-- [ ] Package size tracking
-- [ ] Integration tests against real MCP/HTTP
+- [x] GitHub Actions on every PR
+- [x] ESM/CJS with TypeScript declarations
+- [x] Automated npm publish on tagged releases
+- [x] Provenance attestation
+- [x] Conventional commit changelog
+- [x] Semver enforcement
+- [x] @formbridge scope
+- [x] Package size tracking
+- [x] Integration tests against real MCP/HTTP
 
 ---
 
@@ -761,7 +761,7 @@ Bridge between internal development and community adoption.
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 4 |
 | **Priority** | could |
 | **Complexity**| medium |
@@ -785,14 +785,14 @@ Standard onboarding pattern for modern JS/TS libraries.
 
 **Acceptance Criteria**
 
-- [ ] Interactive setup wizard
-- [ ] Schema format selection
-- [ ] Interface multi-select
-- [ ] Template selection
-- [ ] Generated project runs with `npm run dev`
-- [ ] README with next steps
-- [ ] Non-interactive mode for CI
-- [ ] Under 10 seconds
+- [x] Interactive setup wizard
+- [x] Schema format selection
+- [x] Interface multi-select
+- [x] Template selection
+- [x] Generated project runs with `npm run dev`
+- [x] README with next steps
+- [x] Non-interactive mode for CI
+- [x] Under 10 seconds
 
 ---
 
@@ -800,7 +800,7 @@ Standard onboarding pattern for modern JS/TS libraries.
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 4 |
 | **Priority** | could |
 | **Complexity**| low |
@@ -824,10 +824,10 @@ Templates reduce time-to-value. Each includes both human form and MCP tool confi
 
 **Acceptance Criteria**
 
-- [ ] At least 5 templates (vendor onboarding, IT access, customer intake, expense report, bug report)
-- [ ] Zod schema + JSON Schema equivalent per template
-- [ ] Importable as npm packages or copy-pasteable
-- [ ] Documented walkthroughs
+- [x] At least 5 templates (vendor onboarding, IT access, customer intake, expense report, bug report)
+- [x] Zod schema + JSON Schema equivalent per template
+- [x] Importable as npm packages or copy-pasteable
+- [x] Documented walkthroughs
 
 ---
 
@@ -839,7 +839,7 @@ Pluggable storage, conditional fields, multi-step wizards, admin dashboard, and 
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 5 |
 | **Priority** | could |
 | **Complexity**| medium |
@@ -863,13 +863,13 @@ Works in diverse deployments. Essential for hosted tier.
 
 **Acceptance Criteria**
 
-- [ ] Clear TypeScript types for all operations
-- [ ] In-memory, SQLite, S3 backends
-- [ ] Single constructor parameter config
-- [ ] All backends pass same test suite
-- [ ] Interface exported for community
-- [ ] Migration utility
-- [ ] Performance characteristics documented
+- [x] Clear TypeScript types for all operations
+- [x] In-memory, SQLite, S3 backends
+- [x] Single constructor parameter config
+- [x] All backends pass same test suite
+- [x] Interface exported for community
+- [x] Migration utility
+- [x] Performance characteristics documented
 
 ---
 
@@ -877,7 +877,7 @@ Works in diverse deployments. Essential for hosted tier.
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 5 |
 | **Priority** | could |
 | **Complexity**| medium |
@@ -901,13 +901,13 @@ Real-world forms need conditional logic. Deepens advantage over MCP elicitation 
 
 **Acceptance Criteria**
 
-- [ ] Conditional visibility, required, and validation rules
-- [ ] Declarative in IntakeSchema IR
-- [ ] Client-side evaluation in React
-- [ ] Server-side evaluation in validator
-- [ ] MCP descriptions include conditional hints
-- [ ] Nested conditions supported
-- [ ] Circular dependency detection
+- [x] Conditional visibility, required, and validation rules
+- [x] Declarative in IntakeSchema IR
+- [x] Client-side evaluation in React
+- [x] Server-side evaluation in validator
+- [x] MCP descriptions include conditional hints
+- [x] Nested conditions supported
+- [x] Circular dependency detection
 
 ---
 
@@ -915,7 +915,7 @@ Real-world forms need conditional logic. Deepens advantage over MCP elicitation 
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 5 |
 | **Priority** | could |
 | **Complexity**| medium |
@@ -939,14 +939,14 @@ Complex workflows with 20-30+ fields benefit from step-by-step flow.
 
 **Acceptance Criteria**
 
-- [ ] Step definitions in schema
-- [ ] One step at a time with navigation
-- [ ] Progress indicator
-- [ ] Independent step validation
-- [ ] Back navigation preserves data
-- [ ] HTTP/MCP step-level partial validation
-- [ ] Step events in audit trail
-- [ ] Conditional step visibility
+- [x] Step definitions in schema
+- [x] One step at a time with navigation
+- [x] Progress indicator
+- [x] Independent step validation
+- [x] Back navigation preserves data
+- [x] HTTP/MCP step-level partial validation
+- [x] Step events in audit trail
+- [x] Conditional step visibility
 
 ---
 
@@ -954,7 +954,7 @@ Complex workflows with 20-30+ fields benefit from step-by-step flow.
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 5 |
 | **Priority** | could |
 | **Complexity**| high |
@@ -978,14 +978,14 @@ Centerpiece of hosted tiers. Visual interface for non-developer users.
 
 **Acceptance Criteria**
 
-- [ ] Intake definition listing
-- [ ] Submission search/filter/sort
-- [ ] Full submission view with events and delivery status
-- [ ] Approval queue with one-click actions
-- [ ] Webhook delivery monitor
-- [ ] Analytics (volume, breakdown, completion rates)
-- [ ] React-based, responsive
-- [ ] Authentication required
+- [x] Intake definition listing
+- [x] Submission search/filter/sort
+- [x] Full submission view with events and delivery status
+- [x] Approval queue with one-click actions
+- [x] Webhook delivery monitor
+- [x] Analytics (volume, breakdown, completion rates)
+- [x] React-based, responsive
+- [x] Authentication required
 
 ---
 
@@ -993,7 +993,7 @@ Centerpiece of hosted tiers. Visual interface for non-developer users.
 
 | Field | Value |
 |--------------|-------|
-| **Status** | PLANNED |
+| **Status** | IMPLEMENTED |
 | **Phase** | 5 |
 | **Priority** | could |
 | **Complexity**| high |
@@ -1017,11 +1017,11 @@ Enterprise access controls. Retool locks SSO behind enterprise tier.
 
 **Acceptance Criteria**
 
-- [ ] API key authentication
-- [ ] Scoped keys per intake definition
-- [ ] OAuth 2.0/OIDC for SSO
-- [ ] RBAC with 3+ roles
-- [ ] Multi-tenancy with data isolation
-- [ ] Rate limiting per key
-- [ ] Auth optional (disable for dev)
-- [ ] Audit events include actor identity
+- [x] API key authentication
+- [x] Scoped keys per intake definition
+- [x] OAuth 2.0/OIDC for SSO
+- [x] RBAC with 3+ roles
+- [x] Multi-tenancy with data isolation
+- [x] Rate limiting per key
+- [x] Auth optional (disable for dev)
+- [x] Audit events include actor identity
