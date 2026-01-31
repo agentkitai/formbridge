@@ -23,7 +23,7 @@ import type {
   EnumValue,
   StringFormat,
 } from '../types/intake-schema';
-import { Parser, ParserOptions, ParserError } from '../types/parser';
+import { type Parser, type ParserOptions, ParserError } from '../types/parser';
 import { createUnsupportedFeatureError } from '../types/errors';
 
 /**

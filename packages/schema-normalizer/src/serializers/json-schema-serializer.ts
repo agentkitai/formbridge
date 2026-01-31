@@ -113,7 +113,7 @@ export interface SerializerOptions {
 export class SerializerError extends Error {
   constructor(
     message: string,
-    public readonly cause?: unknown,
+    public override readonly cause?: unknown,
     public readonly context?: Record<string, unknown>
   ) {
     super(message);

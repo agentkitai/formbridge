@@ -35,7 +35,7 @@ export interface ParserOptions {
 export class ParserError extends Error {
   constructor(
     message: string,
-    public readonly cause?: unknown,
+    public override readonly cause?: unknown,
     public readonly context?: Record<string, unknown>
   ) {
     super(message);

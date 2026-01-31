@@ -105,7 +105,7 @@ export {
  * const ir = parser.parse({ type: 'string', minLength: 3 });
  * ```
  */
-export function createJSONSchemaParser(options?: ParserOptions): JSONSchemaParser {
+export function createJSONSchemaParser(options?: import('./types/parser').ParserOptions) {
   const { JSONSchemaParser } = require('./parsers/json-schema-parser');
   return new JSONSchemaParser(options);
 }
@@ -122,7 +122,7 @@ export function createJSONSchemaParser(options?: ParserOptions): JSONSchemaParse
  * const ir = parser.parse(z.string().min(3));
  * ```
  */
-export function createZodParser(options?: ParserOptions): ZodParser {
+export function createZodParser(options?: import('./types/parser').ParserOptions) {
   const { ZodParser } = require('./parsers/zod-parser');
   return new ZodParser(options);
 }
@@ -138,7 +138,7 @@ export function createZodParser(options?: ParserOptions): ZodParser {
  * const ir = parser.parse(openApiDoc, { operationId: 'createUser' });
  * ```
  */
-export function createOpenAPIParser(options?: ParserOptions): OpenAPIParser {
+export function createOpenAPIParser(options?: import('./types/parser').ParserOptions) {
   const { OpenAPIParser } = require('./parsers/openapi-parser');
   return new OpenAPIParser(options);
 }
@@ -154,7 +154,7 @@ export function createOpenAPIParser(options?: ParserOptions): OpenAPIParser {
  * const jsonSchema = serializer.serialize(intakeSchema);
  * ```
  */
-export function createJSONSchemaSerializer(options?: SerializerOptions): JSONSchemaSerializer {
+export function createJSONSchemaSerializer(options?: import('./serializers/json-schema-serializer').SerializerOptions) {
   const { JSONSchemaSerializer } = require('./serializers/json-schema-serializer');
   return new JSONSchemaSerializer(options);
 }

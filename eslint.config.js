@@ -8,7 +8,17 @@ import globals from 'globals';
 export default tseslint.config(
   // Global ignores
   {
-    ignores: ['dist/', 'build/', 'node_modules/', '.venv/', '*.config.js', '*.config.ts', 'docs-site/'],
+    ignores: [
+      '**/dist/**',
+      '**/build/**', 
+      '**/node_modules/**',
+      '**/.venv/**',
+      '*.config.js',
+      '*.config.ts',
+      'docs-site/**',
+      'coverage/**',
+      '.auto-claude/**',
+    ],
   },
 
   // Base JS recommended
@@ -57,6 +67,7 @@ export default tseslint.config(
         },
       ],
       '@typescript-eslint/no-explicit-any': 'warn',
+      '@typescript-eslint/no-require-imports': 'warn',
     },
   },
 

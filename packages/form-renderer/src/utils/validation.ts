@@ -62,7 +62,7 @@ function convertAjvError(error: ErrorObject): FieldError {
   let code: FieldError['code'] = 'invalid_value';
   let message = error.message || 'Invalid value';
   let expected: unknown = undefined;
-  let received: unknown = error.data;
+  const received: unknown = error.data;
 
   switch (error.keyword) {
     case 'required':

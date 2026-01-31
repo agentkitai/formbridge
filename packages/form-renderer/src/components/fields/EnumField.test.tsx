@@ -1053,7 +1053,7 @@ describe('EnumField', () => {
         />
       );
 
-      let select = screen.getByRole('combobox') as HTMLSelectElement;
+      const select = screen.getByRole('combobox') as HTMLSelectElement;
       expect(select.value).toBe('opt2');
 
       // Switch to radio mode

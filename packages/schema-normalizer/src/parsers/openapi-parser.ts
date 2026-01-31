@@ -9,9 +9,9 @@
  */
 
 import type { IntakeSchema } from '../types/intake-schema';
-import { Parser, ParserOptions, ParserError } from '../types/parser';
+import { type Parser, type ParserOptions, ParserError } from '../types/parser';
 import { SchemaValidationError } from '../types/errors';
-import { JSONSchemaParser, JSONSchema } from './json-schema-parser';
+import { JSONSchemaParser, type JSONSchema } from './json-schema-parser';
 
 /**
  * OpenAPI 3.0/3.1 document structure (subset relevant for request body extraction)

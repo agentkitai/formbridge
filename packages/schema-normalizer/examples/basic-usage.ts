@@ -96,7 +96,7 @@ function example2_ZodSchema() {
   // Note: This example requires 'zod' to be installed
   // npm install zod
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const { z } = require('zod');
 
     // Create parser instance

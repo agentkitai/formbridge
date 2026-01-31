@@ -23,14 +23,14 @@ import type {
   NumberConstraints,
   ArrayConstraints,
 } from '../types/intake-schema';
-import { Parser, ParserOptions, ParserError } from '../types/parser';
+import { type Parser, type ParserOptions, ParserError } from '../types/parser';
 
 /**
  * Zod type imports - these are optional since Zod is a peer dependency
  */
 let z: typeof import('zod');
 try {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
+   
   z = require('zod');
 } catch {
   // Zod is not installed - parser will throw error on use

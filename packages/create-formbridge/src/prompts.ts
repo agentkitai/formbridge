@@ -69,7 +69,7 @@ export async function runInteractive(
 
   const answers = Object.keys(prompts).length > 0
     ? await p.group(
-        prompts,
+        prompts as any,
         {
           onCancel: () => {
             p.cancel("Project creation cancelled.");
@@ -82,11 +82,11 @@ export async function runInteractive(
   p.outro("Generating project...");
 
   return {
-    name: (defaults.name ?? answers.name) as string,
-    schema: (defaults.schema ?? answers.schema) as SchemaFormat,
+    name: (defaults.name ?? (answers as any).name) as string,
+    schema: (defaults.schema ?? (answers as any).schema) as SchemaFormat,
     interfaces: defaults.interfaces.length > 0
       ? defaults.interfaces
-      : (answers.interfaces as InterfaceType[]),
-    template: (defaults.template ?? answers.template ?? "none") as string,
+      : ((answers as any).interfaces as InterfaceType[]),
+    template: (defaults.template ?? (answers as any).template ?? "none") as string,
   };
 }
