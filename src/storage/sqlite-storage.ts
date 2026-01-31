@@ -367,8 +367,8 @@ export class SqliteStorage implements FormBridgeStorage {
     // Dynamic import of better-sqlite3 (optional peer dependency)
     let BetterSqlite3: any;
     try {
-      // @ts-expect-error better-sqlite3 is an optional peer dependency
-      BetterSqlite3 = (await import("better-sqlite3")).default;
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      BetterSqlite3 = (await import("better-sqlite3" as string)).default;
     } catch {
       throw new Error(
         "better-sqlite3 is required for SqliteStorage. Install it: npm install better-sqlite3"
