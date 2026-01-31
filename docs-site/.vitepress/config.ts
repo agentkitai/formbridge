@@ -36,6 +36,7 @@ export default defineConfig({
             { text: 'Events', link: '/api/events' },
             { text: 'Approvals', link: '/api/approvals' },
             { text: 'Webhooks', link: '/api/webhooks' },
+            { text: 'Analytics', link: '/api/analytics' },
           ],
         },
       ],
