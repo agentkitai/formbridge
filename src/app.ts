@@ -197,19 +197,20 @@ export function createFormBridgeAppWithIntakes(
     });
 
     // If initial fields provided, set them via setFields to trigger state transition + token rotation
-    if (body.initialFields && Object.keys(body.initialFields).length > 0) {
+    const initFields = body.initialFields || body.fields;
+    if (initFields && Object.keys(initFields).length > 0) {
       const setResult = await manager.setFields({
         submissionId: result.submissionId,
         resumeToken: result.resumeToken,
         actor,
-        fields: body.initialFields,
+        fields: initFields,
       });
 
       if (setResult.ok) {
         const intake = registry.getIntake(intakeId);
         const schema = intake.schema as { required?: string[] };
         const requiredFields = schema.required ?? [];
-        const providedFields = Object.keys(body.initialFields);
+        const providedFields = Object.keys(initFields);
         const missingFields = requiredFields.filter((f: string) => !providedFields.includes(f));
 
         return c.json(

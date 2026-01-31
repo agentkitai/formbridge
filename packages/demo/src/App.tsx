@@ -25,37 +25,47 @@ const HomePage: React.FC = () => {
     setSimulationLog([]);
 
     try {
-      // Step 1: Simulate agent creating submission
+      // Step 1: Create submission via real API
       setSimulationLog((prev) => [...prev, '✓ Agent: Creating new submission...']);
-      await simulateDelay(500);
-      const submissionId = `sub_${Date.now()}`;
+      const createRes = await fetch('/intake/vendor-onboarding/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor: { kind: 'agent', id: 'demo-agent' },
+          initialFields: {
+            legal_name: 'Acme Corp',
+            country: 'US',
+            tax_id: '12-3456789',
+            contact_email: 'agent@acme.com',
+          },
+        }),
+      });
+      const createData = await createRes.json();
+      if (!createData.ok) throw new Error(createData.error?.message || 'Failed to create submission');
+      
+      const { submissionId, resumeToken } = createData;
       setSimulationLog((prev) => [...prev, `✓ Agent: Submission created: ${submissionId}`]);
 
-      // Step 2: Simulate agent filling fields
-      await simulateDelay(500);
+      // Step 2: Show what the agent filled
+      await simulateDelay(300);
       setSimulationLog((prev) => [
         ...prev,
-        '✓ Agent: Filling known fields (name, address, tax ID)...',
-      ]);
-      await simulateDelay(500);
-      setSimulationLog((prev) => [
-        ...prev,
-        '  - Set field "companyName" = "Acme Corp"',
-        '  - Set field "address" = "123 Main St, San Francisco, CA"',
-        '  - Set field "taxId" = "12-3456789"',
+        '✓ Agent: Filled known fields:',
+        '  - Set field "legal_name" = "Acme Corp"',
+        '  - Set field "country" = "US"',
+        '  - Set field "tax_id" = "12-3456789"',
+        '  - Set field "contact_email" = "agent@acme.com"',
       ]);
 
-      // Step 3: Simulate generating resume URL
-      await simulateDelay(500);
+      // Step 3: Generate handoff URL with real resume token
+      await simulateDelay(300);
       setSimulationLog((prev) => [...prev, '✓ Agent: Generating handoff URL...']);
-      await simulateDelay(500);
-      const resumeToken = `rtok_${Date.now()}`;
       const generatedUrl = `${window.location.origin}/resume?token=${resumeToken}`;
       setResumeUrl(generatedUrl);
       setSimulationLog((prev) => [
         ...prev,
         '✓ Agent: Resume URL generated successfully!',
-        '✓ Agent: Handoff complete. Ready for human to complete form.',
+        '✓ Agent: Handoff complete. Human can now complete the remaining fields.',
       ]);
     } catch (error) {
       setSimulationLog((prev) => [

@@ -3,7 +3,7 @@
  * Accepts resumeToken query param and loads pre-filled submission data
  */
 
-import React, { useRef, useEffect } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useResumeSubmission } from '../hooks/useResumeSubmission';
 import { FormBridgeForm } from './FormBridgeForm';
 import type { Submission } from '../hooks/useResumeSubmission';
@@ -86,6 +86,80 @@ export const ResumeFormPage: React.FC<ResumeFormPageProps> = ({
     onError: handleError,
   });
 
+  const [submitState, setSubmitState] = useState<'idle' | 'submitting' | 'success' | 'error'>('idle');
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const handleSubmit = useCallback(async (fields: Record<string, unknown>) => {
+    if (!submission) return;
+
+    setSubmitState('submitting');
+    setSubmitError(null);
+
+    try {
+      const apiBase = endpoint || 'http://localhost:3000';
+      const actor = { kind: 'human' as const, id: 'human-web', name: 'Human User' };
+
+      // Step 1: PATCH fields to update the submission
+      const patchRes = await fetch(
+        `${apiBase}/intake/${encodeURIComponent(submission.intakeId)}/submissions/${encodeURIComponent(submission.id)}`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resumeToken: resolvedToken,
+            actor,
+            fields,
+          }),
+        }
+      );
+
+      if (!patchRes.ok) {
+        const patchData = await patchRes.json().catch(() => ({}));
+        throw new Error(patchData?.error?.message || `Failed to update fields (${patchRes.status})`);
+      }
+
+      const patchData = await patchRes.json();
+      const currentResumeToken = patchData.resumeToken || resolvedToken;
+
+      // Step 2: Submit the submission
+      const submitRes = await fetch(
+        `${apiBase}/intake/${encodeURIComponent(submission.intakeId)}/submissions/${encodeURIComponent(submission.id)}/submit`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            resumeToken: currentResumeToken,
+            actor,
+            idempotencyKey: `submit_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          }),
+        }
+      );
+
+      const submitData = await submitRes.json().catch(() => ({}));
+
+      if (!submitRes.ok && submitRes.status !== 202) {
+        throw new Error(submitData?.error?.message || `Submission failed (${submitRes.status})`);
+      }
+
+      setSubmitState('success');
+    } catch (err) {
+      setSubmitState('error');
+      setSubmitError(err instanceof Error ? err.message : 'An unexpected error occurred');
+    }
+  }, [submission, endpoint, resolvedToken]);
+
+  // Success state
+  if (submitState === 'success') {
+    return (
+      <div className={`formbridge-resume-page ${className}`.trim()}>
+        <div className="formbridge-resume-page__container">
+          <h2 className="formbridge-resume-page__title">✅ Submitted Successfully</h2>
+          <p>Your form has been submitted. Thank you!</p>
+        </div>
+      </div>
+    );
+  }
+
   // Error state
   if (error) {
     return (
@@ -125,11 +199,18 @@ export const ResumeFormPage: React.FC<ResumeFormPageProps> = ({
     <div className={`formbridge-resume-page ${className}`.trim()}>
       <div className="formbridge-resume-page__container">
         <h2 className="formbridge-resume-page__title">Resume Form</h2>
+        {submitState === 'error' && submitError && (
+          <div className="formbridge-resume-page__error" role="alert">
+            <p className="formbridge-resume-page__error-message">{submitError}</p>
+          </div>
+        )}
         <FormBridgeForm
           schema={submission.schema || { type: 'object', properties: {} }}
           fields={submission.fields}
           fieldAttribution={submission.fieldAttribution}
           currentActor={{ kind: 'human', id: 'human-web', name: 'Human User' }}
+          onSubmit={handleSubmit}
+          readOnly={submitState === 'submitting'}
         />
       </div>
     </div>
