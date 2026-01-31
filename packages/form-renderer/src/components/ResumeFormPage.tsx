@@ -6,6 +6,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { useResumeSubmission } from '../hooks/useResumeSubmission';
 import { FormBridgeForm } from './FormBridgeForm';
+import type { FormSchema } from './FormBridgeForm';
 import type { Submission } from '../hooks/useResumeSubmission';
 
 /**
@@ -205,7 +206,7 @@ export const ResumeFormPage: React.FC<ResumeFormPageProps> = ({
           </div>
         )}
         <FormBridgeForm
-          schema={submission.schema || { type: 'object', properties: {} }}
+          schema={(submission.schema as FormSchema) ?? { type: 'object' as const, properties: {} }}
           fields={submission.fields}
           fieldAttribution={submission.fieldAttribution}
           currentActor={{ kind: 'human', id: 'human-web', name: 'Human User' }}

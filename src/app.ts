@@ -8,9 +8,12 @@
 import { Hono } from 'hono';
 import { createHealthRouter } from './routes/health.js';
 import { createIntakeRouter } from './routes/intake.js';
+import { createUploadRouter } from './routes/uploads.js';
 import { createHonoSubmissionRouter } from './routes/hono-submissions.js';
 import { createHonoEventRouter } from './routes/hono-events.js';
 import { createHonoApprovalRouter } from './routes/hono-approvals.js';
+import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
+import { createHonoAnalyticsRouter, type AnalyticsDataProvider } from './routes/hono-analytics.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { createCorsMiddleware, type CorsOptions } from './middleware/cors.js';
 import { IntakeRegistry } from './core/intake-registry.js';
@@ -20,6 +23,8 @@ import {
   InvalidResumeTokenError,
 } from './core/submission-manager.js';
 import { ApprovalManager } from './core/approval-manager.js';
+import { InMemoryEventStore } from './core/event-store.js';
+import { WebhookManager } from './core/webhook-manager.js';
 import type { IntakeDefinition } from './types.js';
 import type { Submission } from './types.js';
 import type {
@@ -59,13 +64,25 @@ class InMemorySubmissionStore {
     if (!id) return null;
     return this.submissions.get(id) ?? null;
   }
+
+  getAll(): Submission[] {
+    return Array.from(this.submissions.values());
+  }
 }
 
 /**
- * No-op event emitter
+ * Bridging event emitter — fans out events to multiple listeners.
  */
-class NoopEventEmitter {
-  async emit(_event: IntakeEvent): Promise<void> {}
+class BridgingEventEmitter {
+  private listeners: Array<(event: IntakeEvent) => Promise<void>> = [];
+
+  addListener(listener: (event: IntakeEvent) => Promise<void>): void {
+    this.listeners.push(listener);
+  }
+
+  async emit(event: IntakeEvent): Promise<void> {
+    await Promise.all(this.listeners.map((fn) => fn(event)));
+  }
 }
 
 /**
@@ -129,14 +146,64 @@ export function createFormBridgeAppWithIntakes(
 
   // Core services
   const store = new InMemorySubmissionStore();
-  const emitter = new NoopEventEmitter();
-  const manager = new SubmissionManager(store, emitter, registry, 'http://localhost:3000');
+  const eventStore = new InMemoryEventStore();
+  const emitter = new BridgingEventEmitter();
+
+  // Pass the shared eventStore to SubmissionManager — it already appends events
+  // via its triple-write pattern (submission.events + emitter.emit + eventStore.appendEvent).
+  // No need for an additional listener on the emitter to avoid duplicates.
+  const manager = new SubmissionManager(store, emitter, registry, 'http://localhost:3000', undefined, eventStore);
   const approvalManager = new ApprovalManager(store, emitter);
+
+  // Webhook manager — wired to receive events from the bridging emitter
+  const webhookManager = new WebhookManager(undefined, { eventEmitter: emitter });
+
+  // Analytics provider — reads from shared store
+  const analyticsProvider: AnalyticsDataProvider = {
+    getIntakeIds: () => registry.listIntakeIds(),
+    getTotalSubmissions: () => store.getAll().length,
+    getPendingApprovalCount: () => store.getAll().filter((s) => s.state === 'needs_review').length,
+    getSubmissionsByState: () => {
+      const byState: Record<string, number> = {};
+      for (const sub of store.getAll()) {
+        byState[sub.state] = (byState[sub.state] ?? 0) + 1;
+      }
+      return byState;
+    },
+    getRecentEvents: (limit) => {
+      const allEvents: IntakeEvent[] = [];
+      for (const sub of store.getAll()) {
+        if (sub.events) allEvents.push(...sub.events);
+      }
+      allEvents.sort((a, b) => b.ts.localeCompare(a.ts));
+      return allEvents.slice(0, limit);
+    },
+    getEventsByType: (type) => {
+      const matched: IntakeEvent[] = [];
+      for (const sub of store.getAll()) {
+        if (sub.events) {
+          for (const ev of sub.events) {
+            if (ev.type === type) matched.push(ev);
+          }
+        }
+      }
+      return matched;
+    },
+  };
 
   // Hono route modules
   app.route('/', createHonoSubmissionRouter(manager));
   app.route('/', createHonoEventRouter(manager));
   app.route('/', createHonoApprovalRouter(approvalManager));
+
+  // Upload routes
+  app.route('/intake', createUploadRouter(registry, manager));
+
+  // Webhook routes
+  app.route('/', createHonoWebhookRouter(webhookManager));
+
+  // Analytics routes
+  app.route('/', createHonoAnalyticsRouter(analyticsProvider));
 
   // POST /intake/:intakeId/submissions — create submission
   app.post('/intake/:intakeId/submissions', async (c) => {

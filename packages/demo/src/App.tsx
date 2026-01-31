@@ -3,10 +3,11 @@
  * Demonstrates agent-to-human handoff workflow with FormBridge
  */
 
-import React, { useState } from 'react';
-import { BrowserRouter, Routes, Route, Link } from 'react-router-dom';
-import { ResumeFormPage, ReviewerView, ApprovalActions } from '@formbridge/form-renderer';
+import React, { useState, useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Link, useSearchParams } from 'react-router-dom';
+import { ResumeFormPage, ReviewerView, ApprovalActions, createApiClient } from '@formbridge/form-renderer';
 import type { ReviewSubmission, FieldComment } from '@formbridge/form-renderer';
+import { WizardForm } from '../../form-renderer/src/components/WizardForm';
 
 /**
  * Home page component - Demo landing page
@@ -155,6 +156,9 @@ const HomePage: React.FC = () => {
             <Link to="/reviewer" className="demo-link">
               View Reviewer / Approval Workflow
             </Link>
+            <Link to="/wizard" className="demo-link">
+              Multi-Step Wizard Form
+            </Link>
           </nav>
         </section>
 
@@ -198,13 +202,47 @@ const HomePage: React.FC = () => {
 };
 
 /**
- * ReviewerPage component - Demo reviewer view for approval workflow
+ * ReviewerPage component - Reviewer view for approval workflow.
+ * Fetches real submission data when ?id=&token= are provided; falls back to mock data for demo mode.
  */
 const ReviewerPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const resumeToken = searchParams.get('token');
+
   const [approvalStatus, setApprovalStatus] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [submission, setSubmission] = useState<ReviewSubmission | null>(null);
+  const [schema, setSchema] = useState<Record<string, unknown> | null>(null);
+  const [loadingReal, setLoadingReal] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  // Mock submission data for demo purposes
+  const client = createApiClient({ endpoint: '' }); // uses Vite proxy
+
+  // Fetch real submission if id + token are provided
+  useEffect(() => {
+    if (!resumeToken) return;
+    setLoadingReal(true);
+    client
+      .getSubmissionByResumeToken(resumeToken)
+      .then((data: Record<string, unknown>) => {
+        setSubmission({
+          id: data.submissionId as string,
+          intakeId: data.intakeId as string,
+          state: data.state as string,
+          resumeToken: data.resumeToken as string,
+          createdAt: (data.metadata as Record<string, string>)?.createdAt ?? new Date().toISOString(),
+          updatedAt: (data.metadata as Record<string, string>)?.updatedAt ?? new Date().toISOString(),
+          fields: data.fields as Record<string, unknown>,
+          fieldAttribution: data.fieldAttribution as Record<string, { kind: string; id: string; name?: string }>,
+          createdBy: (data.metadata as Record<string, unknown>)?.createdBy as ReviewSubmission['createdBy'],
+        } as ReviewSubmission);
+        if (data.schema) setSchema(data.schema as Record<string, unknown>);
+      })
+      .catch((err: Error) => setLoadError(err.message))
+      .finally(() => setLoadingReal(false));
+  }, [resumeToken]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fallback mock data for demo mode (no id/token)
   const mockSubmission: ReviewSubmission = {
     id: 'sub_demo_approval',
     intakeId: 'vendor-onboarding',
@@ -230,7 +268,6 @@ const ReviewerPage: React.FC = () => {
     updatedBy: { kind: 'human', id: 'user_123', name: 'John Doe' },
   };
 
-  // Mock schema for demo purposes
   const mockSchema = {
     type: 'object' as const,
     properties: {
@@ -243,32 +280,32 @@ const ReviewerPage: React.FC = () => {
     required: ['companyName', 'address', 'taxId'],
   };
 
-  // Mock reviewer actor
-  const mockReviewer = {
+  const activeSubmission = submission ?? mockSubmission;
+  const activeSchema = (schema ?? mockSchema) as typeof mockSchema;
+
+  const reviewer = {
     kind: 'human' as const,
     id: 'reviewer_finance',
     name: 'Finance Team Reviewer',
   };
 
-  /**
-   * Handle approval action
-   */
-  const handleApprove = async (_data: {
+  const handleApprove = async (data: {
     submissionId: string;
     resumeToken: string;
     actor: { kind: string; id: string; name?: string };
     comment?: string;
   }) => {
     setIsProcessing(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setApprovalStatus('✅ Submission approved successfully!');
+    const result = await client.approve(
+      data.submissionId,
+      data.resumeToken,
+      data.actor as { kind: 'human' | 'agent' | 'system'; id: string; name?: string },
+      data.comment
+    );
+    setApprovalStatus(result.ok ? 'Submission approved successfully!' : `Error: ${result.error}`);
     setIsProcessing(false);
   };
 
-  /**
-   * Handle reject action
-   */
   const handleReject = async (data: {
     submissionId: string;
     resumeToken: string;
@@ -277,15 +314,17 @@ const ReviewerPage: React.FC = () => {
     comment?: string;
   }) => {
     setIsProcessing(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setApprovalStatus(`❌ Submission rejected. Reason: ${data.reason}`);
+    const result = await client.reject(
+      data.submissionId,
+      data.resumeToken,
+      data.actor as { kind: 'human' | 'agent' | 'system'; id: string; name?: string },
+      data.reason,
+      data.comment
+    );
+    setApprovalStatus(result.ok ? `Submission rejected. Reason: ${data.reason}` : `Error: ${result.error}`);
     setIsProcessing(false);
   };
 
-  /**
-   * Handle request changes action
-   */
   const handleRequestChanges = async (data: {
     submissionId: string;
     resumeToken: string;
@@ -294,9 +333,16 @@ const ReviewerPage: React.FC = () => {
     comment?: string;
   }) => {
     setIsProcessing(true);
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setApprovalStatus(`🔄 Changes requested${data.comment ? `: ${data.comment}` : ''}`);
+    const result = await client.requestChanges(
+      data.submissionId,
+      data.resumeToken,
+      data.actor as { kind: 'human' | 'agent' | 'system'; id: string; name?: string },
+      data.fieldComments,
+      data.comment
+    );
+    setApprovalStatus(
+      result.ok ? `Changes requested${data.comment ? `: ${data.comment}` : ''}` : `Error: ${result.error}`
+    );
     setIsProcessing(false);
   };
 
@@ -319,6 +365,13 @@ const ReviewerPage: React.FC = () => {
           </p>
         </section>
 
+        {loadingReal && (
+          <section className="demo-section"><p>Loading submission...</p></section>
+        )}
+        {loadError && (
+          <section className="demo-section"><p>Error loading submission: {loadError}. Showing demo data.</p></section>
+        )}
+
         {approvalStatus && (
           <section className="demo-section">
             <div className="demo-simulation-log" role="alert" aria-live="polite">
@@ -330,14 +383,14 @@ const ReviewerPage: React.FC = () => {
 
         <section className="demo-section">
           <ReviewerView
-            submission={mockSubmission}
-            schema={mockSchema}
-            reviewer={mockReviewer}
+            submission={activeSubmission}
+            schema={activeSchema}
+            reviewer={reviewer}
             approvalActions={
               <ApprovalActions
-                submissionId={mockSubmission.id}
-                resumeToken={mockSubmission.resumeToken}
-                reviewer={mockReviewer}
+                submissionId={activeSubmission.id}
+                resumeToken={activeSubmission.resumeToken}
+                reviewer={reviewer}
                 onApprove={handleApprove}
                 onReject={handleReject}
                 onRequestChanges={handleRequestChanges}
@@ -366,8 +419,8 @@ const ReviewerPage: React.FC = () => {
             <li>
               <strong>Reviewer Takes Action:</strong> The reviewer can:
               <ul>
-                <li><strong>Approve:</strong> Accept the submission (transitions to approved → forwarded)</li>
-                <li><strong>Reject:</strong> Reject with a required reason (transitions to rejected → draft)</li>
+                <li><strong>Approve:</strong> Accept the submission (transitions to approved)</li>
+                <li><strong>Reject:</strong> Reject with a required reason (transitions to rejected)</li>
                 <li><strong>Request Changes:</strong> Send back for corrections with field-level comments</li>
               </ul>
             </li>
@@ -387,6 +440,112 @@ const ReviewerPage: React.FC = () => {
 };
 
 /**
+ * WizardPage component - Multi-step form demo using WizardForm
+ */
+const WizardPage: React.FC = () => {
+  const [formValues, setFormValues] = useState<Record<string, unknown>>({
+    legal_name: '',
+    country: '',
+    tax_id: '',
+    contact_email: '',
+    contact_phone: '',
+    street: '',
+    city: '',
+    state: '',
+    zip_code: '',
+  });
+  const [completed, setCompleted] = useState(false);
+
+  const steps = [
+    { id: 'company', title: 'Company Info', fields: ['legal_name', 'country', 'tax_id'] },
+    { id: 'contact', title: 'Contact Details', fields: ['contact_email', 'contact_phone'] },
+    { id: 'address', title: 'Address', fields: ['street', 'city', 'state', 'zip_code'] },
+  ];
+
+  const fieldSchemas: Record<string, { required?: boolean; type?: string }> = {
+    legal_name: { required: true, type: 'string' },
+    country: { required: true, type: 'string' },
+    tax_id: { required: true, type: 'string' },
+    contact_email: { required: true, type: 'string' },
+    contact_phone: { required: false, type: 'string' },
+    street: { required: true, type: 'string' },
+    city: { required: true, type: 'string' },
+    state: { required: false, type: 'string' },
+    zip_code: { required: true, type: 'string' },
+  };
+
+  const fieldLabels: Record<string, string> = {
+    legal_name: 'Legal Name',
+    country: 'Country',
+    tax_id: 'Tax ID',
+    contact_email: 'Contact Email',
+    contact_phone: 'Contact Phone',
+    street: 'Street Address',
+    city: 'City',
+    state: 'State / Province',
+    zip_code: 'ZIP / Postal Code',
+  };
+
+  return (
+    <div className="demo-home">
+      <header className="demo-header">
+        <h1>FormBridge Demo - Wizard Form</h1>
+        <p className="demo-subtitle">Multi-Step Form</p>
+      </header>
+      <main className="demo-content">
+        <section className="demo-section">
+          <p><Link to="/" className="demo-link">← Back to Home</Link></p>
+        </section>
+        <section className="demo-section">
+          {completed ? (
+            <div>
+              <h3>Form Submitted!</h3>
+              <pre>{JSON.stringify(formValues, null, 2)}</pre>
+              <button className="demo-button" onClick={() => setCompleted(false)}>Reset</button>
+            </div>
+          ) : (
+            <WizardForm
+              steps={steps}
+              formValues={formValues}
+              fieldSchemas={fieldSchemas}
+              onComplete={() => setCompleted(true)}
+              renderStep={(step, errors) => (
+                <div>
+                  <h3>{step.title}</h3>
+                  {step.description && <p>{step.description}</p>}
+                  {step.fields.map((field) => {
+                    const err = errors.find((e) => e.field === field);
+                    return (
+                      <div key={field} style={{ marginBottom: '12px' }}>
+                        <label htmlFor={`wizard-${field}`} style={{ display: 'block', fontWeight: 'bold', marginBottom: '4px' }}>
+                          {fieldLabels[field] ?? field}
+                          {fieldSchemas[field]?.required && <span style={{ color: 'red' }}> *</span>}
+                        </label>
+                        <input
+                          id={`wizard-${field}`}
+                          type="text"
+                          value={String(formValues[field] ?? '')}
+                          onChange={(e) => setFormValues((prev) => ({ ...prev, [field]: e.target.value }))}
+                          style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+                        />
+                        {err && <span style={{ color: 'red', fontSize: '0.85em' }}>{err.message}</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            />
+          )}
+        </section>
+      </main>
+      <footer className="demo-footer">
+        <p>Built with FormBridge - Enable agent-human collaboration on forms</p>
+      </footer>
+    </div>
+  );
+};
+
+/**
  * App component with routing
  */
 export const App: React.FC = () => {
@@ -396,11 +555,16 @@ export const App: React.FC = () => {
         {/* Home page */}
         <Route path="/" element={<HomePage />} />
 
-        {/* Resume form page - accepts ?token=rtok_xxx query param */}
+        {/* Resume form page - accepts ?token=rtok_xxx query param.
+            endpoint="" works in development because Vite proxies /submissions/* to the backend.
+            For standalone deployments, pass the full backend URL, e.g. endpoint="https://api.example.com" */}
         <Route path="/resume" element={<ResumeFormPage endpoint="" />} />
 
         {/* Reviewer page - demonstrates approval workflow */}
         <Route path="/reviewer" element={<ReviewerPage />} />
+
+        {/* Wizard form - multi-step form demo */}
+        <Route path="/wizard" element={<WizardPage />} />
       </Routes>
     </BrowserRouter>
   );

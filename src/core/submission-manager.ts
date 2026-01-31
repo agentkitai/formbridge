@@ -54,7 +54,7 @@ export interface EventEmitter {
 }
 
 export interface IntakeRegistry {
-  getIntake(intakeId: string): { approvalGates?: unknown[] };
+  getIntake(intakeId: string): IntakeDefinition;
 }
 
 /**

@@ -18,6 +18,10 @@ export { ObjectField } from './components/fields/ObjectField';
 export { ArrayField } from './components/fields/ArrayField';
 export { FileField } from './components/fields/FileField';
 
+// Wizard form component
+export { WizardForm } from './components/WizardForm';
+export type { WizardFormProps } from './components/WizardForm';
+
 // Helper components (for advanced customization)
 export { FieldWrapper } from './components/FieldWrapper';
 export type { FieldWrapperProps } from './components/FieldWrapper';
