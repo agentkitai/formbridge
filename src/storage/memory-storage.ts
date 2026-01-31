@@ -23,6 +23,7 @@ export class InMemorySubmissionStorage implements SubmissionStorage {
   private submissions = new Map<string, Submission>();
   private byResumeToken = new Map<string, string>(); // token -> submissionId
   private byIdempotencyKey = new Map<string, string>(); // key -> submissionId
+  private lastKnownToken = new Map<string, string>(); // submissionId -> last saved token
 
   async get(id: string): Promise<Submission | null> {
     return this.submissions.get(id) ?? null;
@@ -41,16 +42,15 @@ export class InMemorySubmissionStorage implements SubmissionStorage {
   }
 
   async save(submission: Submission): Promise<void> {
-    // Clean up stale resume token entries for this submission.
-    // Remove ALL tokens that pointed to this submission ID, then re-add the current one.
-    for (const [token, id] of this.byResumeToken.entries()) {
-      if (id === submission.id) {
-        this.byResumeToken.delete(token);
-      }
+    // O(1) stale token cleanup using reverse index
+    const oldToken = this.lastKnownToken.get(submission.id);
+    if (oldToken && oldToken !== submission.resumeToken) {
+      this.byResumeToken.delete(oldToken);
     }
 
     this.submissions.set(submission.id, submission);
     this.byResumeToken.set(submission.resumeToken, submission.id);
+    this.lastKnownToken.set(submission.id, submission.resumeToken);
 
     if (submission.idempotencyKey) {
       this.byIdempotencyKey.set(submission.idempotencyKey, submission.id);

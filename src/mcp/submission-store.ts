@@ -47,7 +47,9 @@ export interface UploadEntry {
  */
 export class InMemorySubmissionStore implements ISubmissionStore {
   private submissions: Map<string, SubmissionEntry> = new Map();
-  private resumeTokenIndex: Map<string, string> = new Map();
+  private resumeTokenIndex: Map<string, string> = new Map(); // resumeToken -> submissionId
+  private idempotencyKeyIndex: Map<string, string> = new Map(); // idempotencyKey -> submissionId
+  private lastKnownToken: Map<string, string> = new Map(); // submissionId -> last saved token
 
   /**
    * Get submission by ID
@@ -62,6 +64,12 @@ export class InMemorySubmissionStore implements ISubmissionStore {
    * Stores submission with field attribution for audit trail
    */
   async save(submission: Submission): Promise<void> {
+    // O(1) stale token cleanup using reverse index
+    const oldToken = this.lastKnownToken.get(submission.id);
+    if (oldToken && oldToken !== submission.resumeToken) {
+      this.resumeTokenIndex.delete(oldToken);
+    }
+
     const entry: SubmissionEntry = {
       submission,
       resumeToken: submission.resumeToken,
@@ -69,10 +77,14 @@ export class InMemorySubmissionStore implements ISubmissionStore {
 
     this.submissions.set(submission.id, entry);
     this.resumeTokenIndex.set(submission.resumeToken, submission.id);
+    this.lastKnownToken.set(submission.id, submission.resumeToken);
+    if (submission.idempotencyKey) {
+      this.idempotencyKeyIndex.set(submission.idempotencyKey, submission.id);
+    }
   }
 
   /**
-   * Get submission by resume token
+   * Get submission by resume token — O(1) via index
    */
   async getByResumeToken(resumeToken: string): Promise<Submission | null> {
     const submissionId = this.resumeTokenIndex.get(resumeToken);
@@ -85,15 +97,13 @@ export class InMemorySubmissionStore implements ISubmissionStore {
   }
 
   /**
-   * Get submission by idempotency key
+   * Get submission by idempotency key — O(1) via index
    */
   async getByIdempotencyKey(key: string): Promise<Submission | null> {
-    for (const entry of this.submissions.values()) {
-      if (entry.submission.idempotencyKey === key) {
-        return entry.submission;
-      }
-    }
-    return null;
+    const submissionId = this.idempotencyKeyIndex.get(key);
+    if (!submissionId) return null;
+    const entry = this.submissions.get(submissionId);
+    return entry ? entry.submission : null;
   }
 
   /**
@@ -102,6 +112,8 @@ export class InMemorySubmissionStore implements ISubmissionStore {
   clear(): void {
     this.submissions.clear();
     this.resumeTokenIndex.clear();
+    this.idempotencyKeyIndex.clear();
+    this.lastKnownToken.clear();
   }
 
   /**

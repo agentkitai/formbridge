@@ -45,6 +45,7 @@
     "url": "https://github.com/amitpaz1/formbridge/issues"
   },
   "dependencies": {
+    "@formbridge/shared": "*",
     "@hono/node-server": "^1.19.9",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ajv": "^8.12.0",

@@ -175,6 +175,13 @@ export class InMemoryEventStore implements EventStore {
   /** Monotonically increasing version counter per submission */
   private readonly versionCounters: Map<string, number> = new Map();
 
+  /** Bounded recent events list for O(k) analytics queries */
+  private readonly recentEvents: IntakeEvent[] = [];
+  private readonly maxRecentEvents = 100;
+
+  /** Events indexed by type for O(1) type lookup */
+  private readonly eventsByType: Map<string, IntakeEvent[]> = new Map();
+
   /**
    * Append a new event to the store.
    *
@@ -220,6 +227,20 @@ export class InMemoryEventStore implements EventStore {
 
     // Sort to maintain chronological order (defensive - handles out-of-order appends)
     events.sort((a, b) => a.ts.localeCompare(b.ts));
+
+    // Maintain bounded recent events list (newest first)
+    this.recentEvents.unshift(event);
+    if (this.recentEvents.length > this.maxRecentEvents) {
+      this.recentEvents.length = this.maxRecentEvents;
+    }
+
+    // Maintain type index
+    let typeEvents = this.eventsByType.get(event.type);
+    if (!typeEvents) {
+      typeEvents = [];
+      this.eventsByType.set(event.type, typeEvents);
+    }
+    typeEvents.push(event);
   }
 
   /**
@@ -346,6 +367,7 @@ export class InMemoryEventStore implements EventStore {
   async cleanupOld(olderThanMs: number): Promise<number> {
     const cutoffTime = new Date(Date.now() - olderThanMs).toISOString();
     let deletedCount = 0;
+    const deletedEventIds = new Set<string>();
 
     // Iterate through all submissions
     for (const [submissionId, events] of this.eventsBySubmission.entries()) {
@@ -354,6 +376,7 @@ export class InMemoryEventStore implements EventStore {
         const shouldDelete = event.ts < cutoffTime;
         if (shouldDelete) {
           this.eventIds.delete(event.eventId);
+          deletedEventIds.add(event.eventId);
           deletedCount++;
         }
         return !shouldDelete;
@@ -368,6 +391,41 @@ export class InMemoryEventStore implements EventStore {
       }
     }
 
+    // Clean up recent events list and type indexes
+    if (deletedCount > 0) {
+      // Remove from recent events
+      const retainedRecent = this.recentEvents.filter((e) => !deletedEventIds.has(e.eventId));
+      this.recentEvents.length = 0;
+      this.recentEvents.push(...retainedRecent);
+
+      // Remove from type indexes
+      for (const [type, typeEvents] of this.eventsByType.entries()) {
+        const retained = typeEvents.filter((e) => !deletedEventIds.has(e.eventId));
+        if (retained.length === 0) {
+          this.eventsByType.delete(type);
+        } else {
+          this.eventsByType.set(type, retained);
+        }
+      }
+    }
+
     return deletedCount;
+  }
+
+  /**
+   * Get the most recent events across all submissions.
+   * Returns events in reverse chronological order (newest first).
+   * O(k) where k = min(limit, maxRecentEvents).
+   */
+  getRecentEventsAll(limit: number): IntakeEvent[] {
+    return this.recentEvents.slice(0, limit);
+  }
+
+  /**
+   * Get all events of a specific type.
+   * O(1) lookup via type index.
+   */
+  getEventsByTypeAll(type: string): IntakeEvent[] {
+    return this.eventsByType.get(type) ?? [];
   }
 }

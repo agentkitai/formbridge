@@ -17,28 +17,7 @@ import {
   InvalidResumeTokenError,
 } from "../core/submission-manager.js";
 import type { Actor } from "../types/intake-contract.js";
-import { z } from "zod";
-
-const actorSchema = z
-  .object({
-    kind: z.enum(["agent", "human", "system"]),
-    id: z.string().max(255),
-    name: z.string().max(255).optional(),
-  })
-  .strict();
-
-function parseActor(
-  body: Record<string, unknown>,
-  fallback: Actor
-): { ok: true; actor: Actor } | { ok: false; error: string } {
-  const raw = body?.actor;
-  if (!raw) return { ok: true, actor: fallback };
-  const result = actorSchema.safeParse(raw);
-  if (!result.success) {
-    return { ok: false, error: result.error.issues[0]?.message ?? "Invalid actor" };
-  }
-  return { ok: true, actor: result.data as Actor };
-}
+import { parseActorWithFallback as parseActor } from "./shared/actor-validation.js";
 
 /**
  * Creates a Hono router with submission endpoints.

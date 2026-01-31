@@ -28,33 +28,16 @@ import { ApprovalManager } from './core/approval-manager.js';
 import { InMemoryEventStore } from './core/event-store.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
-import { z } from 'zod';
 import type { IntakeDefinition } from './types.js';
 import type { Submission } from './types.js';
 import type {
-  Actor,
   IntakeEvent,
 } from './types/intake-contract.js';
 import { redactEventTokens } from './routes/event-utils.js';
+import { parseActor } from './routes/shared/actor-validation.js';
 
 /** Reserved field names that cannot be set via API */
 const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
-
-/** Zod schema for actor validation */
-const actorSchema = z.object({
-  kind: z.enum(['agent', 'human', 'system']),
-  id: z.string().min(1).max(255),
-  name: z.string().max(255).optional(),
-}).strict();
-
-/** Parse and validate actor from request body */
-function parseActor(raw: unknown): { ok: true; actor: Actor } | { ok: false; error: string } {
-  const result = actorSchema.safeParse(raw);
-  if (!result.success) {
-    return { ok: false, error: result.error.issues[0]?.message ?? 'Invalid actor' };
-  }
-  return { ok: true, actor: result.data as Actor };
-}
 
 /** Check for reserved field names in fields object */
 function hasReservedFieldNames(fields: Record<string, unknown>): string | null {
@@ -72,25 +55,46 @@ function hasReservedFieldNames(fields: Record<string, unknown>): string | null {
 class InMemorySubmissionStore {
   private submissions = new Map<string, Submission>();
   private idempotencyIndex = new Map<string, string>(); // idempotencyKey -> submissionId
+  private resumeTokenIndex = new Map<string, string>(); // resumeToken -> submissionId
+  private lastKnownToken = new Map<string, string>(); // submissionId -> last saved token
+
+  // Incremental counters for O(1) analytics
+  private stateCountMap = new Map<string, number>();
+  private lastKnownState = new Map<string, string>(); // submissionId -> last saved state
 
   async get(submissionId: string): Promise<Submission | null> {
     return this.submissions.get(submissionId) ?? null;
   }
 
   async save(submission: Submission): Promise<void> {
+    // O(1) stale token cleanup using reverse index
+    const oldToken = this.lastKnownToken.get(submission.id);
+    if (oldToken && oldToken !== submission.resumeToken) {
+      this.resumeTokenIndex.delete(oldToken);
+    }
+
+    // Update incremental state counters
+    const oldState = this.lastKnownState.get(submission.id);
+    if (oldState !== submission.state) {
+      if (oldState) {
+        this.stateCountMap.set(oldState, (this.stateCountMap.get(oldState) ?? 1) - 1);
+      }
+      this.stateCountMap.set(submission.state, (this.stateCountMap.get(submission.state) ?? 0) + 1);
+      this.lastKnownState.set(submission.id, submission.state);
+    }
+
     this.submissions.set(submission.id, submission);
     if (submission.idempotencyKey) {
       this.idempotencyIndex.set(submission.idempotencyKey, submission.id);
     }
+    this.resumeTokenIndex.set(submission.resumeToken, submission.id);
+    this.lastKnownToken.set(submission.id, submission.resumeToken);
   }
 
   async getByResumeToken(resumeToken: string): Promise<Submission | null> {
-    for (const sub of this.submissions.values()) {
-      if (sub.resumeToken === resumeToken) {
-        return sub;
-      }
-    }
-    return null;
+    const id = this.resumeTokenIndex.get(resumeToken);
+    if (!id) return null;
+    return this.submissions.get(id) ?? null;
   }
 
   async getByIdempotencyKey(key: string): Promise<Submission | null> {
@@ -101,6 +105,25 @@ class InMemorySubmissionStore {
 
   getAll(): Submission[] {
     return Array.from(this.submissions.values());
+  }
+
+  /** O(1) total submission count */
+  getTotalCount(): number {
+    return this.submissions.size;
+  }
+
+  /** O(1) submissions-by-state counts */
+  getStateCounts(): Record<string, number> {
+    const result: Record<string, number> = {};
+    for (const [state, count] of this.stateCountMap) {
+      if (count > 0) result[state] = count;
+    }
+    return result;
+  }
+
+  /** O(1) pending approval count */
+  getPendingApprovalCount(): number {
+    return this.stateCountMap.get('needs_review') ?? 0;
   }
 }
 
@@ -115,7 +138,13 @@ class BridgingEventEmitter {
   }
 
   async emit(event: IntakeEvent): Promise<void> {
-    await Promise.all(this.listeners.map((fn) => fn(event)));
+    // Use allSettled for error isolation — one failing listener won't block others
+    const results = await Promise.allSettled(this.listeners.map((fn) => fn(event)));
+    for (const result of results) {
+      if (result.status === 'rejected') {
+        console.error('[BridgingEventEmitter] Listener error:', result.reason);
+      }
+    }
   }
 }
 
@@ -211,37 +240,14 @@ export function createFormBridgeAppWithIntakes(
   // Schema validator for HTTP API field validation
   const validator = new Validator({ strict: false, allowAdditionalProperties: true });
 
-  // Analytics provider — reads from shared store
+  // Analytics provider — uses pre-computed indexes for O(1) reads
   const analyticsProvider: AnalyticsDataProvider = {
     getIntakeIds: () => registry.listIntakeIds(),
-    getTotalSubmissions: () => store.getAll().length,
-    getPendingApprovalCount: () => store.getAll().filter((s) => s.state === 'needs_review').length,
-    getSubmissionsByState: () => {
-      const byState: Record<string, number> = {};
-      for (const sub of store.getAll()) {
-        byState[sub.state] = (byState[sub.state] ?? 0) + 1;
-      }
-      return byState;
-    },
-    getRecentEvents: (limit) => {
-      const allEvents: IntakeEvent[] = [];
-      for (const sub of store.getAll()) {
-        if (sub.events) allEvents.push(...sub.events);
-      }
-      allEvents.sort((a, b) => b.ts.localeCompare(a.ts));
-      return allEvents.slice(0, limit);
-    },
-    getEventsByType: (type) => {
-      const matched: IntakeEvent[] = [];
-      for (const sub of store.getAll()) {
-        if (sub.events) {
-          for (const ev of sub.events) {
-            if (ev.type === type) matched.push(ev);
-          }
-        }
-      }
-      return matched;
-    },
+    getTotalSubmissions: () => store.getTotalCount(),
+    getPendingApprovalCount: () => store.getPendingApprovalCount(),
+    getSubmissionsByState: () => store.getStateCounts(),
+    getRecentEvents: (limit) => eventStore.getRecentEventsAll(limit),
+    getEventsByType: (type) => eventStore.getEventsByTypeAll(type),
   };
 
   // Hono route modules

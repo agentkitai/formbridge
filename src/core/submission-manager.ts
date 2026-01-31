@@ -21,29 +21,17 @@ import { InMemoryEventStore } from "./event-store.js";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 
+import {
+  SubmissionNotFoundError,
+  SubmissionExpiredError,
+  InvalidResumeTokenError,
+} from "./errors.js";
+
+// Re-export for backward compatibility — consumers import from here
+export { SubmissionNotFoundError, SubmissionExpiredError, InvalidResumeTokenError };
+
 /** Reserved field names that cannot be set via the API */
 const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
-
-export class SubmissionNotFoundError extends Error {
-  constructor(identifier: string) {
-    super(`Submission not found: ${identifier}`);
-    this.name = "SubmissionNotFoundError";
-  }
-}
-
-export class SubmissionExpiredError extends Error {
-  constructor(message = "This resume link has expired") {
-    super(message);
-    this.name = "SubmissionExpiredError";
-  }
-}
-
-export class InvalidResumeTokenError extends Error {
-  constructor() {
-    super("Invalid resume token");
-    this.name = "InvalidResumeTokenError";
-  }
-}
 
 export interface SubmissionStore {
   get(submissionId: string): Promise<Submission | null>;
@@ -132,17 +120,19 @@ export class SubmissionManager {
   /**
    * Record an event using the triple-write pattern:
    * 1. Append to submission.events array (in-memory)
-   * 2. Emit via event emitter (for listeners)
-   * 3. Append to persistent event store (for queries)
-   * 4. Save submission to store
+   * 2. Emit via event emitter + append to persistent event store (parallel)
+   * 3. Save submission to store
    */
   private async recordEvent(
     submission: Submission,
     event: IntakeEvent
   ): Promise<void> {
     submission.events.push(event);
-    await this._eventEmitter.emit(event);
-    await this.eventStore.appendEvent(event);
+    // Emit and append are independent — run in parallel
+    await Promise.all([
+      this._eventEmitter.emit(event),
+      this.eventStore.appendEvent(event),
+    ]);
     await this.store.save(submission);
   }
 
@@ -204,9 +194,7 @@ export class SubmissionManager {
       ).toISOString();
     }
 
-    await this.store.save(submission);
-
-    // Emit submission.created event
+    // Emit submission.created event (recordEvent will save the submission)
     const event: IntakeEvent = {
       eventId: `evt_${randomUUID()}`,
       type: "submission.created",
@@ -335,9 +323,7 @@ export class SubmissionManager {
       submission.state = "in_progress";
     }
 
-    await this.store.save(submission);
-
-    // Build structured diffs array
+    // Build structured diffs array (recordEvent will save the submission)
     const diffs = fieldUpdates.map((u) => ({
       fieldPath: u.fieldPath,
       previousValue: u.oldValue,
@@ -453,9 +439,7 @@ export class SubmissionManager {
     const newResumeToken = `rtok_${randomUUID()}`;
     submission.resumeToken = newResumeToken;
 
-    await this.store.save(submission);
-
-    // Emit upload requested event
+    // Emit upload requested event (recordEvent will save the submission)
     const event: IntakeEvent = {
       eventId: `evt_${randomUUID()}`,
       type: "upload.requested",
@@ -563,9 +547,7 @@ export class SubmissionManager {
       const newResumeToken = `rtok_${randomUUID()}`;
       submission.resumeToken = newResumeToken;
 
-      await this.store.save(submission);
-
-      // Emit upload completed event
+      // Emit upload completed event (recordEvent will save the submission)
       const event: IntakeEvent = {
         eventId: `evt_${randomUUID()}`,
         type: "upload.completed",
@@ -591,9 +573,8 @@ export class SubmissionManager {
         field: uploadStatus.field,
       };
     } else {
-      await this.store.save(submission);
-
       // Emit upload failed event (do NOT rotate resume token on failure)
+      // recordEvent will save the submission
       const event: IntakeEvent = {
         eventId: `evt_${randomUUID()}`,
         type: "upload.failed",
@@ -673,9 +654,7 @@ export class SubmissionManager {
       submission.updatedAt = now;
       submission.updatedBy = request.actor;
 
-      await this.store.save(submission);
-
-      // Emit review.requested event
+      // Emit review.requested event (recordEvent will save the submission)
       const reviewEvent: IntakeEvent = {
         eventId: `evt_${randomUUID()}`,
         type: "review.requested",
@@ -718,9 +697,7 @@ export class SubmissionManager {
     submission.updatedAt = now;
     submission.updatedBy = request.actor;
 
-    await this.store.save(submission);
-
-    // Emit submission.submitted event
+    // Emit submission.submitted event (recordEvent will save the submission)
     const event: IntakeEvent = {
       eventId: `evt_${randomUUID()}`,
       type: "submission.submitted",

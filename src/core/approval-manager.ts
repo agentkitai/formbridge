@@ -12,29 +12,14 @@ import type {
 import type { Submission } from "../types";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
+import {
+  SubmissionNotFoundError,
+  InvalidResumeTokenError,
+  InvalidStateError,
+} from "./errors.js";
 
-export class SubmissionNotFoundError extends Error {
-  constructor(identifier: string) {
-    super(`Submission not found: ${identifier}`);
-    this.name = "SubmissionNotFoundError";
-  }
-}
-
-export class InvalidStateError extends Error {
-  constructor(currentState: SubmissionState, requiredState: SubmissionState) {
-    super(
-      `Submission is in state '${currentState}', must be '${requiredState}' for this operation`
-    );
-    this.name = "InvalidStateError";
-  }
-}
-
-export class InvalidResumeTokenError extends Error {
-  constructor() {
-    super("Invalid resume token");
-    this.name = "InvalidResumeTokenError";
-  }
-}
+// Re-export for backward compatibility — consumers import from here
+export { SubmissionNotFoundError, InvalidResumeTokenError, InvalidStateError };
 
 /**
  * Review decision actions available to reviewers
