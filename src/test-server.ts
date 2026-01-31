@@ -4,6 +4,7 @@
  */
 
 import { Hono } from "hono";
+import { serve } from "@hono/node-server";
 import { SubmissionManager } from "./core/submission-manager.js";
 import { ApprovalManager } from "./core/approval-manager.js";
 import { InMemoryEventStore } from "./core/event-store.js";
@@ -65,8 +66,11 @@ app.route("/", createHonoApprovalRouter(approvalManager));
 // Health check
 app.get("/health", (c) => c.json({ status: "ok" }));
 
-const PORT = process.env.PORT || 3000;
-console.log(`Test server configured for http://localhost:${PORT}`);
-console.log(`Test endpoint: POST http://localhost:${PORT}/submissions/sub_test/handoff`);
+const PORT = Number(process.env.PORT) || 3000;
+
+serve({ fetch: app.fetch, port: PORT }, () => {
+  console.log(`Test server running at http://localhost:${PORT}`);
+  console.log(`Test endpoint: POST http://localhost:${PORT}/submissions/sub_test/handoff`);
+});
 
 export default app;
