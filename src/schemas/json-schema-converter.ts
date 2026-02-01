@@ -48,6 +48,14 @@ export interface JsonSchema {
 }
 
 /**
+ * Type guard for objects that are structurally compatible with JsonSchema.
+ * Used to narrow unknown values (e.g., from zodToJsonSchema) without unsafe `as` casts.
+ */
+function isJsonSchemaLike(value: unknown): value is JsonSchema {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
  * Options for JSON Schema conversion
  */
 export interface ConversionOptions {
@@ -108,28 +116,34 @@ export function convertZodToJsonSchema(
   } = options;
 
   // Convert Zod schema to JSON Schema using zod-to-json-schema
-  let jsonSchema = zodToJsonSchema(zodSchema, {
+  const rawSchema = zodToJsonSchema(zodSchema, {
     name,
     target,
     // Preserve descriptions from Zod schema
     $refStrategy: 'none',
     // Use inline schemas instead of references
     errorMessages: false
-  }) as JsonSchema;
+  });
+
+  if (!isJsonSchemaLike(rawSchema)) {
+    throw new Error('zodToJsonSchema produced a non-object result');
+  }
+  let jsonSchema: JsonSchema = rawSchema;
 
   // If a name was provided, zod-to-json-schema creates a $ref pattern
   // We need to resolve it to get the actual schema
   if (name && '$ref' in jsonSchema && 'definitions' in jsonSchema) {
-    const schemaWithRefs = jsonSchema as {
-      $ref: string;
-      definitions: Record<string, JsonSchema>;
-    };
-    const refName = schemaWithRefs.$ref.replace('#/definitions/', '');
-    if (schemaWithRefs.definitions[refName]) {
-      // Use the definition as the main schema
-      jsonSchema = schemaWithRefs.definitions[refName] as JsonSchema;
-      // Preserve the title from the name
-      jsonSchema.title = name;
+    const ref = jsonSchema.$ref;
+    const defs = jsonSchema.definitions;
+    if (typeof ref === 'string' && isJsonSchemaLike(defs)) {
+      const refName = ref.replace('#/definitions/', '');
+      const refDef: unknown = defs[refName];
+      if (isJsonSchemaLike(refDef)) {
+        // Use the definition as the main schema
+        jsonSchema = refDef;
+        // Preserve the title from the name
+        jsonSchema.title = name;
+      }
     }
   }
 
@@ -171,15 +185,13 @@ export function isJsonSchema(obj: unknown): obj is JsonSchema {
     return false;
   }
 
-  const schema = obj as Partial<JsonSchema>;
-
   // Basic JSON Schema validation - must have at least a type or properties
   return (
-    typeof schema.type === 'string' ||
-    typeof schema.properties === 'object' ||
-    Array.isArray(schema.anyOf) ||
-    Array.isArray(schema.allOf) ||
-    Array.isArray(schema.oneOf)
+    ('type' in obj && typeof obj.type === 'string') ||
+    ('properties' in obj && typeof obj.properties === 'object') ||
+    ('anyOf' in obj && Array.isArray(obj.anyOf)) ||
+    ('allOf' in obj && Array.isArray(obj.allOf)) ||
+    ('oneOf' in obj && Array.isArray(obj.oneOf))
   );
 }
 

@@ -26,6 +26,23 @@ import type {
   UploadedFile,
 } from './storage-backend.js';
 
+/** Type guard for Node.js filesystem errors with error codes */
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error;
+}
+
+/** Type guard for UploadMetadata parsed from JSON */
+function isUploadMetadata(value: unknown): value is UploadMetadata {
+  return (
+    value != null &&
+    typeof value === 'object' &&
+    'uploadId' in value && typeof value.uploadId === 'string' &&
+    'status' in value && typeof value.status === 'string' &&
+    'storageKey' in value && typeof value.storageKey === 'string' &&
+    'expiresAt' in value && typeof value.expiresAt === 'string'
+  );
+}
+
 /**
  * Configuration options for LocalStorageBackend
  */
@@ -221,7 +238,7 @@ export class LocalStorageBackend implements StorageBackend {
       };
     } catch (error) {
       // File doesn't exist yet
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (isNodeError(error) && error.code === 'ENOENT') {
         return {
           status: 'pending',
         };
@@ -229,7 +246,8 @@ export class LocalStorageBackend implements StorageBackend {
 
       // Other error
       metadata.status = 'failed';
-      metadata.error = `Verification failed: ${(error as Error).message}`;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      metadata.error = `Verification failed: ${errorMessage}`;
       this.uploads.set(uploadId, metadata);
       await this.persistMetadata(metadata);
       return {
@@ -293,7 +311,7 @@ export class LocalStorageBackend implements StorageBackend {
     try {
       await fs.unlink(filePath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if (!isNodeError(error) || error.code !== 'ENOENT') {
         throw error;
       }
     }
@@ -303,7 +321,7 @@ export class LocalStorageBackend implements StorageBackend {
     try {
       await fs.unlink(metadataPath);
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if (!isNodeError(error) || error.code !== 'ENOENT') {
         throw error;
       }
     }
@@ -341,7 +359,7 @@ export class LocalStorageBackend implements StorageBackend {
         }
       }
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      if (!isNodeError(error) || error.code !== 'ENOENT') {
         throw error;
       }
     }
@@ -473,11 +491,14 @@ export class LocalStorageBackend implements StorageBackend {
     const metadataPath = join(this.config.storageDir, '.metadata', `${uploadId}.json`);
     try {
       const data = await fs.readFile(metadataPath, 'utf-8');
-      const metadata = JSON.parse(data) as UploadMetadata;
-      this.uploads.set(uploadId, metadata);
-      return metadata;
+      const parsed: unknown = JSON.parse(data);
+      if (!isUploadMetadata(parsed)) {
+        return undefined;
+      }
+      this.uploads.set(uploadId, parsed);
+      return parsed;
     } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      if (isNodeError(error) && error.code === 'ENOENT') {
         return undefined;
       }
       throw error;
