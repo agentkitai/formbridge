@@ -8,12 +8,13 @@
 import { z } from "zod";
 import type { Actor } from "../../types/intake-contract.js";
 
-/** Zod schema for strict actor validation */
+/** Zod schema for strict actor validation — matches Actor interface */
 export const actorSchema = z
   .object({
     kind: z.enum(["agent", "human", "system"]),
     id: z.string().min(1).max(255),
     name: z.string().max(255).optional(),
+    metadata: z.record(z.unknown()).optional(),
   })
   .strict();
 
@@ -28,7 +29,7 @@ export function parseActor(
   if (!result.success) {
     return { ok: false, error: result.error.issues[0]?.message ?? "Invalid actor" };
   }
-  return { ok: true, actor: result.data as Actor };
+  return { ok: true, actor: result.data };
 }
 
 /**

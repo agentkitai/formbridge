@@ -101,7 +101,10 @@ export function getPermissions(role: Role): Permission[] {
  * Get all defined roles.
  */
 export function getRoles(): Role[] {
-  return Object.keys(ROLE_PERMISSIONS) as Role[];
+  // SAFE: ROLE_PERMISSIONS is a const Record<Role, ...> defined in this file —
+  // Object.keys returns string[] by design but here the keys are known at compile time
+  const roles: Role[] = ["admin", "reviewer", "viewer"];
+  return roles;
 }
 
 /**

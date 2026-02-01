@@ -233,8 +233,14 @@ function setAuthContext(c: Context, auth: AuthContext): void {
 }
 
 export function getAuthContext(c: Context): AuthContext | undefined {
-  const value = c.get(AUTH_CONTEXT_KEY);
-  if (value && typeof value === 'object' && 'authenticated' in value) {
+  const value: unknown = c.get(AUTH_CONTEXT_KEY);
+  if (
+    value !== null &&
+    typeof value === 'object' &&
+    'authenticated' in value &&
+    typeof (value as Record<string, unknown>).authenticated === 'boolean'
+  ) {
+    // SAFE: runtime shape validated above — this is a manual type guard
     return value as AuthContext;
   }
   return undefined;

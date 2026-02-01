@@ -199,13 +199,14 @@ export function validatePartialSubmission<T = unknown>(
   if (schema instanceof z.ZodObject) {
     const partialResult = schema.partial().safeParse(data);
     if (partialResult.success) {
+      // SAFE: schema.partial() produces Partial<T> by construction, but TS can't prove it generically
       return { success: true, data: partialResult.data as Partial<T> };
     }
     return { success: false, error: partialResult.error };
   }
 
-  // For non-object schemas, just validate as-is
-  // This handles primitives, arrays, etc.
+  // For non-object schemas, just validate as-is (primitives, arrays, etc.)
+  // SAFE: non-object T is trivially Partial<T>
   return validateSubmission(schema as z.ZodType<Partial<T>>, data);
 }
 

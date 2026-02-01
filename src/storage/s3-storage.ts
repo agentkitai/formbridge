@@ -174,6 +174,7 @@ export class S3StorageBackend implements StorageBackend {
         clientConfig.forcePathStyle = this.config.forcePathStyle ?? true;
       }
 
+      // SAFE: simplified local interfaces for optional peer dependency — types are compatible at runtime
       this.s3Client = new s3Mod.S3Client(clientConfig) as unknown as S3ClientLike;
       this.getSignedUrl = presignerMod.getSignedUrl as unknown as GetSignedUrlFn;
     } catch {
@@ -219,6 +220,7 @@ export class S3StorageBackend implements StorageBackend {
   }): Promise<SignedUploadUrl> {
     await this.ensureInitialized();
     const s3Mod = await import('@aws-sdk/client-s3');
+    // SAFE: simplified local type for optional peer dependency
     const PutObjectCommand = s3Mod.PutObjectCommand as unknown as new (params: PutObjectParams) => unknown;
 
     const uploadId = this.generateUploadId();
@@ -296,6 +298,7 @@ export class S3StorageBackend implements StorageBackend {
   async verifyUpload(uploadId: string): Promise<UploadStatusResult> {
     await this.ensureInitialized();
     const s3Mod = await import('@aws-sdk/client-s3');
+    // SAFE: simplified local type for optional peer dependency
     const HeadObjectCommand = s3Mod.HeadObjectCommand as unknown as new (params: { Bucket: string; Key: string }) => unknown;
 
     const metadata = this.uploads.get(uploadId);
@@ -425,6 +428,7 @@ export class S3StorageBackend implements StorageBackend {
      
     await this.ensureInitialized();
     const s3Mod = await import('@aws-sdk/client-s3');
+    // SAFE: simplified local type for optional peer dependency
     const GetObjectCommand = s3Mod.GetObjectCommand as unknown as new (params: { Bucket: string; Key: string }) => unknown;
 
     const metadata = this.uploads.get(uploadId);
@@ -452,6 +456,7 @@ export class S3StorageBackend implements StorageBackend {
      
     await this.ensureInitialized();
     const s3Mod = await import('@aws-sdk/client-s3');
+    // SAFE: simplified local type for optional peer dependency
     const DeleteObjectCommand = s3Mod.DeleteObjectCommand as unknown as new (params: { Bucket: string; Key: string }) => unknown;
 
     const metadata = this.uploads.get(uploadId);

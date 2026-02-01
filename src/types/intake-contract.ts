@@ -423,6 +423,7 @@ export function createIntakeError(params: {
 export function isIntakeError(response: unknown): response is IntakeError {
   if (response && typeof response === "object") {
     // Structured shape: { ok: false, error: { ... } }
+    // SAFE: 'in' check above proves 'ok' exists; cast needed for property access
     if ("ok" in response && (response as Record<string, unknown>).ok === false) return true;
     // Flat shape: { type, fields, nextActions }
     if ("type" in response && "fields" in response && "nextActions" in response) return true;
@@ -435,6 +436,7 @@ export function isIntakeError(response: unknown): response is IntakeError {
  */
 export function isSubmissionSuccess(response: unknown): response is SubmissionSuccess {
   if (response && typeof response === "object") {
+    // SAFE: 'in' check above proves 'ok' exists; cast needed for property access
     return "state" in response && "submissionId" in response && !("ok" in response && (response as Record<string, unknown>).ok === false);
   }
   return false;
