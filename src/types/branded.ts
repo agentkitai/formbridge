@@ -10,27 +10,27 @@
 // § Brand Symbols (unique per type)
 // =============================================================================
 
-declare const SubmissionIdBrand: unique symbol;
-declare const IntakeIdBrand: unique symbol;
-declare const ResumeTokenBrand: unique symbol;
-declare const EventIdBrand: unique symbol;
-declare const DeliveryIdBrand: unique symbol;
-declare const TenantIdBrand: unique symbol;
-declare const KeyHashBrand: unique symbol;
-declare const UploadIdBrand: unique symbol;
+declare const _SubmissionIdBrand: unique symbol;
+declare const _IntakeIdBrand: unique symbol;
+declare const _ResumeTokenBrand: unique symbol;
+declare const _EventIdBrand: unique symbol;
+declare const _DeliveryIdBrand: unique symbol;
+declare const _TenantIdBrand: unique symbol;
+declare const _KeyHashBrand: unique symbol;
+declare const _UploadIdBrand: unique symbol;
 
 // =============================================================================
 // § Branded Types
 // =============================================================================
 
-export type SubmissionId = string & { readonly __brand: typeof SubmissionIdBrand };
-export type IntakeId = string & { readonly __brand: typeof IntakeIdBrand };
-export type ResumeToken = string & { readonly __brand: typeof ResumeTokenBrand };
-export type EventId = string & { readonly __brand: typeof EventIdBrand };
-export type DeliveryId = string & { readonly __brand: typeof DeliveryIdBrand };
-export type TenantId = string & { readonly __brand: typeof TenantIdBrand };
-export type KeyHash = string & { readonly __brand: typeof KeyHashBrand };
-export type UploadId = string & { readonly __brand: typeof UploadIdBrand };
+export type SubmissionId = string & { readonly __brand: typeof _SubmissionIdBrand };
+export type IntakeId = string & { readonly __brand: typeof _IntakeIdBrand };
+export type ResumeToken = string & { readonly __brand: typeof _ResumeTokenBrand };
+export type EventId = string & { readonly __brand: typeof _EventIdBrand };
+export type DeliveryId = string & { readonly __brand: typeof _DeliveryIdBrand };
+export type TenantId = string & { readonly __brand: typeof _TenantIdBrand };
+export type KeyHash = string & { readonly __brand: typeof _KeyHashBrand };
+export type UploadId = string & { readonly __brand: typeof _UploadIdBrand };
 
 // =============================================================================
 // § Constructor Functions
