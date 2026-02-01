@@ -17,7 +17,7 @@ import type {
   Destination,
   Actor,
 } from "../types/intake-contract.js";
-import type { Submission } from "../types.js";
+import type { Submission } from "../submission-types.js";
 import {
   type DeliveryQueue,
   InMemoryDeliveryQueue,

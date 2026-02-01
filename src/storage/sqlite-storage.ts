@@ -9,7 +9,7 @@
  * - events: eventId, type, submissionId, ts, actor (JSON), ...
  */
 
-import type { Submission } from "../types.js";
+import type { Submission } from "../submission-types.js";
 import type {
   IntakeEvent,
   IntakeEventType,

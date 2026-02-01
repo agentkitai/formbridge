@@ -12,7 +12,7 @@
  */
 
 import { FormBridgeMCPServer } from '../../src/mcp/server.js';
-import { TransportType } from '../../src/types/mcp-types.js';
+import { TransportType } from '../../src/types/mcp-tool-definitions.js';
 import { vendorOnboardingIntake } from './schema.js';
 
 /**

@@ -8,7 +8,7 @@
  * Based on: docs/EXAMPLE_VENDOR_ONBOARDING.md
  */
 
-import type { IntakeDefinition } from '../src/types.js';
+import type { IntakeDefinition } from '../src/submission-types.js';
 
 /**
  * Vendor Onboarding Intake Definition

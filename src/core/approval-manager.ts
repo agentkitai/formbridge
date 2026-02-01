@@ -9,7 +9,7 @@ import type {
   IntakeError,
   SubmissionState,
 } from "../types/intake-contract";
-import type { Submission } from "../types";
+import type { Submission } from "../submission-types";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 import {

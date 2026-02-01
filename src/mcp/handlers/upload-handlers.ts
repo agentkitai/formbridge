@@ -4,7 +4,7 @@
 
 import type { IntakeDefinition } from '../../schemas/intake-schema.js';
 import type { IntakeError } from '../../types/intake-contract.js';
-import type { MCPServerConfig } from '../../types/mcp-types.js';
+import type { MCPServerConfig } from '../../types/mcp-tool-definitions.js';
 import { convertZodToJsonSchema } from '../../schemas/json-schema-converter.js';
 import type { SubmissionStore } from '../submission-store.js';
 import { lookupEntry, isError, toRecord } from '../response-builder.js';

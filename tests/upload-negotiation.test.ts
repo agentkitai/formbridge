@@ -29,8 +29,8 @@ import type {
   JSONSchema,
   Actor,
   IntakeEvent,
-} from '../src/types.js';
-import type { Submission } from '../src/types.js';
+} from '../src/submission-types.js';
+import type { Submission } from '../src/submission-types.js';
 import type { UploadStatus } from '../src/core/validator.js';
 
 /**

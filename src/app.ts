@@ -28,14 +28,14 @@ import { ApprovalManager } from './core/approval-manager.js';
 import { InMemoryEventStore } from './core/event-store.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
-import type { IntakeDefinition } from './types.js';
-import type { Submission } from './types.js';
+import type { IntakeDefinition } from './submission-types.js';
+import type { Submission } from './submission-types.js';
 import type {
   IntakeEvent,
   Destination,
 } from './types/intake-contract.js';
 import type { WebhookNotifier, ReviewerNotification } from './core/approval-manager.js';
-import { redactEventTokens } from './routes/event-utils.js';
+import { redactEventTokens } from './routes/event-sanitizer.js';
 import { parseActor } from './routes/shared/actor-validation.js';
 
 /** Reserved field names that cannot be set via API */
@@ -535,9 +535,9 @@ export function createFormBridgeAppWithIntakes(
 
       // Validate initial fields against intake schema
       const intake = registry.getIntake(intakeId);
-      const intakeSchema = intake.schema as import('./types.js').JSONSchema;
+      const intakeSchema = intake.schema as import('./submission-types.js').JSONSchema;
       if (intakeSchema.properties) {
-        const partialSchema: import('./types.js').JSONSchema = {
+        const partialSchema: import('./submission-types.js').JSONSchema = {
           type: 'object',
           properties: {},
         };
@@ -721,9 +721,9 @@ export function createFormBridgeAppWithIntakes(
 
     // Validate fields against intake schema (partial validation — only validate provided fields)
     const intake = registry.getIntake(intakeId);
-    const intakeSchema = intake.schema as import('./types.js').JSONSchema;
+    const intakeSchema = intake.schema as import('./submission-types.js').JSONSchema;
     if (intakeSchema.properties) {
-      const partialSchema: import('./types.js').JSONSchema = {
+      const partialSchema: import('./submission-types.js').JSONSchema = {
         type: 'object',
         properties: {},
       };

@@ -10,7 +10,7 @@
  * Based on INTAKE_CONTRACT_SPEC.md v0.1.0-draft §11
  */
 
-import type { IntakeDefinition, JSONSchema } from '../types.js';
+import type { IntakeDefinition, JSONSchema } from '../submission-types.js';
 import { validateWebhookUrl } from './url-validation.js';
 
 /**

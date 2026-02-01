@@ -10,7 +10,7 @@ import { Hono } from "hono";
 import { createHonoEventRouter } from "../src/routes/hono-events.js";
 import { SubmissionManager } from "../src/core/submission-manager.js";
 import type { IntakeEvent } from "../src/types/intake-contract.js";
-import type { Submission } from "../src/types.js";
+import type { Submission } from "../src/submission-types.js";
 
 // ---------- Helpers ----------
 

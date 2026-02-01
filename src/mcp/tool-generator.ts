@@ -13,7 +13,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SubmissionManager } from "../core/submission-manager.js";
 import type { Actor, IntakeDefinition } from "../types/intake-contract.js";
-import type { MCPToolDefinition } from "../types/mcp-types.js";
+import type { MCPToolDefinition } from "../types/mcp-tool-definitions.js";
 import type { JsonSchema } from "../schemas/json-schema-converter.js";
 import { convertZodToJsonSchema } from "../schemas/json-schema-converter.js";
 

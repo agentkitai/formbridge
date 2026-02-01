@@ -13,7 +13,7 @@ import type {
   IntakeError,
   IntakeDefinition,
 } from "../types/intake-contract";
-import type { Submission, FieldAttribution } from "../types";
+import type { Submission, FieldAttribution } from "../submission-types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";
 import type { EventStore } from "./event-store.js";

@@ -25,7 +25,7 @@ import type {
   IntakeDefinition,
   ApprovalGate,
 } from '../../src/types/intake-contract';
-import type { Submission } from '../../src/types';
+import type { Submission } from '../../src/submission-types';
 
 // Mock in-memory store for submissions
 class MockSubmissionStore {

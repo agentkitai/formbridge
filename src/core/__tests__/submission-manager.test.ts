@@ -10,7 +10,7 @@ import type {
   CreateSubmissionRequest,
   SetFieldsRequest,
 } from "../../types/intake-contract";
-import type { Submission } from "../../types";
+import type { Submission } from "../../submission-types";
 
 // Mock in-memory store
 class MockSubmissionStore {

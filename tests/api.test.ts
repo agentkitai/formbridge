@@ -15,7 +15,7 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createFormBridgeApp, createFormBridgeAppWithIntakes } from '../src/index.js';
-import type { IntakeDefinition, JSONSchema as _JSONSchema } from '../src/types.js';
+import type { IntakeDefinition, JSONSchema as _JSONSchema } from '../src/submission-types.js';
 
 /**
  * Sample vendor onboarding intake definition for testing

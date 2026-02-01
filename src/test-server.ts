@@ -5,7 +5,7 @@
 
 import { serve } from "@hono/node-server";
 import { createFormBridgeAppWithIntakes } from "./app.js";
-import type { IntakeDefinition } from "./types.js";
+import type { IntakeDefinition } from "./submission-types.js";
 
 // Sample vendor onboarding intake
 const vendorOnboarding: IntakeDefinition = {

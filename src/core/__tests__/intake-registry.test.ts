@@ -17,7 +17,7 @@ import {
   IntakeDuplicateError,
   IntakeValidationError,
 } from '../intake-registry';
-import type { IntakeDefinition } from '../../types';
+import type { IntakeDefinition } from '../../submission-types';
 
 /** Minimal valid intake for tests */
 function validIntake(overrides?: Partial<IntakeDefinition>): IntakeDefinition {

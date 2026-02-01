@@ -14,7 +14,7 @@ import type {
   CreateSubmissionRequest,
   SetFieldsRequest,
 } from "../../src/types/intake-contract";
-import type { Submission } from "../../src/types";
+import type { Submission } from "../../src/submission-types";
 
 // Mock in-memory store for integration testing
 class InMemorySubmissionStore {

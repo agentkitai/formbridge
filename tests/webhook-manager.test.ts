@@ -9,7 +9,7 @@ import {
   verifySignature,
 } from "../src/core/webhook-manager";
 import { InMemoryDeliveryQueue } from "../src/core/delivery-queue";
-import type { Submission } from "../src/types";
+import type { Submission } from "../src/submission-types";
 import type { Destination, IntakeEvent } from "../src/types/intake-contract";
 
 function createTestSubmission(overrides?: Partial<Submission>): Submission {

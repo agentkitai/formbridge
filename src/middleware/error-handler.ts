@@ -15,7 +15,7 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { HTTPException } from 'hono/http-exception';
-import type { IntakeError, SubmissionState } from '../types.js';
+import type { IntakeError, SubmissionState } from '../submission-types.js';
 import {
   IntakeNotFoundError,
   IntakeDuplicateError,

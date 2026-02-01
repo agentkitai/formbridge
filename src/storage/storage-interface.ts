@@ -9,7 +9,7 @@
  * - SqliteStorage: SQLite for single-node production (via better-sqlite3)
  */
 
-import type { Submission } from "../types.js";
+import type { Submission } from "../submission-types.js";
 import type { EventStore } from "../core/event-store.js";
 import type { StorageBackend } from "./storage-backend.js";
 

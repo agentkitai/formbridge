@@ -13,7 +13,7 @@ import {
 } from '@modelcontextprotocol/sdk/types.js';
 import type { IntakeDefinition } from '../schemas/intake-schema.js';
 import type { SubmissionResponse } from '../types/intake-contract.js';
-import type { MCPServerConfig } from '../types/mcp-types.js';
+import type { MCPServerConfig } from '../types/mcp-tool-definitions.js';
 import { generateToolsFromIntake, parseToolName, type GeneratedTools } from './tool-generator.js';
 import { SubmissionStore } from './submission-store.js';
 import { successResponse, errorResponse, type MCPToolResponse } from './response-builder.js';

@@ -17,7 +17,7 @@ import type {
   FieldError,
   NextAction,
   FieldErrorCode,
-} from '../types.js';
+} from '../submission-types.js';
 
 /**
  * Upload status tracking.

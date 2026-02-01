@@ -35,8 +35,8 @@ export type {
   TransportType,
   StdioTransportConfig,
   SSETransportConfig
-} from './types/mcp-types.js';
-export { TransportType as TransportTypes } from './types/mcp-types.js';
+} from './types/mcp-tool-definitions.js';
+export { TransportType as TransportTypes } from './types/mcp-tool-definitions.js';
 
 // =============================================================================
 // Transport Utilities

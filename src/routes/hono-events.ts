@@ -13,7 +13,7 @@ import type { Context } from "hono";
 import type { SubmissionManager } from "../core/submission-manager.js";
 import { SubmissionNotFoundError } from "../core/submission-manager.js";
 import type { IntakeEventType } from "../types/intake-contract.js";
-import { redactEventTokens } from "./event-utils.js";
+import { redactEventTokens } from "./event-sanitizer.js";
 import type { EventFilters } from "../core/event-store.js";
 import { z } from "zod";
 
