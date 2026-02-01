@@ -338,7 +338,7 @@ export function generateToolsFromIntake(
   } = options;
 
   // Convert Zod schema to JSON Schema
-  const jsonSchema = convertZodToJsonSchema(intake.schema as import("zod").ZodType<any>, {
+  const jsonSchema = convertZodToJsonSchema(intake.schema as import("zod").ZodType<unknown>, {
     name: intake.name,
     description: intake.description,
     includeSchemaProperty: false

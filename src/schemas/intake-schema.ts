@@ -87,7 +87,7 @@ export interface IntakeDefinition {
   /** Optional description of the intake form's purpose */
   description?: string;
   /** Zod schema that defines the structure and validation rules */
-  schema: z.ZodType<any>;
+  schema: z.ZodType<unknown>;
   /** Optional approval gates that require human review */
   approvalGates?: ApprovalGate[];
   /** Destination configuration for successful submissions */

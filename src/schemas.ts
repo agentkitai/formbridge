@@ -315,7 +315,7 @@ export const StepDefinitionSchema = z.object({
  * Supports the subset needed for intake definitions.
  * Using z.lazy for recursive schema references.
  */
-export const JSONSchemaSchema: z.ZodType<any> = z.lazy(() =>
+export const JSONSchemaSchema: z.ZodType<unknown> = z.lazy(() =>
   z.object({
     $schema: z.string().optional(),
     $id: z.string().optional(),

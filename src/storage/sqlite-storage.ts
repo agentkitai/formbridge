@@ -349,34 +349,30 @@ export interface SqliteStorageOptions {
 }
 
 export class SqliteStorage implements FormBridgeStorage {
-  submissions: SubmissionStorage;
-  events: EventStore;
+  submissions!: SubmissionStorage;
+  events!: EventStore;
   files: StorageBackend;
   private db: Database | null = null;
   private dbPath: string;
 
   constructor(options: SqliteStorageOptions) {
     this.dbPath = options.dbPath;
-
-    // Initialize with placeholder — real init happens in initialize()
-    this.submissions = null as any;
-    this.events = null as any;
     this.files = options.fileStorage ?? new NoopStorageBackend();
   }
 
   async initialize(): Promise<void> {
     // Dynamic import of better-sqlite3 (optional peer dependency)
-    let BetterSqlite3: any;
+    let BetterSqlite3: new (path: string) => Database;
     try {
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      BetterSqlite3 = (await import("better-sqlite3" as string)).default;
+      BetterSqlite3 = (await import("better-sqlite3" as string)).default as new (path: string) => Database;
     } catch {
       throw new Error(
         "better-sqlite3 is required for SqliteStorage. Install it: npm install better-sqlite3"
       );
     }
 
-    this.db = new BetterSqlite3(this.dbPath) as unknown as Database;
+    this.db = new BetterSqlite3(this.dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
 

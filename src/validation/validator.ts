@@ -21,7 +21,7 @@ export interface EventEmitter {
 /**
  * Validation result for successful validation
  */
-export interface ValidationSuccess<T = any> {
+export interface ValidationSuccess<T = unknown> {
   /** Whether validation succeeded */
   success: true;
   /** Validated and parsed data */
@@ -41,7 +41,7 @@ export interface ValidationFailure {
 /**
  * Combined validation result type
  */
-export type ValidationResult<T = any> = ValidationSuccess<T> | ValidationFailure;
+export type ValidationResult<T = unknown> = ValidationSuccess<T> | ValidationFailure;
 
 /**
  * Validates submission data against a Zod schema
@@ -79,7 +79,7 @@ export type ValidationResult<T = any> = ValidationSuccess<T> | ValidationFailure
  * }
  * ```
  */
-export function validateSubmission<T = any>(
+export function validateSubmission<T = unknown>(
   schema: z.ZodType<T>,
   data: unknown
 ): ValidationResult<T> {
@@ -152,7 +152,7 @@ export function isValidationFailure<T>(
  * }
  * ```
  */
-export function validateSubmissionOrThrow<T = any>(
+export function validateSubmissionOrThrow<T = unknown>(
   schema: z.ZodType<T>,
   data: unknown
 ): T {
@@ -191,7 +191,7 @@ export function validateSubmissionOrThrow<T = any>(
  * }
  * ```
  */
-export function validatePartialSubmission<T = any>(
+export function validatePartialSubmission<T = unknown>(
   schema: z.ZodType<T>,
   data: unknown
 ): ValidationResult<Partial<T>> {
@@ -234,7 +234,7 @@ export class Validator {
    * @param state - The current submission state
    * @returns Validation result with success status and either data or error
    */
-  async validateSubmission<T = any>(
+  async validateSubmission<T = unknown>(
     schema: z.ZodType<T>,
     data: unknown,
     submissionId: string,
@@ -289,7 +289,7 @@ export class Validator {
    * @returns The validated and parsed data
    * @throws {z.ZodError} If validation fails
    */
-  async validateSubmissionOrThrow<T = any>(
+  async validateSubmissionOrThrow<T = unknown>(
     schema: z.ZodType<T>,
     data: unknown,
     submissionId: string,
@@ -344,7 +344,7 @@ export class Validator {
    * @param state - The current submission state
    * @returns Validation result with success status and either data or error
    */
-  async validatePartialSubmission<T = any>(
+  async validatePartialSubmission<T = unknown>(
     schema: z.ZodType<T>,
     data: unknown,
     submissionId: string,

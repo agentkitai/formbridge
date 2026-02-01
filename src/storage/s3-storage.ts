@@ -86,12 +86,45 @@ interface UploadMetadata {
  * Note: Requires @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner to be installed.
  * This implementation will throw an error at runtime if these packages are not available.
  */
+interface HeadObjectResponse {
+  ContentLength?: number;
+  LastModified?: Date;
+}
+
+interface S3ClientLike {
+  send(command: unknown): Promise<HeadObjectResponse & Record<string, unknown>>;
+}
+
+interface S3ClientConfig {
+  region: string;
+  credentials?: {
+    accessKeyId: string;
+    secretAccessKey: string;
+  };
+  endpoint?: string;
+  forcePathStyle?: boolean;
+}
+
+interface PutObjectParams {
+  Bucket: string;
+  Key: string;
+  ContentType: string;
+  Metadata: Record<string, string>;
+  ServerSideEncryption?: string;
+}
+
+type GetSignedUrlFn = (
+  client: S3ClientLike,
+  command: unknown,
+  options: { expiresIn: number }
+) => Promise<string>;
+
 export class S3StorageBackend implements StorageBackend {
   private readonly config: Required<Omit<S3StorageConfig, 'accessKeyId' | 'secretAccessKey' | 'endpoint' | 'forcePathStyle' | 'serverSideEncryption'>> &
     Pick<S3StorageConfig, 'accessKeyId' | 'secretAccessKey' | 'endpoint' | 'forcePathStyle' | 'serverSideEncryption'>;
   private readonly uploads: Map<string, UploadMetadata> = new Map();
-  private s3Client: any; // S3Client from @aws-sdk/client-s3
-  private getSignedUrl: any; // getSignedUrl from @aws-sdk/s3-request-presigner
+  private s3Client!: S3ClientLike;
+  private getSignedUrl!: GetSignedUrlFn;
 
   constructor(config: S3StorageConfig) {
     this.config = {
@@ -117,11 +150,11 @@ export class S3StorageBackend implements StorageBackend {
     try {
       // Dynamic import to avoid hard dependency
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { S3Client } = require('@aws-sdk/client-s3');
+      const { S3Client } = require('@aws-sdk/client-s3') as { S3Client: new (config: S3ClientConfig) => S3ClientLike };
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
+      const { getSignedUrl } = require('@aws-sdk/s3-request-presigner') as { getSignedUrl: GetSignedUrlFn };
 
-      const clientConfig: any = {
+      const clientConfig: S3ClientConfig = {
         region: this.config.region,
       };
 
@@ -183,7 +216,7 @@ export class S3StorageBackend implements StorageBackend {
     constraints: UploadConstraints;
   }): Promise<SignedUploadUrl> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PutObjectCommand } = require('@aws-sdk/client-s3');
+    const { PutObjectCommand } = require('@aws-sdk/client-s3') as { PutObjectCommand: new (params: PutObjectParams) => unknown };
 
     const uploadId = this.generateUploadId();
     const expiresAt = new Date(
@@ -216,7 +249,7 @@ export class S3StorageBackend implements StorageBackend {
     this.uploads.set(uploadId, metadata);
 
     // Create S3 PutObject command with constraints
-    const commandParams: any = {
+    const commandParams: PutObjectParams = {
       Bucket: this.config.bucketName,
       Key: storageKey,
       ContentType: params.mimeType,
@@ -259,7 +292,7 @@ export class S3StorageBackend implements StorageBackend {
    */
   async verifyUpload(uploadId: string): Promise<UploadStatusResult> {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { HeadObjectCommand } = require('@aws-sdk/client-s3');
+    const { HeadObjectCommand } = require('@aws-sdk/client-s3') as { HeadObjectCommand: new (params: { Bucket: string; Key: string }) => unknown };
 
     const metadata = this.uploads.get(uploadId);
 
@@ -338,16 +371,17 @@ export class S3StorageBackend implements StorageBackend {
           uploadedAt: metadata.uploadedAt,
         },
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       // Object not found or access denied
-      if (error.name === 'NotFound' || error.$metadata?.httpStatusCode === 404) {
+      const s3Error = error as { name?: string; message?: string; $metadata?: { httpStatusCode?: number } };
+      if (s3Error.name === 'NotFound' || s3Error.$metadata?.httpStatusCode === 404) {
         return {
           status: 'pending',
         };
       }
 
       metadata.status = 'failed';
-      metadata.error = `S3 error: ${error.message}`;
+      metadata.error = `S3 error: ${s3Error.message ?? 'Unknown error'}`;
       this.uploads.set(uploadId, metadata);
 
       return {
@@ -386,7 +420,7 @@ export class S3StorageBackend implements StorageBackend {
   ): Promise<string | undefined> {
      
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { GetObjectCommand } = require('@aws-sdk/client-s3');
+    const { GetObjectCommand } = require('@aws-sdk/client-s3') as { GetObjectCommand: new (params: { Bucket: string; Key: string }) => unknown };
 
     const metadata = this.uploads.get(uploadId);
 
@@ -412,7 +446,7 @@ export class S3StorageBackend implements StorageBackend {
   async deleteUpload(uploadId: string): Promise<boolean> {
      
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DeleteObjectCommand } = require('@aws-sdk/client-s3');
+    const { DeleteObjectCommand } = require('@aws-sdk/client-s3') as { DeleteObjectCommand: new (params: { Bucket: string; Key: string }) => unknown };
 
     const metadata = this.uploads.get(uploadId);
 

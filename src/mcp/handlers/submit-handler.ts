@@ -23,7 +23,7 @@ export async function handleSubmit(
   const entry = result;
 
   // Validate complete submission
-  const validationResult = validateSubmission(intake.schema, entry.data);
+  const validationResult = validateSubmission<Record<string, unknown>>(intake.schema as import('zod').ZodType<Record<string, unknown>>, entry.data);
   if (!validationResult.success) {
     const error = mapToIntakeError(validationResult.error, { resumeToken, includeTimestamp: true });
     store.update(resumeToken, { state: SubmissionState.INVALID });

@@ -95,7 +95,7 @@ export interface ConversionOptions {
  * ```
  */
 export function convertZodToJsonSchema(
-  zodSchema: z.ZodType<any>,
+  zodSchema: z.ZodType<unknown>,
   options: ConversionOptions = {}
 ): JsonSchema {
   const {
@@ -122,7 +122,7 @@ export function convertZodToJsonSchema(
   if (name && '$ref' in jsonSchema && 'definitions' in jsonSchema) {
     const schemaWithRefs = jsonSchema as {
       $ref: string;
-      definitions: Record<string, any>;
+      definitions: Record<string, JsonSchema>;
     };
     const refName = schemaWithRefs.$ref.replace('#/definitions/', '');
     if (schemaWithRefs.definitions[refName]) {
