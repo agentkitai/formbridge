@@ -501,7 +501,6 @@ export class SqliteStorage implements FormBridgeStorage {
     // Dynamic import of better-sqlite3 (optional peer dependency)
     let BetterSqlite3: new (path: string) => Database;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const mod: { default?: unknown } = await import("better-sqlite3" as string);
       if (typeof mod.default !== 'function') {
         throw new Error("better-sqlite3 default export is not a constructor");

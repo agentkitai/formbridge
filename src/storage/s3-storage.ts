@@ -125,6 +125,7 @@ export class S3StorageBackend implements StorageBackend {
   private readonly uploads: Map<string, UploadMetadata> = new Map();
   private s3Client!: S3ClientLike;
   private getSignedUrl!: GetSignedUrlFn;
+  private initPromise: Promise<void> | null = null;
 
   constructor(config: S3StorageConfig) {
     this.config = {
@@ -138,21 +139,22 @@ export class S3StorageBackend implements StorageBackend {
       keyPrefix: config.keyPrefix ?? '',
       serverSideEncryption: config.serverSideEncryption,
     };
-
-    this.initializeS3Client();
   }
 
   /**
-   * Initialize S3 client with lazy loading of AWS SDK.
+   * Lazily initialize S3 client on first use via dynamic import.
    * Throws error if SDK packages are not installed.
    */
-  private initializeS3Client(): void {
+  private async ensureInitialized(): Promise<void> {
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = this.initializeS3Client();
+    return this.initPromise;
+  }
+
+  private async initializeS3Client(): Promise<void> {
     try {
-      // Dynamic import to avoid hard dependency
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { S3Client } = require('@aws-sdk/client-s3') as { S3Client: new (config: S3ClientConfig) => S3ClientLike };
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { getSignedUrl } = require('@aws-sdk/s3-request-presigner') as { getSignedUrl: GetSignedUrlFn };
+      const s3Mod = await import('@aws-sdk/client-s3');
+      const presignerMod = await import('@aws-sdk/s3-request-presigner');
 
       const clientConfig: S3ClientConfig = {
         region: this.config.region,
@@ -172,8 +174,8 @@ export class S3StorageBackend implements StorageBackend {
         clientConfig.forcePathStyle = this.config.forcePathStyle ?? true;
       }
 
-      this.s3Client = new S3Client(clientConfig);
-      this.getSignedUrl = getSignedUrl;
+      this.s3Client = new s3Mod.S3Client(clientConfig) as unknown as S3ClientLike;
+      this.getSignedUrl = presignerMod.getSignedUrl as unknown as GetSignedUrlFn;
     } catch {
       throw new Error(
         'S3StorageBackend requires @aws-sdk/client-s3 and @aws-sdk/s3-request-presigner. ' +
@@ -215,8 +217,9 @@ export class S3StorageBackend implements StorageBackend {
     mimeType: string;
     constraints: UploadConstraints;
   }): Promise<SignedUploadUrl> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { PutObjectCommand } = require('@aws-sdk/client-s3') as { PutObjectCommand: new (params: PutObjectParams) => unknown };
+    await this.ensureInitialized();
+    const s3Mod = await import('@aws-sdk/client-s3');
+    const PutObjectCommand = s3Mod.PutObjectCommand as unknown as new (params: PutObjectParams) => unknown;
 
     const uploadId = this.generateUploadId();
     const expiresAt = new Date(
@@ -291,8 +294,9 @@ export class S3StorageBackend implements StorageBackend {
    * Checks S3 object existence, size constraints, and metadata.
    */
   async verifyUpload(uploadId: string): Promise<UploadStatusResult> {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { HeadObjectCommand } = require('@aws-sdk/client-s3') as { HeadObjectCommand: new (params: { Bucket: string; Key: string }) => unknown };
+    await this.ensureInitialized();
+    const s3Mod = await import('@aws-sdk/client-s3');
+    const HeadObjectCommand = s3Mod.HeadObjectCommand as unknown as new (params: { Bucket: string; Key: string }) => unknown;
 
     const metadata = this.uploads.get(uploadId);
 
@@ -419,8 +423,9 @@ export class S3StorageBackend implements StorageBackend {
     expiresInSeconds: number = 3600
   ): Promise<string | undefined> {
      
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { GetObjectCommand } = require('@aws-sdk/client-s3') as { GetObjectCommand: new (params: { Bucket: string; Key: string }) => unknown };
+    await this.ensureInitialized();
+    const s3Mod = await import('@aws-sdk/client-s3');
+    const GetObjectCommand = s3Mod.GetObjectCommand as unknown as new (params: { Bucket: string; Key: string }) => unknown;
 
     const metadata = this.uploads.get(uploadId);
 
@@ -445,8 +450,9 @@ export class S3StorageBackend implements StorageBackend {
    */
   async deleteUpload(uploadId: string): Promise<boolean> {
      
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const { DeleteObjectCommand } = require('@aws-sdk/client-s3') as { DeleteObjectCommand: new (params: { Bucket: string; Key: string }) => unknown };
+    await this.ensureInitialized();
+    const s3Mod = await import('@aws-sdk/client-s3');
+    const DeleteObjectCommand = s3Mod.DeleteObjectCommand as unknown as new (params: { Bucket: string; Key: string }) => unknown;
 
     const metadata = this.uploads.get(uploadId);
 

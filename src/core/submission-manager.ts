@@ -320,9 +320,9 @@ export class SubmissionManager {
     }> = [];
 
     Object.entries(request.fields).forEach(([fieldPath, value]) => {
-      const oldValue = submission!.fields[fieldPath];
-      submission!.fields[fieldPath] = value;
-      submission!.fieldAttribution[fieldPath] = request.actor;
+      const oldValue = submission.fields[fieldPath];
+      submission.fields[fieldPath] = value;
+      submission.fieldAttribution[fieldPath] = request.actor;
       fieldUpdates.push({ fieldPath, oldValue, newValue: value });
     });
 
