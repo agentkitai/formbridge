@@ -232,7 +232,8 @@ export class InMemoryEventStore implements EventStore {
       let hi = events.length;
       while (lo < hi) {
         const mid = (lo + hi) >>> 1;
-        if (events[mid]!.ts <= event.ts) lo = mid + 1;
+        const midEvent = events[mid];
+        if (midEvent && midEvent.ts <= event.ts) lo = mid + 1;
         else hi = mid;
       }
       events.splice(lo, 0, event);
@@ -339,15 +340,21 @@ export class InMemoryEventStore implements EventStore {
 
       if (events.length > 0) {
         // First event is oldest (sorted chronologically)
-        const firstTs = events[0]!.ts;
-        if (!oldestTs || firstTs < oldestTs) {
-          oldestTs = firstTs;
+        const first = events[0];
+        if (first) {
+          const firstTs = first.ts;
+          if (!oldestTs || firstTs < oldestTs) {
+            oldestTs = firstTs;
+          }
         }
 
         // Last event is newest (sorted chronologically)
-        const lastTs = events[events.length - 1]!.ts;
-        if (!newestTs || lastTs > newestTs) {
-          newestTs = lastTs;
+        const last = events[events.length - 1];
+        if (last) {
+          const lastTs = last.ts;
+          if (!newestTs || lastTs > newestTs) {
+            newestTs = lastTs;
+          }
         }
       }
     }

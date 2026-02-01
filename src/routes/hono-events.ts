@@ -13,7 +13,26 @@ import type { Context } from "hono";
 import type { SubmissionManager } from "../core/submission-manager.js";
 import { SubmissionNotFoundError } from "../core/submission-manager.js";
 import type { IntakeEventType } from "../types/intake-contract.js";
-import { redactEventTokens } from "./event-utils.js";
+
+const VALID_EVENT_TYPES = new Set<string>([
+  "submission.created", "field.updated", "fields.updated",
+  "validation.passed", "validation.failed",
+  "upload.requested", "upload.completed", "upload.failed",
+  "submission.submitted", "review.requested", "review.approved", "review.rejected",
+  "delivery.attempted", "delivery.succeeded", "delivery.failed",
+  "submission.finalized", "submission.cancelled", "submission.expired",
+  "handoff.link_issued", "handoff.resumed",
+  "step.started", "step.completed", "step.validation_failed",
+]);
+
+function parseEventTypes(csv: string): IntakeEventType[] | null {
+  const types = csv.split(",");
+  for (const t of types) {
+    if (!VALID_EVENT_TYPES.has(t)) return null;
+  }
+  return types as IntakeEventType[];
+}
+import { redactEventTokens } from "./event-sanitizer.js";
 import type { EventFilters } from "../core/event-store.js";
 import { z } from "zod";
 
@@ -84,10 +103,12 @@ const exportQueryParamsSchema = queryParamsSchema.extend({
 
 function buildEventFilters(
   params: z.infer<typeof queryParamsSchema>
-): EventFilters {
+): EventFilters | { error: string } {
   const filters: EventFilters = {};
   if (params.type) {
-    filters.types = params.type.split(",") as IntakeEventType[];
+    const parsed = parseEventTypes(params.type);
+    if (!parsed) return { error: `Invalid event type in: ${params.type}` };
+    filters.types = parsed;
   }
   if (params.actorKind) {
     filters.actorKind = params.actorKind;
@@ -113,10 +134,12 @@ function buildEventFilters(
  */
 function buildContentFilters(
   params: z.infer<typeof queryParamsSchema>
-): EventFilters {
+): EventFilters | { error: string } {
   const filters: EventFilters = {};
   if (params.type) {
-    filters.types = params.type.split(",") as IntakeEventType[];
+    const parsed = parseEventTypes(params.type);
+    if (!parsed) return { error: `Invalid event type in: ${params.type}` };
+    filters.types = parsed;
   }
   if (params.actorKind) {
     filters.actorKind = params.actorKind;
@@ -174,11 +197,17 @@ export function createHonoEventRouter(
 
       // Get total count (without pagination) for metadata
       const contentFilters = buildContentFilters(params);
+      if ("error" in contentFilters) {
+        return c.json({ ok: false, error: contentFilters.error }, 400);
+      }
       const allEvents = await manager.getEvents(submissionId, contentFilters);
       const total = allEvents.length;
 
       // Get paginated results
       const paginatedFilters = buildEventFilters(params);
+      if ("error" in paginatedFilters) {
+        return c.json({ ok: false, error: paginatedFilters.error }, 400);
+      }
       // Apply defaults if not specified
       if (paginatedFilters.limit === undefined) paginatedFilters.limit = limit;
       if (paginatedFilters.offset === undefined) paginatedFilters.offset = offset;
@@ -237,6 +266,9 @@ export function createHonoEventRouter(
 
     try {
       const filters = buildEventFilters(filterParams);
+      if ("error" in filters) {
+        return c.json({ ok: false, error: filters.error }, 400);
+      }
       const events = (await manager.getEvents(submissionId, filters)).map(redactEventTokens);
 
       if (format === "jsonl") {

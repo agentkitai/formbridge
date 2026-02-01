@@ -10,14 +10,16 @@
  */
 
 import { createHmac, randomUUID, timingSafeEqual } from "crypto";
+import { DeliveryId, EventId, SubmissionId, IntakeId, ResumeToken } from "../types/branded.js";
 import type {
   IntakeEvent,
   DeliveryRecord,
   RetryPolicy,
   Destination,
   Actor,
+  SubmissionState,
 } from "../types/intake-contract.js";
-import type { Submission } from "../types.js";
+import type { Submission, FieldAttribution } from "../submission-types.js";
 import {
   type DeliveryQueue,
   InMemoryDeliveryQueue,
@@ -64,6 +66,42 @@ export interface DryRunResult {
   method: string;
   headers: Record<string, string>;
   body: DeliveryPayload;
+}
+
+// =============================================================================
+// § Type Guards (for safe reconstruction of stored delivery context)
+// =============================================================================
+
+const VALID_SUBMISSION_STATES: ReadonlySet<string> = new Set([
+  'draft', 'in_progress', 'awaiting_input', 'awaiting_upload',
+  'submitted', 'needs_review', 'approved', 'rejected',
+  'finalized', 'cancelled', 'expired', 'created', 'validating',
+  'invalid', 'valid', 'uploading', 'submitting', 'completed',
+  'failed', 'pending_approval',
+]);
+
+function isActorLike(value: unknown): value is Actor {
+  if (typeof value !== 'object' || value === null) return false;
+  return 'kind' in value && 'id' in value
+    && typeof value.kind === 'string' && typeof value.id === 'string';
+}
+
+function isDestinationKind(value: unknown): value is Destination['kind'] {
+  return value === 'webhook' || value === 'callback' || value === 'queue';
+}
+
+function isSubmissionState(value: string): value is SubmissionState {
+  return VALID_SUBMISSION_STATES.has(value);
+}
+
+function isFieldAttributionLike(value: unknown): value is FieldAttribution {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasGetContext(
+  queue: DeliveryQueue
+): queue is DeliveryQueue & { getContext(deliveryId: string): DeliveryContext | undefined } {
+  return 'getContext' in queue && typeof queue.getContext === 'function';
 }
 
 // =============================================================================
@@ -137,7 +175,7 @@ export class WebhookManager {
   buildHeaders(body: string, destination: Destination): Record<string, string> {
     const timestamp = new Date().toISOString();
     // Sanitize destination headers to prevent header injection
-    const sanitizedHeaders = sanitizeDestinationHeaders(destination.headers as Record<string, string> | undefined);
+    const sanitizedHeaders = sanitizeDestinationHeaders(destination.headers);
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
       "X-FormBridge-Timestamp": timestamp,
@@ -176,7 +214,7 @@ export class WebhookManager {
     submission: Submission,
     destination: Destination
   ): Promise<string> {
-    const deliveryId = `dlv_${randomUUID()}`;
+    const deliveryId = DeliveryId(`dlv_${randomUUID()}`);
     const now = new Date().toISOString();
 
     const record: DeliveryRecord = {
@@ -203,7 +241,7 @@ export class WebhookManager {
       destination: {
         kind: destination.kind,
         url: destination.url,
-        headers: destination.headers as Record<string, string> | undefined,
+        headers: destination.headers,
       },
     };
 
@@ -379,23 +417,47 @@ export class WebhookManager {
    * Process all pending deliveries that are ready for retry.
    */
   private async retryPendingDeliveries(): Promise<void> {
+    if (!hasGetContext(this.queue)) return;
+
     const pending = await this.queue.getPendingRetries();
 
     for (const record of pending) {
-      // Get stored context for the delivery
-      const ctx = (this.queue as InMemoryDeliveryQueue).getContext?.(record.deliveryId);
+      const ctx = this.queue.getContext(record.deliveryId);
       if (!ctx) continue;
 
-      // Reconstruct submission and destination from stored context
-      const submission = {
-        ...ctx.submission,
-        resumeToken: '',
-        updatedBy: ctx.submission.createdBy as Actor,
+      // Reconstruct submission and destination from stored context with runtime validation
+      const createdBy: Actor = isActorLike(ctx.submission.createdBy)
+        ? ctx.submission.createdBy
+        : { kind: 'system', id: 'unknown' };
+
+      const kind: Destination['kind'] = isDestinationKind(ctx.destination.kind)
+        ? ctx.destination.kind
+        : 'webhook';
+
+      const state: SubmissionState = isSubmissionState(ctx.submission.state)
+        ? ctx.submission.state
+        : 'draft';
+
+      const fieldAttribution: FieldAttribution = isFieldAttributionLike(ctx.submission.fieldAttribution)
+        ? ctx.submission.fieldAttribution
+        : {};
+
+      const submission: Submission = {
+        id: SubmissionId(ctx.submission.id),
+        intakeId: IntakeId(ctx.submission.intakeId),
+        state,
+        fields: ctx.submission.fields,
+        fieldAttribution,
+        createdAt: ctx.submission.createdAt,
+        updatedAt: ctx.submission.updatedAt,
+        resumeToken: ResumeToken(''),
+        createdBy,
+        updatedBy: createdBy,
         events: [],
-      } as Submission;
+      };
 
       const destination: Destination = {
-        kind: ctx.destination.kind as Destination['kind'],
+        kind,
         url: ctx.destination.url,
         headers: ctx.destination.headers,
       };
@@ -424,7 +486,7 @@ export class WebhookManager {
     };
 
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type,
       submissionId: submission.id,
       ts: new Date().toISOString(),

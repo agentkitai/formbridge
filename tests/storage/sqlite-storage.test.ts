@@ -15,7 +15,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { SqliteStorage } from "../../src/storage/sqlite-storage";
 import { migrateStorage } from "../../src/storage/migration";
 import { MemoryStorage } from "../../src/storage/memory-storage";
-import type { Submission } from "../../src/types";
+import type { Submission } from "../../src/submission-types";
 import type { Actor, IntakeEvent, IntakeEventType } from "../../src/types/intake-contract";
 
 // =============================================================================

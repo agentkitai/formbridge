@@ -17,7 +17,7 @@ import type {
   FieldError,
   NextAction,
   FieldErrorCode,
-} from '../types.js';
+} from '../submission-types.js';
 
 /**
  * Upload status tracking.
@@ -113,7 +113,7 @@ export class Validator {
     const validate = this.getCompiledSchema(schema);
 
     // Run validation
-    const valid = validate(data) as boolean;
+    const valid = validate(data);
 
     // Convert Ajv errors to our structured format
     const ajvErrors = validate.errors ?? [];
@@ -455,7 +455,7 @@ export class Validator {
     received?: unknown;
   } {
     const keyword = error.keyword;
-    const params = error.params as Record<string, unknown>;
+    const params: Record<string, unknown> = error.params;
     const message = error.message ?? 'Validation failed';
 
     switch (keyword) {
@@ -525,21 +525,27 @@ export class Validator {
           received: error.data,
         };
 
-      case 'enum':
+      case 'enum': {
+        const allowedValues = Array.isArray(params.allowedValues) ? params.allowedValues : [];
         return {
           code: 'invalid_value',
-          message: `Value must be one of: ${(params.allowedValues as unknown[]).join(', ')}`,
+          message: `Value must be one of: ${allowedValues.join(', ')}`,
           expected: params.allowedValues,
           received: error.data,
         };
+      }
 
-      case 'const':
+      case 'const': {
+        const allowedValue = typeof params.allowedValue === 'string'
+          ? params.allowedValue
+          : String(params.allowedValue ?? '');
         return {
           code: 'invalid_value',
-          message: `Value must be exactly: ${params.allowedValue as string}`,
+          message: `Value must be exactly: ${allowedValue}`,
           expected: params.allowedValue,
           received: error.data,
         };
+      }
 
       default:
         return {
@@ -556,8 +562,8 @@ export class Validator {
    */
   private extractFieldFromError(error: ErrorObject): string {
     if (error.keyword === 'required' && error.params) {
-      const params = error.params as Record<string, unknown>;
-      return (params.missingProperty as string) || '';
+      const params: Record<string, unknown> = error.params;
+      return typeof params.missingProperty === 'string' ? params.missingProperty : '';
     }
     return '';
   }

@@ -9,9 +9,10 @@ import type {
   IntakeError,
   SubmissionState,
 } from "../types/intake-contract";
-import type { Submission } from "../types";
+import type { Submission } from "../submission-types";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
+import { EventId } from "../types/branded.js";
 import {
   SubmissionNotFoundError,
   InvalidResumeTokenError,
@@ -143,7 +144,7 @@ export class ApprovalManager {
 
     // Check if submission is in needs_review state
     if (submission.state !== "needs_review") {
-      return {
+      const error: IntakeError = {
         ok: false,
         submissionId: submission.id,
         state: submission.state,
@@ -153,7 +154,8 @@ export class ApprovalManager {
           message: `Cannot approve submission in state '${submission.state}'`,
           retryable: false,
         },
-      } as IntakeError;
+      };
+      return error;
     }
 
     const now = new Date().toISOString();
@@ -180,7 +182,7 @@ export class ApprovalManager {
 
     // Emit review.approved event
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "review.approved",
       submissionId: submission.id,
       ts: now,
@@ -224,7 +226,7 @@ export class ApprovalManager {
 
     // Check if submission is in needs_review state
     if (submission.state !== "needs_review") {
-      return {
+      const error: IntakeError = {
         ok: false,
         submissionId: submission.id,
         state: submission.state,
@@ -234,7 +236,8 @@ export class ApprovalManager {
           message: `Cannot reject submission in state '${submission.state}'`,
           retryable: false,
         },
-      } as IntakeError;
+      };
+      return error;
     }
 
     const now = new Date().toISOString();
@@ -262,7 +265,7 @@ export class ApprovalManager {
 
     // Emit review.rejected event
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "review.rejected",
       submissionId: submission.id,
       ts: now,
@@ -307,7 +310,7 @@ export class ApprovalManager {
 
     // Check if submission is in needs_review state
     if (submission.state !== "needs_review") {
-      return {
+      const error: IntakeError = {
         ok: false,
         submissionId: submission.id,
         state: submission.state,
@@ -317,7 +320,8 @@ export class ApprovalManager {
           message: `Cannot request changes on submission in state '${submission.state}'`,
           retryable: false,
         },
-      } as IntakeError;
+      };
+      return error;
     }
 
     const now = new Date().toISOString();
@@ -345,7 +349,7 @@ export class ApprovalManager {
 
     // Emit field.updated event (custom event type for changes requested)
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "field.updated",
       submissionId: submission.id,
       ts: now,

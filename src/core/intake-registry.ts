@@ -10,8 +10,22 @@
  * Based on INTAKE_CONTRACT_SPEC.md v0.1.0-draft §11
  */
 
-import type { IntakeDefinition, JSONSchema } from '../types.js';
+import type { IntakeDefinition, JSONSchema } from '../submission-types.js';
 import { validateWebhookUrl } from './url-validation.js';
+
+/**
+ * Type guard: checks if a value is a plain object (Record<string, unknown>)
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Type guard: checks if a value has the shape of a JSONSchema
+ */
+function isJSONSchemaLike(value: unknown): value is JSONSchema {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 /**
  * Configuration options for IntakeRegistry
@@ -160,7 +174,10 @@ export class IntakeRegistry {
    */
   getSchema(intakeId: string): JSONSchema {
     const intake = this.getIntake(intakeId);
-    return intake.schema as JSONSchema;
+    if (isJSONSchemaLike(intake.schema)) {
+      return intake.schema;
+    }
+    return { type: 'object' };
   }
 
   /**
@@ -284,8 +301,8 @@ export class IntakeRegistry {
     }
 
     // Validate retry policy if present
-    if (destination.retryPolicy) {
-      const policy = destination.retryPolicy as Record<string, unknown>;
+    if (isRecord(destination.retryPolicy)) {
+      const policy = destination.retryPolicy;
       if (typeof policy.maxAttempts !== 'number' || policy.maxAttempts < 0) {
         throw new IntakeValidationError(
           intakeId,
@@ -355,14 +372,17 @@ export class IntakeRegistry {
         throw new IntakeValidationError(intakeId, 'uiHints.steps must be an array');
       }
 
-      for (const step of uiHints.steps as Record<string, unknown>[]) {
-        if (!step.id || typeof step.id !== 'string') {
+      for (const rawStep of uiHints.steps) {
+        if (!isRecord(rawStep)) {
+          throw new IntakeValidationError(intakeId, 'each step must be an object');
+        }
+        if (!rawStep.id || typeof rawStep.id !== 'string') {
           throw new IntakeValidationError(intakeId, 'each step must have an id string');
         }
-        if (!step.title || typeof step.title !== 'string') {
+        if (!rawStep.title || typeof rawStep.title !== 'string') {
           throw new IntakeValidationError(intakeId, 'each step must have a title string');
         }
-        if (!Array.isArray(step.fields)) {
+        if (!Array.isArray(rawStep.fields)) {
           throw new IntakeValidationError(intakeId, 'each step must have a fields array');
         }
       }

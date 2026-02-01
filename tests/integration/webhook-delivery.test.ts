@@ -12,7 +12,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { WebhookManager, signPayload as _signPayload, verifySignature } from "../../src/core/webhook-manager";
 import { InMemoryDeliveryQueue } from "../../src/core/delivery-queue";
-import type { Submission } from "../../src/types";
+import type { Submission } from "../../src/submission-types";
 import type { Destination, IntakeEvent } from "../../src/types/intake-contract";
 
 function createSubmission(overrides?: Partial<Submission>): Submission {

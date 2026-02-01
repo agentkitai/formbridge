@@ -61,6 +61,8 @@ function createMockedBackend(config: Partial<S3StorageConfig> = {}) {
   // Replace private fields (TS private is compile-time only)
   (backend as any).s3Client = { send: mockSend };
   (backend as any).getSignedUrl = mockGetSignedUrl;
+  // Mark init as already complete so ensureInitialized() is a no-op
+  (backend as any).initPromise = Promise.resolve();
 
   return { backend, mockSend, mockGetSignedUrl };
 }

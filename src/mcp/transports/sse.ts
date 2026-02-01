@@ -12,6 +12,7 @@
  */
 
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import type { JSONRPCMessage, MessageExtraInfo } from '@modelcontextprotocol/sdk/types.js';
 import type { ServerResponse, IncomingMessage } from 'node:http';
 
 // Re-export SSEServerTransport for convenience
@@ -55,7 +56,7 @@ export interface SSETransportOptions {
   /**
    * Message handler for incoming messages
    */
-  onMessage?: (message: any, extra?: any) => void;
+  onMessage?: (message: JSONRPCMessage, extra?: MessageExtraInfo) => void;
 }
 
 /**

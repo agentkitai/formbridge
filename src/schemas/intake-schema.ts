@@ -87,7 +87,7 @@ export interface IntakeDefinition {
   /** Optional description of the intake form's purpose */
   description?: string;
   /** Zod schema that defines the structure and validation rules */
-  schema: z.ZodType<any>;
+  schema: z.ZodType<unknown>;
   /** Optional approval gates that require human review */
   approvalGates?: ApprovalGate[];
   /** Destination configuration for successful submissions */
@@ -122,17 +122,13 @@ export function isIntakeDefinition(obj: unknown): obj is IntakeDefinition {
     return false;
   }
 
-  const def = obj as Partial<IntakeDefinition>;
-
   return (
-    typeof def.id === 'string' &&
-    typeof def.version === 'string' &&
-    typeof def.name === 'string' &&
-    def.schema !== undefined &&
-    typeof def.schema === 'object' &&
-    '_def' in def.schema && // Zod schemas have a _def property
-    def.destination !== undefined &&
-    typeof def.destination === 'object'
+    'id' in obj && typeof obj.id === 'string' &&
+    'version' in obj && typeof obj.version === 'string' &&
+    'name' in obj && typeof obj.name === 'string' &&
+    'schema' in obj && obj.schema != null && typeof obj.schema === 'object' &&
+    '_def' in obj.schema && // Zod schemas have a _def property
+    'destination' in obj && obj.destination != null && typeof obj.destination === 'object'
   );
 }
 

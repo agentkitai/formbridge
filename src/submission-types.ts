@@ -3,6 +3,7 @@
  */
 
 import type { Actor, SubmissionState, IntakeEvent } from "./types/intake-contract";
+import type { SubmissionId, IntakeId, ResumeToken } from "./types/branded";
 
 // Re-export types that other modules import from this file
 export type {
@@ -20,6 +21,18 @@ export type {
   DeliveryRecord,
   RetryPolicy,
 } from "./types/intake-contract";
+
+// Re-export branded types and constructor functions
+export {
+  SubmissionId,
+  IntakeId,
+  ResumeToken,
+  EventId,
+  DeliveryId,
+  TenantId,
+  KeyHash,
+  UploadId,
+} from "./types/branded";
 
 /**
  * Simplified JSON Schema type.
@@ -81,10 +94,10 @@ export interface FieldAttribution {
  * Submission record with field-level attribution tracking
  */
 export interface Submission {
-  id: string;
-  intakeId: string;
+  id: SubmissionId;
+  intakeId: IntakeId;
   state: SubmissionState;
-  resumeToken: string;
+  resumeToken: ResumeToken;
   createdAt: string;
   updatedAt: string;
   expiresAt?: string;
@@ -151,5 +164,5 @@ export interface Submission {
  */
 export interface SubmissionEntry {
   submission: Submission;
-  resumeToken: string;
+  resumeToken: ResumeToken;
 }

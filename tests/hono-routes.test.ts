@@ -12,7 +12,7 @@ import { createHonoApprovalRouter } from "../src/routes/hono-approvals.js";
 import { SubmissionManager } from "../src/core/submission-manager.js";
 import { ApprovalManager } from "../src/core/approval-manager.js";
 import { InMemoryEventStore } from "../src/core/event-store.js";
-import type { Submission } from "../src/types.js";
+import type { Submission } from "../src/submission-types.js";
 import type { IntakeEvent } from "../src/types/intake-contract.js";
 
 // ---------- Test Helpers ----------

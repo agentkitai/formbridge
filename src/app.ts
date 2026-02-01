@@ -28,18 +28,51 @@ import { ApprovalManager } from './core/approval-manager.js';
 import { InMemoryEventStore } from './core/event-store.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
-import type { IntakeDefinition } from './types.js';
-import type { Submission } from './types.js';
+import type { IntakeDefinition } from './submission-types.js';
+import type { Submission } from './submission-types.js';
 import type {
   IntakeEvent,
   Destination,
 } from './types/intake-contract.js';
 import type { WebhookNotifier, ReviewerNotification } from './core/approval-manager.js';
-import { redactEventTokens } from './routes/event-utils.js';
+import { redactEventTokens } from './routes/event-sanitizer.js';
 import { parseActor } from './routes/shared/actor-validation.js';
+import { SubmissionId, IntakeId, ResumeToken } from "./types/branded.js";
 
 /** Reserved field names that cannot be set via API */
 const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
+
+/** Runtime type guard for plain record objects */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function extractSchemaRequired(schema: unknown): { required?: string[] } {
+  if (schema && typeof schema === 'object' && 'required' in schema) {
+    const { required } = schema;
+    if (Array.isArray(required) && required.every((item): item is string => typeof item === 'string')) {
+      return { required };
+    }
+  }
+  return {};
+}
+
+function isSchemaWithProperties(schema: unknown): schema is import('./submission-types.js').JSONSchema {
+  return (
+    schema != null &&
+    typeof schema === 'object' &&
+    'properties' in schema &&
+    schema.properties != null &&
+    typeof schema.properties === 'object'
+  );
+}
+
+function extractSchemaProperties(schema: unknown): import('./submission-types.js').JSONSchema | undefined {
+  if (isSchemaWithProperties(schema)) {
+    return schema;
+  }
+  return undefined;
+}
 
 /** Check for reserved field names in fields object */
 function hasReservedFieldNames(fields: Record<string, unknown>): string | null {
@@ -246,10 +279,10 @@ class WebhookNotifierImpl implements WebhookNotifier {
 
     // Build a synthetic Submission-like object for the webhook manager
     const syntheticSubmission: Submission = {
-      id: notification.submissionId,
-      intakeId: notification.intakeId,
+      id: SubmissionId(notification.submissionId),
+      intakeId: IntakeId(notification.intakeId),
       state: notification.state,
-      resumeToken: '',
+      resumeToken: ResumeToken(''),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       fields: notification.fields,
@@ -500,7 +533,7 @@ export function createFormBridgeAppWithIntakes(
       const existing = await store.getByIdempotencyKey(body.idempotencyKey);
       if (existing) {
         const intake = registry.getIntake(intakeId);
-        const schema = intake.schema as { required?: string[] };
+        const schema = extractSchemaRequired(intake.schema);
         const requiredFields = schema.required ?? [];
         const providedFields = Object.keys(existing.fields);
         const missingFields = requiredFields.filter((f: string) => !providedFields.includes(f));
@@ -520,9 +553,9 @@ export function createFormBridgeAppWithIntakes(
     }
 
     // Check initial fields for reserved names and validate against schema
-    const initFields = body.initialFields || body.fields;
-    if (initFields && typeof initFields === 'object') {
-      const reservedKey = hasReservedFieldNames(initFields as Record<string, unknown>);
+    const initFields: unknown = body.initialFields || body.fields;
+    if (isRecord(initFields)) {
+      const reservedKey = hasReservedFieldNames(initFields);
       if (reservedKey) {
         return c.json(
           {
@@ -535,18 +568,18 @@ export function createFormBridgeAppWithIntakes(
 
       // Validate initial fields against intake schema
       const intake = registry.getIntake(intakeId);
-      const intakeSchema = intake.schema as import('./types.js').JSONSchema;
-      if (intakeSchema.properties) {
-        const partialSchema: import('./types.js').JSONSchema = {
+      const intakeSchema = extractSchemaProperties(intake.schema);
+      if (intakeSchema?.properties) {
+        const partialSchema: import('./submission-types.js').JSONSchema = {
           type: 'object',
           properties: {},
         };
-        for (const fieldName of Object.keys(initFields as Record<string, unknown>)) {
+        for (const fieldName of Object.keys(initFields)) {
           if (intakeSchema.properties[fieldName]) {
             partialSchema.properties![fieldName] = intakeSchema.properties[fieldName];
           }
         }
-        const validationResult = validator.validate(initFields as Record<string, unknown>, partialSchema);
+        const validationResult = validator.validate(initFields, partialSchema);
         if (!validationResult.valid) {
           return c.json(
             {
@@ -565,25 +598,25 @@ export function createFormBridgeAppWithIntakes(
 
     // Create submission
     const result = await manager.createSubmission({
-      intakeId,
+      intakeId: IntakeId(intakeId),
       actor,
       idempotencyKey: body.idempotencyKey,
     });
 
     // If initial fields provided, set them via setFields to trigger state transition + token rotation
-    if (initFields && Object.keys(initFields).length > 0) {
+    if (isRecord(initFields) && Object.keys(initFields).length > 0) {
       const setResult = await manager.setFields({
         submissionId: result.submissionId,
-        resumeToken: result.resumeToken,
+        resumeToken: ResumeToken(result.resumeToken),
         actor,
         fields: initFields,
       });
 
       if (setResult.ok) {
         const intake = registry.getIntake(intakeId);
-        const schema = intake.schema as { required?: string[] };
+        const schema = extractSchemaRequired(intake.schema);
         const requiredFields = schema.required ?? [];
-        const providedFields = Object.keys(initFields as Record<string, unknown>);
+        const providedFields = Object.keys(initFields);
         const missingFields = requiredFields.filter((f: string) => !providedFields.includes(f));
 
         return c.json(
@@ -601,7 +634,7 @@ export function createFormBridgeAppWithIntakes(
     }
 
     // For submissions with no initial fields, omit missingFields
-    const { missingFields: _missingFields, ...rest } = result as unknown as Record<string, unknown>;
+    const { missingFields: _missingFields, ...rest } = result;
     return c.json(rest, 201);
   });
 
@@ -697,7 +730,8 @@ export function createFormBridgeAppWithIntakes(
       );
     }
 
-    if (!body.fields || typeof body.fields !== 'object' || Object.keys(body.fields).length === 0) {
+    const fields: unknown = body.fields;
+    if (!fields || !isRecord(fields) || Object.keys(fields).length === 0) {
       return c.json(
         {
           ok: false,
@@ -708,7 +742,7 @@ export function createFormBridgeAppWithIntakes(
     }
 
     // Check for reserved field names
-    const reservedKey = hasReservedFieldNames(body.fields as Record<string, unknown>);
+    const reservedKey = hasReservedFieldNames(fields);
     if (reservedKey) {
       return c.json(
         {
@@ -721,18 +755,18 @@ export function createFormBridgeAppWithIntakes(
 
     // Validate fields against intake schema (partial validation — only validate provided fields)
     const intake = registry.getIntake(intakeId);
-    const intakeSchema = intake.schema as import('./types.js').JSONSchema;
-    if (intakeSchema.properties) {
-      const partialSchema: import('./types.js').JSONSchema = {
+    const intakeSchema = extractSchemaProperties(intake.schema);
+    if (intakeSchema?.properties) {
+      const partialSchema: import('./submission-types.js').JSONSchema = {
         type: 'object',
         properties: {},
       };
-      for (const fieldName of Object.keys(body.fields as Record<string, unknown>)) {
+      for (const fieldName of Object.keys(fields)) {
         if (intakeSchema.properties[fieldName]) {
           partialSchema.properties![fieldName] = intakeSchema.properties[fieldName];
         }
       }
-      const validationResult = validator.validate(body.fields as Record<string, unknown>, partialSchema);
+      const validationResult = validator.validate(fields, partialSchema);
       if (!validationResult.valid) {
         return c.json(
           {
@@ -750,17 +784,20 @@ export function createFormBridgeAppWithIntakes(
 
     try {
       const result = await manager.setFields({
-        submissionId,
-        resumeToken: body.resumeToken,
+        submissionId: SubmissionId(submissionId),
+        resumeToken: ResumeToken(body.resumeToken),
         actor: actorResult.actor,
-        fields: body.fields,
+        fields,
       });
 
       if (!result.ok) {
         // IntakeError — return appropriate status
-        const error = result as { ok: false; error: { type: string } };
-        const status = error.error.type === 'invalid_resume_token' ? 409 : 400;
-        return c.json(result, status);
+        let isTokenError = false;
+        if ('error' in result && result.error != null && typeof result.error === 'object' && 'type' in result.error) {
+          const errorType: unknown = result.error.type;
+          isTokenError = errorType === 'invalid_resume_token';
+        }
+        return c.json(result, isTokenError ? 409 : 400);
       }
 
       // Get updated submission for full response

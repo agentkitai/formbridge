@@ -2,21 +2,25 @@
  * MCP Create Handler — creates a new submission session.
  */
 
+import { z } from 'zod';
 import type { IntakeDefinition } from '../../schemas/intake-schema.js';
-import type { SubmissionResponse, SubmissionSuccess } from '../../types/intake-contract.js';
+import type { SubmissionResponse } from '../../types/intake-contract.js';
 import { validatePartialSubmission } from '../../validation/validator.js';
 import { mapToIntakeError } from '../../validation/error-mapper.js';
 import type { SubmissionStore } from '../submission-store.js';
+import { SubmissionId } from '../../types/branded.js';
+
+const CreateArgsSchema = z.object({
+  data: z.record(z.unknown()).optional().default({}),
+  idempotencyKey: z.string().optional(),
+});
 
 export async function handleCreate(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
   store: SubmissionStore
 ): Promise<SubmissionResponse> {
-  const { data = {}, idempotencyKey } = args as {
-    data?: Record<string, unknown>;
-    idempotencyKey?: string;
-  };
+  const { data, idempotencyKey } = CreateArgsSchema.parse(args);
 
   // Check for existing submission with same idempotency key
   if (idempotencyKey) {
@@ -24,10 +28,10 @@ export async function handleCreate(
     if (existing) {
       return {
         state: existing.state,
-        submissionId: existing.submissionId,
+        submissionId: SubmissionId(existing.submissionId),
         message: 'Submission already exists (idempotent)',
         resumeToken: existing.resumeToken,
-      } as SubmissionSuccess & { resumeToken: string };
+      };
     }
   }
 
@@ -44,8 +48,8 @@ export async function handleCreate(
 
   return {
     state: entry.state,
-    submissionId: entry.submissionId,
+    submissionId: SubmissionId(entry.submissionId),
     message: 'Submission created successfully',
     resumeToken: entry.resumeToken,
-  } as SubmissionSuccess & { resumeToken: string };
+  };
 }

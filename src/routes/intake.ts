@@ -15,7 +15,7 @@ import { Hono } from 'hono';
 import type { Context } from 'hono';
 import type { IntakeRegistry } from '../core/intake-registry.js';
 import { IntakeNotFoundError } from '../core/intake-registry.js';
-import type { JSONSchema } from '../types.js';
+import type { JSONSchema } from '../submission-types.js';
 
 /**
  * Response structure for GET /intake/:id/schema

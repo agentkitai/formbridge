@@ -9,6 +9,7 @@
 import { z } from 'zod';
 import type { IntakeEvent, Actor, SubmissionState } from '../types/intake-contract';
 import { randomUUID } from 'crypto';
+import { EventId, SubmissionId } from '../types/branded.js';
 
 /**
  * Event emitter interface for validation events
@@ -20,7 +21,7 @@ export interface EventEmitter {
 /**
  * Validation result for successful validation
  */
-export interface ValidationSuccess<T = any> {
+export interface ValidationSuccess<T = unknown> {
   /** Whether validation succeeded */
   success: true;
   /** Validated and parsed data */
@@ -40,7 +41,7 @@ export interface ValidationFailure {
 /**
  * Combined validation result type
  */
-export type ValidationResult<T = any> = ValidationSuccess<T> | ValidationFailure;
+export type ValidationResult<T = unknown> = ValidationSuccess<T> | ValidationFailure;
 
 /**
  * Validates submission data against a Zod schema
@@ -78,7 +79,7 @@ export type ValidationResult<T = any> = ValidationSuccess<T> | ValidationFailure
  * }
  * ```
  */
-export function validateSubmission<T = any>(
+export function validateSubmission<T = unknown>(
   schema: z.ZodType<T>,
   data: unknown
 ): ValidationResult<T> {
@@ -151,7 +152,7 @@ export function isValidationFailure<T>(
  * }
  * ```
  */
-export function validateSubmissionOrThrow<T = any>(
+export function validateSubmissionOrThrow<T = unknown>(
   schema: z.ZodType<T>,
   data: unknown
 ): T {
@@ -190,18 +191,22 @@ export function validateSubmissionOrThrow<T = any>(
  * }
  * ```
  */
-export function validatePartialSubmission<T = any>(
+export function validatePartialSubmission<T = unknown>(
   schema: z.ZodType<T>,
   data: unknown
 ): ValidationResult<Partial<T>> {
   // For object schemas, make all fields optional
   if (schema instanceof z.ZodObject) {
-    const partialSchema = schema.partial() as unknown as z.ZodType<Partial<T>>;
-    return validateSubmission(partialSchema, data);
+    const partialResult = schema.partial().safeParse(data);
+    if (partialResult.success) {
+      // SAFE: schema.partial() produces Partial<T> by construction, but TS can't prove it generically
+      return { success: true, data: partialResult.data as Partial<T> };
+    }
+    return { success: false, error: partialResult.error };
   }
 
-  // For non-object schemas, just validate as-is
-  // This handles primitives, arrays, etc.
+  // For non-object schemas, just validate as-is (primitives, arrays, etc.)
+  // SAFE: non-object T is trivially Partial<T>
   return validateSubmission(schema as z.ZodType<Partial<T>>, data);
 }
 
@@ -233,7 +238,7 @@ export class Validator {
    * @param state - The current submission state
    * @returns Validation result with success status and either data or error
    */
-  async validateSubmission<T = any>(
+  async validateSubmission<T = unknown>(
     schema: z.ZodType<T>,
     data: unknown,
     submissionId: string,
@@ -245,9 +250,9 @@ export class Validator {
     if (result.success) {
       // Emit validation.passed event on successful validation
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: 'validation.passed',
-        submissionId,
+        submissionId: SubmissionId(submissionId),
         ts: new Date().toISOString(),
         actor,
         state,
@@ -260,9 +265,9 @@ export class Validator {
     } else {
       // Emit validation.failed event on validation errors
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: 'validation.failed',
-        submissionId,
+        submissionId: SubmissionId(submissionId),
         ts: new Date().toISOString(),
         actor,
         state,
@@ -288,7 +293,7 @@ export class Validator {
    * @returns The validated and parsed data
    * @throws {z.ZodError} If validation fails
    */
-  async validateSubmissionOrThrow<T = any>(
+  async validateSubmissionOrThrow<T = unknown>(
     schema: z.ZodType<T>,
     data: unknown,
     submissionId: string,
@@ -300,9 +305,9 @@ export class Validator {
     // Emit validation.passed event on successful validation
     if (result.success) {
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: 'validation.passed',
-        submissionId,
+        submissionId: SubmissionId(submissionId),
         ts: new Date().toISOString(),
         actor,
         state,
@@ -317,9 +322,9 @@ export class Validator {
 
     // Emit validation.failed event on validation errors
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: 'validation.failed',
-      submissionId,
+      submissionId: SubmissionId(submissionId),
       ts: new Date().toISOString(),
       actor,
       state,
@@ -343,7 +348,7 @@ export class Validator {
    * @param state - The current submission state
    * @returns Validation result with success status and either data or error
    */
-  async validatePartialSubmission<T = any>(
+  async validatePartialSubmission<T = unknown>(
     schema: z.ZodType<T>,
     data: unknown,
     submissionId: string,
@@ -355,9 +360,9 @@ export class Validator {
     // Emit validation.passed event on successful validation
     if (result.success) {
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: 'validation.passed',
-        submissionId,
+        submissionId: SubmissionId(submissionId),
         ts: new Date().toISOString(),
         actor,
         state,
@@ -370,9 +375,9 @@ export class Validator {
     } else {
       // Emit validation.failed event on validation errors
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: 'validation.failed',
-        submissionId,
+        submissionId: SubmissionId(submissionId),
         ts: new Date().toISOString(),
         actor,
         state,

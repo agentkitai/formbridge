@@ -15,7 +15,7 @@ import '@testing-library/jest-dom';
 import { ResumeFormPage } from '../../packages/form-renderer/src/components/ResumeFormPage';
 import { FormBridgeForm } from '../../packages/form-renderer/src/components/FormBridgeForm';
 import type { Actor } from '../../src/types/intake-contract';
-import type { Submission } from '../../src/types';
+import type { Submission } from '../../src/submission-types';
 
 // Mock fetch globally
 global.fetch = jest.fn();

@@ -2,20 +2,26 @@
  * MCP Validate Handler — validates a submission without submitting.
  */
 
+import { z } from 'zod';
 import type { IntakeDefinition } from '../../schemas/intake-schema.js';
-import type { SubmissionResponse, SubmissionSuccess } from '../../types/intake-contract.js';
+import type { SubmissionResponse } from '../../types/intake-contract.js';
 import { SubmissionState } from '../../types/intake-contract.js';
 import { validateSubmission } from '../../validation/validator.js';
 import { mapToIntakeError } from '../../validation/error-mapper.js';
 import type { SubmissionStore } from '../submission-store.js';
 import { lookupEntry, isError } from '../response-builder.js';
+import { SubmissionId } from '../../types/branded.js';
+
+const ValidateArgsSchema = z.object({
+  resumeToken: z.string(),
+});
 
 export async function handleValidate(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
   store: SubmissionStore
 ): Promise<SubmissionResponse> {
-  const { resumeToken } = args as { resumeToken: string };
+  const { resumeToken } = ValidateArgsSchema.parse(args);
 
   const result = lookupEntry(store, resumeToken, intake);
   if (isError(result)) return result;
@@ -34,8 +40,8 @@ export async function handleValidate(
 
   return {
     state: SubmissionState.VALID,
-    submissionId: entry.submissionId,
+    submissionId: SubmissionId(entry.submissionId),
     message: 'Submission is valid and ready to submit',
     resumeToken,
-  } as SubmissionSuccess & { resumeToken: string };
+  };
 }

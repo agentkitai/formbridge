@@ -16,6 +16,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm run --workspace packages/shared build
       - run: npm run typecheck
       - run: npm run lint
 
@@ -45,6 +46,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - run: npm run --workspace packages/shared build
       - run: npm run build
       - uses: actions/upload-artifact@v4
         with:

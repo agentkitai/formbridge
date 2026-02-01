@@ -8,7 +8,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { MemoryStorage } from "../../src/storage/memory-storage";
 import { migrateStorage } from "../../src/storage/migration";
-import type { Submission } from "../../src/types";
+import type { Submission } from "../../src/submission-types";
 import type { Actor, IntakeEvent } from "../../src/types/intake-contract";
 
 const testActor: Actor = { kind: "agent", id: "agent-1", name: "Test Agent" };

@@ -16,8 +16,8 @@ import {
   SubmissionExpiredError,
   InvalidResumeTokenError,
 } from "../core/submission-manager.js";
-import type { Actor } from "../types/intake-contract.js";
-import { parseActorWithFallback as parseActor } from "./shared/actor-validation.js";
+import { parseActor, parseActorWithFallback } from "./shared/actor-validation.js";
+import { SubmissionId } from "../types/branded.js";
 
 /**
  * Creates a Hono router with submission endpoints.
@@ -54,7 +54,7 @@ export function createHonoSubmissionRouter(
       // Body is optional for handoff
     }
 
-    const actorResult = parseActor(body, {
+    const actorResult = parseActorWithFallback(body, {
       kind: "system",
       id: "system",
       name: "System",
@@ -165,7 +165,7 @@ export function createHonoSubmissionRouter(
         // Body is optional
       }
 
-      const actorResult = parseActor(body, {
+      const actorResult = parseActorWithFallback(body, {
         kind: "human",
         id: "human-unknown",
         name: "Human User",
@@ -219,27 +219,28 @@ export function createHonoSubmissionRouter(
         );
       }
 
-      if (!body.actor || !body.actor.kind || !body.actor.id) {
+      const actorResult = parseActor(body.actor);
+      if (!actorResult.ok) {
         return c.json(
-          { ok: false, error: { type: "invalid_request", message: "actor with kind and id is required" } },
+          { ok: false, error: { type: "invalid_request", message: actorResult.error } },
           400
         );
       }
 
       try {
         const result = await manager.submit({
-          submissionId,
+          submissionId: SubmissionId(submissionId),
           resumeToken: body.resumeToken,
-          actor: body.actor as Actor,
+          actor: actorResult.actor,
           idempotencyKey: body.idempotencyKey,
         });
 
         if (!result.ok) {
-          const errorResult = result as { ok: false; error: { type: string } };
+          const errorType = result.error?.type ?? "unknown";
           const status =
-            errorResult.error.type === "conflict"
+            errorType === "conflict"
               ? 409
-              : errorResult.error.type === "needs_approval"
+              : errorType === "needs_approval"
                 ? 202
                 : 400;
           return c.json(result, status);

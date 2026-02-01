@@ -2,12 +2,26 @@
  * MCP Upload Handlers — requestUpload and confirmUpload operations.
  */
 
+import { z } from 'zod';
 import type { IntakeDefinition } from '../../schemas/intake-schema.js';
 import type { IntakeError } from '../../types/intake-contract.js';
-import type { MCPServerConfig } from '../../types/mcp-types.js';
+import type { MCPServerConfig } from '../../types/mcp-tool-definitions.js';
 import { convertZodToJsonSchema } from '../../schemas/json-schema-converter.js';
 import type { SubmissionStore } from '../submission-store.js';
 import { lookupEntry, isError, toRecord } from '../response-builder.js';
+
+const RequestUploadArgsSchema = z.object({
+  resumeToken: z.string(),
+  field: z.string(),
+  filename: z.string(),
+  mimeType: z.string(),
+  sizeBytes: z.number(),
+});
+
+const ConfirmUploadArgsSchema = z.object({
+  resumeToken: z.string(),
+  uploadId: z.string(),
+});
 
 export async function handleRequestUpload(
   intake: IntakeDefinition,
@@ -15,13 +29,7 @@ export async function handleRequestUpload(
   store: SubmissionStore,
   storageBackend?: MCPServerConfig['storageBackend']
 ): Promise<Record<string, unknown>> {
-  const { resumeToken, field, filename, mimeType, sizeBytes } = args as {
-    resumeToken: string;
-    field: string;
-    filename: string;
-    mimeType: string;
-    sizeBytes: number;
-  };
+  const { resumeToken, field, filename, mimeType, sizeBytes } = RequestUploadArgsSchema.parse(args);
 
   const result = lookupEntry(store, resumeToken, intake);
   if (isError(result)) return toRecord(result);
@@ -103,7 +111,7 @@ export async function handleConfirmUpload(
   store: SubmissionStore,
   storageBackend?: MCPServerConfig['storageBackend']
 ): Promise<Record<string, unknown>> {
-  const { resumeToken, uploadId } = args as { resumeToken: string; uploadId: string };
+  const { resumeToken, uploadId } = ConfirmUploadArgsSchema.parse(args);
 
   const result = lookupEntry(store, resumeToken, intake);
   if (isError(result)) return toRecord(result);

@@ -9,6 +9,7 @@
  */
 
 import { Hono } from 'hono';
+import type { Context } from 'hono';
 
 /**
  * Health check response structure
@@ -47,7 +48,7 @@ export function createHealthRouter(): Hono {
 /**
  * Standalone health check handler (for direct mounting)
  */
-export const healthCheckHandler = (c: any) => {
+export const healthCheckHandler = (c: Context) => {
   const response: HealthCheckResponse = {
     ok: true,
     timestamp: new Date().toISOString(),

@@ -16,7 +16,7 @@ import type {
   FieldComment,
 } from "../approval-manager";
 import type { Actor, IntakeEvent } from "../../types/intake-contract";
-import type { Submission } from "../../types";
+import type { Submission } from "../../submission-types";
 
 // Mock in-memory store
 class MockSubmissionStore {

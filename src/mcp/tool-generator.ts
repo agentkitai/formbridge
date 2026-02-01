@@ -13,9 +13,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { SubmissionManager } from "../core/submission-manager.js";
 import type { Actor, IntakeDefinition } from "../types/intake-contract.js";
-import type { MCPToolDefinition } from "../types/mcp-types.js";
+import type { MCPToolDefinition } from "../types/mcp-tool-definitions.js";
 import type { JsonSchema } from "../schemas/json-schema-converter.js";
 import { convertZodToJsonSchema } from "../schemas/json-schema-converter.js";
+import { IntakeId } from "../types/branded.js";
 
 // =============================================================================
 // § MCP SDK Tool Registration
@@ -140,7 +141,7 @@ export function registerTools(
 
         // Construct a minimal IntakeDefinition for validation
         const intakeDefinition: IntakeDefinition = {
-          id: intakeId,
+          id: IntakeId(intakeId),
           version: "1.0.0",
           name: intakeId,
           schema: {},
@@ -337,7 +338,7 @@ export function generateToolsFromIntake(
   } = options;
 
   // Convert Zod schema to JSON Schema
-  const jsonSchema = convertZodToJsonSchema(intake.schema as import("zod").ZodType<any>, {
+  const jsonSchema = convertZodToJsonSchema(intake.schema as import("zod").ZodType<unknown>, {
     name: intake.name,
     description: intake.description,
     includeSchemaProperty: false
@@ -756,6 +757,12 @@ export function generateToolName(intakeId: string, operation: ToolOperation): st
  * @param toolName - The full tool name to parse
  * @returns Object containing intakeId and operation, or null if invalid
  */
+const VALID_OPERATIONS = new Set<ToolOperation>(['create', 'set', 'validate', 'submit', 'requestUpload', 'confirmUpload']);
+
+function isToolOperation(value: string): value is ToolOperation {
+  return VALID_OPERATIONS.has(value as ToolOperation);
+}
+
 export function parseToolName(toolName: string): { intakeId: string; operation: ToolOperation } | null {
   const lastUnderscoreIndex = toolName.lastIndexOf('_');
 
@@ -764,13 +771,11 @@ export function parseToolName(toolName: string): { intakeId: string; operation: 
   }
 
   const intakeId = toolName.substring(0, lastUnderscoreIndex);
-  const operation = toolName.substring(lastUnderscoreIndex + 1) as ToolOperation;
+  const candidate = toolName.substring(lastUnderscoreIndex + 1);
 
-  // Validate operation
-  const validOperations: ToolOperation[] = ['create', 'set', 'validate', 'submit', 'requestUpload', 'confirmUpload'];
-  if (!validOperations.includes(operation)) {
+  if (!isToolOperation(candidate)) {
     return null;
   }
 
-  return { intakeId, operation };
+  return { intakeId, operation: candidate };
 }

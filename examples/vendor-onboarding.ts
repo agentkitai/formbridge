@@ -8,7 +8,8 @@
  * Based on: docs/EXAMPLE_VENDOR_ONBOARDING.md
  */
 
-import type { IntakeDefinition } from '../src/types.js';
+import type { IntakeDefinition } from '../src/submission-types.js';
+import { IntakeId } from '../src/types/branded.js';
 
 /**
  * Vendor Onboarding Intake Definition
@@ -23,7 +24,7 @@ import type { IntakeDefinition } from '../src/types.js';
  * 7. System delivers to downstream vendor master API
  */
 export const vendorOnboardingIntake: IntakeDefinition = {
-  id: 'vendor_onboarding_v1',
+  id: IntakeId('vendor_onboarding_v1'),
   version: '1.0.0',
   name: 'Vendor Onboarding',
   description: 'Complete vendor onboarding with compliance review and document collection',

@@ -3,6 +3,14 @@
  * Based on INTAKE_CONTRACT_SPEC.md v0.1.0-draft
  */
 
+import type {
+  SubmissionId,
+  IntakeId,
+  ResumeToken,
+  EventId,
+  DeliveryId,
+} from "./branded.js";
+
 /**
  * Actor identity for all operations
  * Recorded on every event for audit purposes
@@ -152,7 +160,7 @@ export interface ValidationErrorResponse {
  */
 export interface IntakeError {
   ok?: false;
-  submissionId?: string;
+  submissionId?: SubmissionId;
   state?: SubmissionState;
   resumeToken?: string;
   error?: {
@@ -212,9 +220,9 @@ export interface FieldDiff {
  * Typed event for audit trail
  */
 export interface IntakeEvent {
-  eventId: string;
+  eventId: EventId;
   type: IntakeEventType;
-  submissionId: string;
+  submissionId: SubmissionId;
   ts: string;
   actor: Actor;
   state: SubmissionState;
@@ -227,8 +235,8 @@ export interface IntakeEvent {
  * Delivery record for webhook forwarding
  */
 export interface DeliveryRecord {
-  deliveryId: string;
-  submissionId: string;
+  deliveryId: DeliveryId;
+  submissionId: SubmissionId;
   destinationUrl: string;
   status: 'pending' | 'succeeded' | 'failed';
   attempts: number;
@@ -274,7 +282,7 @@ export interface Destination {
  * Intake definition - the template for data collection
  */
 export interface IntakeDefinition {
-  id: string;
+  id: IntakeId;
   version: string;
   name: string;
   description?: string;
@@ -292,7 +300,7 @@ export interface IntakeDefinition {
  * Create submission request
  */
 export interface CreateSubmissionRequest {
-  intakeId: string;
+  intakeId: IntakeId;
   idempotencyKey?: string;
   actor: Actor;
   initialFields?: Record<string, unknown>;
@@ -304,7 +312,7 @@ export interface CreateSubmissionRequest {
  */
 export interface CreateSubmissionResponse {
   ok: true;
-  submissionId: string;
+  submissionId: SubmissionId;
   state: "draft" | "in_progress" | "submitted";
   resumeToken: string;
   schema: unknown;
@@ -315,8 +323,8 @@ export interface CreateSubmissionResponse {
  * Set fields request
  */
 export interface SetFieldsRequest {
-  submissionId: string;
-  resumeToken: string;
+  submissionId: SubmissionId;
+  resumeToken: ResumeToken;
   actor: Actor;
   fields: Record<string, unknown>;
 }
@@ -325,8 +333,8 @@ export interface SetFieldsRequest {
  * Submit request
  */
 export interface SubmitRequest {
-  submissionId: string;
-  resumeToken: string;
+  submissionId: SubmissionId;
+  resumeToken: ResumeToken;
   idempotencyKey: string;
   actor: Actor;
 }
@@ -335,7 +343,7 @@ export interface SubmitRequest {
  * Review request
  */
 export interface ReviewRequest {
-  submissionId: string;
+  submissionId: SubmissionId;
   decision: "approved" | "rejected";
   reasons?: string[];
   actor: Actor;
@@ -345,7 +353,7 @@ export interface ReviewRequest {
  * Cancel request
  */
 export interface CancelRequest {
-  submissionId: string;
+  submissionId: SubmissionId;
   reason?: string;
   actor: Actor;
 }
@@ -358,7 +366,7 @@ export interface SubmissionSuccess {
   /** Submission state */
   state: SubmissionState;
   /** Unique submission identifier */
-  submissionId: string;
+  submissionId: SubmissionId;
   /** Success message */
   message: string;
   /** Optional data returned from the destination */
@@ -377,6 +385,37 @@ export interface SubmissionSuccess {
 export type SubmissionResponse = SubmissionSuccess | IntakeError | ValidationErrorResponse;
 
 /**
+ * Factory function for creating IntakeError objects with proper typing.
+ * Eliminates the need for `as IntakeError` assertions.
+ */
+export function createIntakeError(params: {
+  submissionId?: SubmissionId;
+  state?: SubmissionState;
+  resumeToken?: string;
+  errorType: IntakeErrorType;
+  message: string;
+  retryable: boolean;
+  retryAfterMs?: number;
+  fields?: FieldError[];
+  nextActions?: NextAction[];
+}): IntakeError {
+  return {
+    ok: false,
+    submissionId: params.submissionId,
+    state: params.state,
+    resumeToken: params.resumeToken,
+    error: {
+      type: params.errorType,
+      message: params.message,
+      retryable: params.retryable,
+      retryAfterMs: params.retryAfterMs,
+      fields: params.fields,
+      nextActions: params.nextActions,
+    },
+  };
+}
+
+/**
  * Type guard to check if a response is an IntakeError
  * Supports both the structured error envelope shape (ok: false)
  * and the flat error shape (type, fields, nextActions)
@@ -384,6 +423,7 @@ export type SubmissionResponse = SubmissionSuccess | IntakeError | ValidationErr
 export function isIntakeError(response: unknown): response is IntakeError {
   if (response && typeof response === "object") {
     // Structured shape: { ok: false, error: { ... } }
+    // SAFE: 'in' check above proves 'ok' exists; cast needed for property access
     if ("ok" in response && (response as Record<string, unknown>).ok === false) return true;
     // Flat shape: { type, fields, nextActions }
     if ("type" in response && "fields" in response && "nextActions" in response) return true;
@@ -396,6 +436,7 @@ export function isIntakeError(response: unknown): response is IntakeError {
  */
 export function isSubmissionSuccess(response: unknown): response is SubmissionSuccess {
   if (response && typeof response === "object") {
+    // SAFE: 'in' check above proves 'ok' exists; cast needed for property access
     return "state" in response && "submissionId" in response && !("ok" in response && (response as Record<string, unknown>).ok === false);
   }
   return false;

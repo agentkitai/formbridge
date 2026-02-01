@@ -9,13 +9,14 @@
  * - events: eventId, type, submissionId, ts, actor (JSON), ...
  */
 
-import type { Submission } from "../types.js";
+import type { Submission } from "../submission-types.js";
 import type {
   IntakeEvent,
   IntakeEventType,
   Actor,
 } from "../types/intake-contract.js";
 import type { EventStore, EventFilters, EventStoreStats } from "../core/event-store.js";
+import { EventId, SubmissionId } from "../types/branded.js";
 import type { StorageBackend } from "./storage-backend.js";
 import type {
   FormBridgeStorage,
@@ -24,6 +25,123 @@ import type {
   PaginatedResult,
   PaginationOptions,
 } from "./storage-interface.js";
+
+// =============================================================================
+// § Runtime type guards for SQL row narrowing
+// =============================================================================
+
+/** Type guard for plain record objects */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value != null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/** Type guard for SQL rows with a 'data' column */
+function isDataRow(row: unknown): row is { data: string } {
+  return row != null && typeof row === 'object' && 'data' in row && typeof row.data === 'string';
+}
+
+/** Type guard for SQL COUNT(*) result rows */
+function isCountRow(row: unknown): row is { count: number } {
+  return row != null && typeof row === 'object' && 'count' in row && typeof row.count === 'number';
+}
+
+/** Type guard for version counter rows from GROUP BY query */
+function isVersionRow(row: unknown): row is { submissionId: string; maxVersion: number } {
+  return (
+    row != null && typeof row === 'object' &&
+    'submissionId' in row && typeof row.submissionId === 'string' &&
+    'maxVersion' in row && typeof row.maxVersion === 'number'
+  );
+}
+
+/** Type guard for event rows from the events table */
+interface EventRow {
+  eventId: string;
+  type: string;
+  submissionId: string;
+  ts: string;
+  version: number;
+  actor: string;
+  state: string;
+  payload: string | null;
+}
+
+function isEventRow(row: unknown): row is EventRow {
+  return (
+    row != null && typeof row === 'object' &&
+    'eventId' in row && typeof row.eventId === 'string' &&
+    'type' in row && typeof row.type === 'string' &&
+    'submissionId' in row && typeof row.submissionId === 'string' &&
+    'ts' in row && typeof row.ts === 'string' &&
+    'version' in row && typeof row.version === 'number' &&
+    'actor' in row && typeof row.actor === 'string' &&
+    'state' in row && typeof row.state === 'string'
+  );
+}
+
+/** Type guard for stats aggregate rows */
+interface StatsRow {
+  totalEvents: number;
+  submissionCount: number;
+  oldestEvent: string | null;
+  newestEvent: string | null;
+}
+
+function isStatsRow(row: unknown): row is StatsRow {
+  return (
+    row != null && typeof row === 'object' &&
+    'totalEvents' in row && typeof row.totalEvents === 'number' &&
+    'submissionCount' in row && typeof row.submissionCount === 'number' &&
+    'oldestEvent' in row &&
+    'newestEvent' in row
+  );
+}
+
+/** Type guard for Actor parsed from JSON */
+function isActor(value: unknown): value is Actor {
+  return (
+    value != null && typeof value === 'object' &&
+    'kind' in value && typeof value.kind === 'string' &&
+    'id' in value && typeof value.id === 'string'
+  );
+}
+
+/** Type guard for Submission parsed from JSON (minimal shape check) */
+function isSubmissionShape(value: unknown): value is Submission {
+  return (
+    value != null && typeof value === 'object' &&
+    'id' in value && typeof value.id === 'string' &&
+    'intakeId' in value && typeof value.intakeId === 'string' &&
+    'state' in value && typeof value.state === 'string'
+  );
+}
+
+// Valid SubmissionState values for runtime validation
+const VALID_SUBMISSION_STATES = new Set<string>([
+  "draft", "in_progress", "awaiting_input", "awaiting_upload", "submitted",
+  "needs_review", "approved", "rejected", "finalized", "cancelled", "expired",
+  "created", "validating", "invalid", "valid", "uploading", "submitting",
+  "completed", "failed", "pending_approval",
+]);
+
+function isSubmissionState(value: string): value is import("../types/intake-contract.js").SubmissionState {
+  return VALID_SUBMISSION_STATES.has(value);
+}
+
+// Valid IntakeEventType values for runtime validation
+const VALID_INTAKE_EVENT_TYPES = new Set<string>([
+  "submission.created", "field.updated", "fields.updated",
+  "validation.passed", "validation.failed",
+  "upload.requested", "upload.completed", "upload.failed",
+  "submission.submitted", "review.requested", "review.approved", "review.rejected",
+  "delivery.attempted", "delivery.succeeded", "delivery.failed",
+  "submission.finalized", "submission.cancelled", "submission.expired",
+  "handoff.link_issued", "handoff.resumed",
+]);
+
+function isIntakeEventType(value: string): value is IntakeEventType {
+  return VALID_INTAKE_EVENT_TYPES.has(value);
+}
 
 // =============================================================================
 // § Types for better-sqlite3 (optional dependency)
@@ -52,25 +170,28 @@ class SqliteSubmissionStorage implements SubmissionStorage {
   async get(id: string): Promise<Submission | null> {
     const row = this.db
       .prepare("SELECT data FROM submissions WHERE id = ?")
-      .get(id) as { data: string } | undefined;
-    if (!row) return null;
-    return JSON.parse(row.data);
+      .get(id);
+    if (!isDataRow(row)) return null;
+    const parsed: unknown = JSON.parse(row.data);
+    return isSubmissionShape(parsed) ? parsed : null;
   }
 
   async getByResumeToken(token: string): Promise<Submission | null> {
     const row = this.db
       .prepare("SELECT data FROM submissions WHERE resumeToken = ?")
-      .get(token) as { data: string } | undefined;
-    if (!row) return null;
-    return JSON.parse(row.data);
+      .get(token);
+    if (!isDataRow(row)) return null;
+    const parsed: unknown = JSON.parse(row.data);
+    return isSubmissionShape(parsed) ? parsed : null;
   }
 
   async getByIdempotencyKey(key: string): Promise<Submission | null> {
     const row = this.db
       .prepare("SELECT data FROM submissions WHERE idempotencyKey = ?")
-      .get(key) as { data: string } | undefined;
-    if (!row) return null;
-    return JSON.parse(row.data);
+      .get(key);
+    if (!isDataRow(row)) return null;
+    const parsed: unknown = JSON.parse(row.data);
+    return isSubmissionShape(parsed) ? parsed : null;
   }
 
   async save(submission: Submission): Promise<void> {
@@ -129,20 +250,28 @@ class SqliteSubmissionStorage implements SubmissionStorage {
     // Count
     const countRow = this.db
       .prepare(`SELECT COUNT(*) as count FROM submissions ${whereStr}`)
-      .get(...params) as { count: number };
-    const total = countRow.count;
+      .get(...params);
+    const total = isCountRow(countRow) ? countRow.count : 0;
 
     // Paginate
     const offset = pagination?.offset ?? 0;
     const limit = pagination?.limit ?? 50;
 
-    const rows = this.db
+    const rawRows = this.db
       .prepare(
         `SELECT data FROM submissions ${whereStr} ORDER BY createdAt DESC LIMIT ? OFFSET ?`
       )
-      .all(...params, limit, offset) as { data: string }[];
+      .all(...params, limit, offset);
 
-    const items = rows.map((row) => JSON.parse(row.data) as Submission);
+    const items: Submission[] = [];
+    for (const row of rawRows) {
+      if (isDataRow(row)) {
+        const parsed: unknown = JSON.parse(row.data);
+        if (isSubmissionShape(parsed)) {
+          items.push(parsed);
+        }
+      }
+    }
 
     return {
       items,
@@ -172,9 +301,11 @@ class SqliteEventStore implements EventStore {
       .prepare(
         "SELECT submissionId, MAX(version) as maxVersion FROM events GROUP BY submissionId"
       )
-      .all() as { submissionId: string; maxVersion: number }[];
+      .all();
     for (const row of rows) {
-      this.versionCounters.set(row.submissionId, row.maxVersion);
+      if (isVersionRow(row)) {
+        this.versionCounters.set(row.submissionId, row.maxVersion);
+      }
     }
   }
 
@@ -254,27 +385,35 @@ class SqliteEventStore implements EventStore {
       }
     }
 
-    const rows = this.db.prepare(sql).all(...params) as Array<{
-      eventId: string;
-      type: string;
-      submissionId: string;
-      ts: string;
-      version: number;
-      actor: string;
-      state: string;
-      payload: string | null;
-    }>;
+    const rawRows = this.db.prepare(sql).all(...params);
 
-    return rows.map((row) => ({
-      eventId: row.eventId,
-      type: row.type as IntakeEventType,
-      submissionId: row.submissionId,
-      ts: row.ts,
-      version: row.version,
-      actor: JSON.parse(row.actor) as Actor,
-      state: row.state as import("../types/intake-contract.js").SubmissionState,
-      payload: row.payload ? JSON.parse(row.payload) : undefined,
-    }));
+    const events: IntakeEvent[] = [];
+    for (const row of rawRows) {
+      if (!isEventRow(row)) continue;
+
+      const parsedActor: unknown = JSON.parse(row.actor);
+      if (!isActor(parsedActor)) continue;
+      if (!isIntakeEventType(row.type)) continue;
+      if (!isSubmissionState(row.state)) continue;
+
+      let payload: Record<string, unknown> | undefined;
+      if (row.payload) {
+        const p: unknown = JSON.parse(row.payload);
+        payload = isRecord(p) ? p : undefined;
+      }
+
+      events.push({
+        eventId: EventId(row.eventId),
+        type: row.type,
+        submissionId: SubmissionId(row.submissionId),
+        ts: row.ts,
+        version: row.version,
+        actor: parsedActor,
+        state: row.state,
+        payload,
+      });
+    }
+    return events;
   }
 
   async getStats(): Promise<EventStoreStats> {
@@ -287,12 +426,11 @@ class SqliteEventStore implements EventStore {
           MAX(ts) as newestEvent
         FROM events`
       )
-      .get() as {
-      totalEvents: number;
-      submissionCount: number;
-      oldestEvent: string | null;
-      newestEvent: string | null;
-    };
+      .get();
+
+    if (!isStatsRow(statsRow)) {
+      return { totalEvents: 0, submissionCount: 0 };
+    }
 
     return {
       totalEvents: statsRow.totalEvents,
@@ -348,34 +486,36 @@ export interface SqliteStorageOptions {
 }
 
 export class SqliteStorage implements FormBridgeStorage {
-  submissions: SubmissionStorage;
-  events: EventStore;
+  submissions!: SubmissionStorage;
+  events!: EventStore;
   files: StorageBackend;
   private db: Database | null = null;
   private dbPath: string;
 
   constructor(options: SqliteStorageOptions) {
     this.dbPath = options.dbPath;
-
-    // Initialize with placeholder — real init happens in initialize()
-    this.submissions = null as any;
-    this.events = null as any;
     this.files = options.fileStorage ?? new NoopStorageBackend();
   }
 
   async initialize(): Promise<void> {
     // Dynamic import of better-sqlite3 (optional peer dependency)
-    let BetterSqlite3: any;
+    let BetterSqlite3: new (path: string) => Database;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      BetterSqlite3 = (await import("better-sqlite3" as string)).default;
-    } catch {
+      const mod: { default?: unknown } = await import("better-sqlite3" as string);
+      if (typeof mod.default !== 'function') {
+        throw new Error("better-sqlite3 default export is not a constructor");
+      }
+      BetterSqlite3 = mod.default as new (path: string) => Database;
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("default export")) {
+        throw err;
+      }
       throw new Error(
         "better-sqlite3 is required for SqliteStorage. Install it: npm install better-sqlite3"
       );
     }
 
-    this.db = new BetterSqlite3(this.dbPath) as unknown as Database;
+    this.db = new BetterSqlite3(this.dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
 

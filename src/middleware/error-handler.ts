@@ -15,7 +15,8 @@
 import type { Context } from 'hono';
 import type { ContentfulStatusCode } from 'hono/utils/http-status';
 import { HTTPException } from 'hono/http-exception';
-import type { IntakeError, SubmissionState } from '../types.js';
+import type { IntakeError, SubmissionState } from '../submission-types.js';
+import type { SubmissionId } from '../types/branded.js';
 import {
   IntakeNotFoundError,
   IntakeDuplicateError,
@@ -40,7 +41,7 @@ export interface ErrorResponse {
  */
 export class SubmissionError extends Error {
   constructor(
-    public submissionId: string,
+    public submissionId: SubmissionId,
     public state: SubmissionState,
     public resumeToken: string,
     public intakeError: NonNullable<IntakeError['error']>
@@ -66,7 +67,7 @@ export class SubmissionError extends Error {
 /**
  * Maps error types to HTTP status codes
  */
-function getStatusCodeForError(error: unknown): number {
+function getStatusCodeForError(error: unknown): ContentfulStatusCode {
   // HTTPException from Hono (explicitly set status)
   if (error instanceof HTTPException) {
     return error.status;
@@ -223,12 +224,11 @@ export function createErrorHandler(options?: {
     const errorResponse = formatError(err);
 
     // Add stack trace in development mode if requested
-    if (includeStack && err.stack && 'error' in errorResponse) {
-      const errObj = errorResponse.error as Record<string, unknown>;
-      errObj.stack = err.stack;
+    if (includeStack && err.stack && 'error' in errorResponse && errorResponse.error) {
+      Object.assign(errorResponse.error, { stack: err.stack });
     }
 
-    return c.json(errorResponse, statusCode as ContentfulStatusCode);
+    return c.json(errorResponse, statusCode);
   };
 }
 
@@ -270,7 +270,7 @@ export function throwNotFoundError(resource: string, id: string): never {
  * @returns SubmissionError instance to be thrown
  */
 export function createSubmissionError(
-  submissionId: string,
+  submissionId: SubmissionId,
   state: SubmissionState,
   resumeToken: string,
   errorDetails: NonNullable<IntakeError['error']>

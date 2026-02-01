@@ -13,13 +13,15 @@ import type {
   IntakeError,
   IntakeDefinition,
 } from "../types/intake-contract";
-import type { Submission, FieldAttribution } from "../types";
+import { createIntakeError } from "../types/intake-contract";
+import type { Submission, FieldAttribution } from "../submission-types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";
 import type { EventStore } from "./event-store.js";
 import { InMemoryEventStore } from "./event-store.js";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
+import { SubmissionId, ResumeToken, EventId } from "../types/branded.js";
 
 import {
   SubmissionNotFoundError,
@@ -32,6 +34,18 @@ export { SubmissionNotFoundError, SubmissionExpiredError, InvalidResumeTokenErro
 
 /** Reserved field names that cannot be set via the API */
 const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUploadStatusMap(value: unknown): value is Record<string, UploadStatus> {
+  return isRecord(value);
+}
+
+function getUploads(fields: Record<string, unknown>): Record<string, UploadStatus> {
+  return isUploadStatusMap(fields.__uploads) ? fields.__uploads : {};
+}
 
 /** Terminal states that should not be expired */
 const TERMINAL_STATES = new Set(['rejected', 'finalized', 'cancelled', 'expired']);
@@ -151,10 +165,13 @@ export class SubmissionManager {
     if (request.idempotencyKey) {
       const existing = await this.store.getByIdempotencyKey(request.idempotencyKey);
       if (existing) {
+        const existingState = existing.state === "draft" || existing.state === "in_progress"
+          ? existing.state
+          : "draft";
         return {
           ok: true,
           submissionId: existing.id,
-          state: existing.state as "draft" | "in_progress",
+          state: existingState,
           resumeToken: existing.resumeToken,
           schema: {},
           missingFields: [],
@@ -162,8 +179,8 @@ export class SubmissionManager {
       }
     }
 
-    const submissionId = `sub_${randomUUID()}`;
-    const resumeToken = `rtok_${randomUUID()}`;
+    const submissionId = SubmissionId(`sub_${randomUUID()}`);
+    const resumeToken = ResumeToken(`rtok_${randomUUID()}`);
     const now = new Date().toISOString();
 
     const fieldAttribution: FieldAttribution = {};
@@ -201,7 +218,7 @@ export class SubmissionManager {
 
     // Emit submission.created event (recordEvent will save the submission)
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "submission.created",
       submissionId,
       ts: now,
@@ -249,17 +266,14 @@ export class SubmissionManager {
         submission.state
       )
     ) {
-      return {
-        ok: false,
+      return createIntakeError({
         submissionId: submission.id,
         state: submission.state,
         resumeToken: submission.resumeToken,
-        error: {
-          type: "conflict",
-          message: "Cannot modify fields in current state",
-          retryable: false,
-        },
-      } as IntakeError;
+        errorType: "conflict",
+        message: "Cannot modify fields in current state",
+        retryable: false,
+      });
     }
 
     // Verify resume token matches
@@ -286,17 +300,14 @@ export class SubmissionManager {
     // Reject reserved field names
     for (const fieldPath of Object.keys(request.fields)) {
       if (RESERVED_FIELD_NAMES.has(fieldPath)) {
-        return {
-          ok: false,
+        return createIntakeError({
           submissionId: submission.id,
           state: submission.state,
           resumeToken: submission.resumeToken,
-          error: {
-            type: "invalid",
-            message: `Reserved field name '${fieldPath}' cannot be used`,
-            retryable: false,
-          },
-        } as IntakeError;
+          errorType: "invalid",
+          message: `Reserved field name '${fieldPath}' cannot be used`,
+          retryable: false,
+        });
       }
     }
 
@@ -309,9 +320,9 @@ export class SubmissionManager {
     }> = [];
 
     Object.entries(request.fields).forEach(([fieldPath, value]) => {
-      const oldValue = submission!.fields[fieldPath];
-      submission!.fields[fieldPath] = value;
-      submission!.fieldAttribution[fieldPath] = request.actor;
+      const oldValue = submission.fields[fieldPath];
+      submission.fields[fieldPath] = value;
+      submission.fieldAttribution[fieldPath] = request.actor;
       fieldUpdates.push({ fieldPath, oldValue, newValue: value });
     });
 
@@ -320,7 +331,7 @@ export class SubmissionManager {
     submission.updatedBy = request.actor;
 
     // Rotate resume token on every state-changing operation
-    submission.resumeToken = `rtok_${randomUUID()}`;
+    submission.resumeToken = ResumeToken(`rtok_${randomUUID()}`);
 
     // Update state if still in draft
     if (submission.state === "draft") {
@@ -337,7 +348,7 @@ export class SubmissionManager {
 
     // Emit a single batch fields.updated event for all field changes
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "fields.updated",
       submissionId: submission.id,
       ts: now,
@@ -353,10 +364,10 @@ export class SubmissionManager {
     return {
       ok: true,
       submissionId: submission.id,
-      state: submission.state as "draft" | "in_progress",
+      state: "in_progress",
       resumeToken: submission.resumeToken,
-      schema: {}, // TODO: Load from intake definition
-      missingFields: [], // TODO: Calculate from schema
+      schema: {},
+      missingFields: [],
     };
   }
 
@@ -394,9 +405,11 @@ export class SubmissionManager {
     }
 
     // Validate field exists in the schema
-    const schemaObj = intakeDefinition.schema as Record<string, unknown> | undefined;
-    const properties = (schemaObj as { properties?: Record<string, unknown> })?.properties;
-    const fieldSchema = properties?.[input.field];
+    const schemaObj = intakeDefinition.schema;
+    let fieldSchema: unknown;
+    if (isRecord(schemaObj) && isRecord(schemaObj.properties)) {
+      fieldSchema = schemaObj.properties[input.field];
+    }
     if (!fieldSchema) {
       throw new Error(`Field '${input.field}' not found in intake schema`);
     }
@@ -427,7 +440,7 @@ export class SubmissionManager {
     };
 
     // Track uploads in the submission's fields under __uploads
-    const uploads = (submission.fields.__uploads as Record<string, UploadStatus>) || {};
+    const uploads = getUploads(submission.fields);
     uploads[signedUrl.uploadId] = uploadStatus;
     submission.fields.__uploads = uploads;
 
@@ -441,12 +454,12 @@ export class SubmissionManager {
     }
 
     // Generate new resume token
-    const newResumeToken = `rtok_${randomUUID()}`;
+    const newResumeToken = ResumeToken(`rtok_${randomUUID()}`);
     submission.resumeToken = newResumeToken;
 
     // Emit upload requested event (recordEvent will save the submission)
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "upload.requested",
       submissionId: submission.id,
       ts: now,
@@ -506,7 +519,7 @@ export class SubmissionManager {
     }
 
     // Find upload in submission
-    const uploads = (submission.fields.__uploads as Record<string, UploadStatus>) || {};
+    const uploads = getUploads(submission.fields);
     const uploadStatus = uploads[input.uploadId];
     if (!uploadStatus) {
       throw new Error(`Upload not found: ${input.uploadId}`);
@@ -518,10 +531,12 @@ export class SubmissionManager {
     // Map storage backend status to submission upload status
     // Note: storage backend 'expired' status is mapped to 'failed'
     let mappedStatus: "pending" | "completed" | "failed";
-    if (verificationResult.status === "expired") {
+    if (verificationResult.status === "expired" || verificationResult.status === "failed") {
       mappedStatus = "failed";
+    } else if (verificationResult.status === "completed") {
+      mappedStatus = "completed";
     } else {
-      mappedStatus = verificationResult.status as "pending" | "completed" | "failed";
+      mappedStatus = "pending";
     }
 
     // Update upload status based on verification
@@ -549,12 +564,12 @@ export class SubmissionManager {
       }
 
       // Rotate resume token only after successful verification
-      const newResumeToken = `rtok_${randomUUID()}`;
+      const newResumeToken = ResumeToken(`rtok_${randomUUID()}`);
       submission.resumeToken = newResumeToken;
 
       // Emit upload completed event (recordEvent will save the submission)
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: "upload.completed",
         submissionId: submission.id,
         ts: now,
@@ -581,7 +596,7 @@ export class SubmissionManager {
       // Emit upload failed event (do NOT rotate resume token on failure)
       // recordEvent will save the submission
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: "upload.failed",
         submissionId: submission.id,
         ts: now,
@@ -661,7 +676,7 @@ export class SubmissionManager {
 
       // Emit review.requested event (recordEvent will save the submission)
       const reviewEvent: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: "review.requested",
         submissionId: submission.id,
         ts: now,
@@ -704,7 +719,7 @@ export class SubmissionManager {
 
     // Emit submission.submitted event (recordEvent will save the submission)
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "submission.submitted",
       submissionId: submission.id,
       ts: now,
@@ -720,7 +735,7 @@ export class SubmissionManager {
     return {
       ok: true,
       submissionId: submission.id,
-      state: submission.state as "draft" | "in_progress" | "submitted",
+      state: "submitted",
       resumeToken: submission.resumeToken,
       schema: {},
       missingFields: [],
@@ -801,7 +816,7 @@ export class SubmissionManager {
 
     // Emit handoff.link_issued event
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "handoff.link_issued",
       submissionId: submission.id,
       ts: now,
@@ -841,7 +856,7 @@ export class SubmissionManager {
 
     // Create handoff.resumed event
     const event: IntakeEvent = {
-      eventId: `evt_${randomUUID()}`,
+      eventId: EventId(`evt_${randomUUID()}`),
       type: "handoff.resumed",
       submissionId: submission.id,
       ts: now,
@@ -892,7 +907,7 @@ export class SubmissionManager {
       submission.updatedBy = systemActor;
 
       const event: IntakeEvent = {
-        eventId: `evt_${randomUUID()}`,
+        eventId: EventId(`evt_${randomUUID()}`),
         type: 'submission.expired',
         submissionId: submission.id,
         ts: now,
