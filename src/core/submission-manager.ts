@@ -35,12 +35,16 @@ export { SubmissionNotFoundError, SubmissionExpiredError, InvalidResumeTokenErro
 /** Reserved field names that cannot be set via the API */
 const RESERVED_FIELD_NAMES = new Set(['__proto__', 'constructor', 'prototype', '__uploads']);
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isUploadStatusMap(value: unknown): value is Record<string, UploadStatus> {
+  return isRecord(value);
+}
+
 function getUploads(fields: Record<string, unknown>): Record<string, UploadStatus> {
-  const uploads = fields.__uploads;
-  if (uploads && typeof uploads === 'object') {
-    return uploads as Record<string, UploadStatus>;
-  }
-  return {};
+  return isUploadStatusMap(fields.__uploads) ? fields.__uploads : {};
 }
 
 /** Terminal states that should not be expired */
@@ -402,10 +406,10 @@ export class SubmissionManager {
 
     // Validate field exists in the schema
     const schemaObj = intakeDefinition.schema;
-    const properties = (schemaObj && typeof schemaObj === 'object' && 'properties' in schemaObj)
-      ? (schemaObj as { properties: Record<string, unknown> }).properties
-      : undefined;
-    const fieldSchema = properties?.[input.field];
+    let fieldSchema: unknown;
+    if (isRecord(schemaObj) && isRecord(schemaObj.properties)) {
+      fieldSchema = schemaObj.properties[input.field];
+    }
     if (!fieldSchema) {
       throw new Error(`Field '${input.field}' not found in intake schema`);
     }

@@ -17,6 +17,7 @@ import type {
   RetryPolicy,
   Destination,
   Actor,
+  SubmissionState,
 } from "../types/intake-contract.js";
 import type { Submission, FieldAttribution } from "../submission-types.js";
 import {
@@ -65,6 +66,42 @@ export interface DryRunResult {
   method: string;
   headers: Record<string, string>;
   body: DeliveryPayload;
+}
+
+// =============================================================================
+// § Type Guards (for safe reconstruction of stored delivery context)
+// =============================================================================
+
+const VALID_SUBMISSION_STATES: ReadonlySet<string> = new Set([
+  'draft', 'in_progress', 'awaiting_input', 'awaiting_upload',
+  'submitted', 'needs_review', 'approved', 'rejected',
+  'finalized', 'cancelled', 'expired', 'created', 'validating',
+  'invalid', 'valid', 'uploading', 'submitting', 'completed',
+  'failed', 'pending_approval',
+]);
+
+function isActorLike(value: unknown): value is Actor {
+  if (typeof value !== 'object' || value === null) return false;
+  return 'kind' in value && 'id' in value
+    && typeof value.kind === 'string' && typeof value.id === 'string';
+}
+
+function isDestinationKind(value: unknown): value is Destination['kind'] {
+  return value === 'webhook' || value === 'callback' || value === 'queue';
+}
+
+function isSubmissionState(value: string): value is SubmissionState {
+  return VALID_SUBMISSION_STATES.has(value);
+}
+
+function isFieldAttributionLike(value: unknown): value is FieldAttribution {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function hasGetContext(
+  queue: DeliveryQueue
+): queue is DeliveryQueue & { getContext(deliveryId: string): DeliveryContext | undefined } {
+  return 'getContext' in queue && typeof queue.getContext === 'function';
 }
 
 // =============================================================================
@@ -380,26 +417,37 @@ export class WebhookManager {
    * Process all pending deliveries that are ready for retry.
    */
   private async retryPendingDeliveries(): Promise<void> {
+    if (!hasGetContext(this.queue)) return;
+
     const pending = await this.queue.getPendingRetries();
 
     for (const record of pending) {
-      // Get stored context for the delivery
-      const ctx = (this.queue as InMemoryDeliveryQueue).getContext?.(record.deliveryId);
+      const ctx = this.queue.getContext(record.deliveryId);
       if (!ctx) continue;
 
-      // Reconstruct submission and destination from stored context
-      const createdBy = ctx.submission.createdBy as Actor;
-      const validKinds = new Set<Destination['kind']>(['webhook', 'callback', 'queue']);
-      const kind: Destination['kind'] = validKinds.has(ctx.destination.kind as Destination['kind'])
-        ? (ctx.destination.kind as Destination['kind'])
+      // Reconstruct submission and destination from stored context with runtime validation
+      const createdBy: Actor = isActorLike(ctx.submission.createdBy)
+        ? ctx.submission.createdBy
+        : { kind: 'system', id: 'unknown' };
+
+      const kind: Destination['kind'] = isDestinationKind(ctx.destination.kind)
+        ? ctx.destination.kind
         : 'webhook';
+
+      const state: SubmissionState = isSubmissionState(ctx.submission.state)
+        ? ctx.submission.state
+        : 'draft';
+
+      const fieldAttribution: FieldAttribution = isFieldAttributionLike(ctx.submission.fieldAttribution)
+        ? ctx.submission.fieldAttribution
+        : {};
 
       const submission: Submission = {
         id: SubmissionId(ctx.submission.id),
         intakeId: IntakeId(ctx.submission.intakeId),
-        state: ctx.submission.state as import("../types/intake-contract").SubmissionState,
+        state,
         fields: ctx.submission.fields,
-        fieldAttribution: ctx.submission.fieldAttribution as FieldAttribution,
+        fieldAttribution,
         createdAt: ctx.submission.createdAt,
         updatedAt: ctx.submission.updatedAt,
         resumeToken: ResumeToken(''),

@@ -144,7 +144,7 @@ export class ApprovalManager {
 
     // Check if submission is in needs_review state
     if (submission.state !== "needs_review") {
-      return {
+      const error: IntakeError = {
         ok: false,
         submissionId: submission.id,
         state: submission.state,
@@ -154,7 +154,8 @@ export class ApprovalManager {
           message: `Cannot approve submission in state '${submission.state}'`,
           retryable: false,
         },
-      } as IntakeError;
+      };
+      return error;
     }
 
     const now = new Date().toISOString();
@@ -225,7 +226,7 @@ export class ApprovalManager {
 
     // Check if submission is in needs_review state
     if (submission.state !== "needs_review") {
-      return {
+      const error: IntakeError = {
         ok: false,
         submissionId: submission.id,
         state: submission.state,
@@ -235,7 +236,8 @@ export class ApprovalManager {
           message: `Cannot reject submission in state '${submission.state}'`,
           retryable: false,
         },
-      } as IntakeError;
+      };
+      return error;
     }
 
     const now = new Date().toISOString();
@@ -308,7 +310,7 @@ export class ApprovalManager {
 
     // Check if submission is in needs_review state
     if (submission.state !== "needs_review") {
-      return {
+      const error: IntakeError = {
         ok: false,
         submissionId: submission.id,
         state: submission.state,
@@ -318,7 +320,8 @@ export class ApprovalManager {
           message: `Cannot request changes on submission in state '${submission.state}'`,
           retryable: false,
         },
-      } as IntakeError;
+      };
+      return error;
     }
 
     const now = new Date().toISOString();

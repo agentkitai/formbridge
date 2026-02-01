@@ -197,8 +197,11 @@ export function validatePartialSubmission<T = unknown>(
 ): ValidationResult<Partial<T>> {
   // For object schemas, make all fields optional
   if (schema instanceof z.ZodObject) {
-    const partialSchema = schema.partial() as unknown as z.ZodType<Partial<T>>;
-    return validateSubmission(partialSchema, data);
+    const partialResult = schema.partial().safeParse(data);
+    if (partialResult.success) {
+      return { success: true, data: partialResult.data as Partial<T> };
+    }
+    return { success: false, error: partialResult.error };
   }
 
   // For non-object schemas, just validate as-is
