@@ -1,6 +1,7 @@
 {
   "name": "@formbridge/schema-normalizer",
   "version": "0.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Schema normalization engine that converts Zod schemas, JSON Schema, and OpenAPI specs into a unified IntakeSchema IR",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

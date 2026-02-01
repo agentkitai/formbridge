@@ -2,8 +2,8 @@
  * Core FormBridge types
  */
 
-import type { Actor, SubmissionState, IntakeEvent } from "./types/intake-contract";
-import type { SubmissionId, IntakeId, ResumeToken } from "./types/branded";
+import type { Actor, SubmissionState, IntakeEvent } from "./types/intake-contract.js";
+import type { SubmissionId, IntakeId, ResumeToken } from "./types/branded.js";
 
 // Re-export types that other modules import from this file
 export type {
@@ -20,7 +20,7 @@ export type {
   Destination,
   DeliveryRecord,
   RetryPolicy,
-} from "./types/intake-contract";
+} from "./types/intake-contract.js";
 
 // Re-export branded types and constructor functions
 export {
@@ -32,7 +32,7 @@ export {
   TenantId,
   KeyHash,
   UploadId,
-} from "./types/branded";
+} from "./types/branded.js";
 
 /**
  * Simplified JSON Schema type.

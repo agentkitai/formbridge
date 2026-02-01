@@ -1,6 +1,7 @@
 {
   "name": "@formbridge/shared",
   "version": "0.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Shared isomorphic utilities for FormBridge — condition evaluator, step validator, and nested value accessors",
   "type": "module",
   "main": "dist/index.js",

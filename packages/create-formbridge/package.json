@@ -1,6 +1,7 @@
 {
   "name": "@formbridge/create",
   "version": "0.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Scaffold a new FormBridge intake project",
   "type": "module",
   "bin": {

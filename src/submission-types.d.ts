@@ -1,5 +1,5 @@
-import type { Actor, SubmissionState, IntakeEvent } from "./types/intake-contract";
-export type { Actor, SubmissionState, IntakeEvent, IntakeEventType, FieldError, FieldDiff, NextAction, IntakeError, IntakeDefinition, ApprovalGate, Destination, DeliveryRecord, RetryPolicy, } from "./types/intake-contract";
+import type { Actor, SubmissionState, IntakeEvent } from "./types/intake-contract.js";
+export type { Actor, SubmissionState, IntakeEvent, IntakeEventType, FieldError, FieldDiff, NextAction, IntakeError, IntakeDefinition, ApprovalGate, Destination, DeliveryRecord, RetryPolicy, } from "./types/intake-contract.js";
 export interface JSONSchema {
     $schema?: string;
     $id?: string;

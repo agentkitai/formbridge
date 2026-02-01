@@ -8,7 +8,7 @@
 
 import { randomBytes } from 'crypto';
 import type { Submission, SubmissionEntry } from "../submission-types";
-import type { SubmissionStore as ISubmissionStore } from "../core/submission-manager";
+import type { SubmissionStore as ISubmissionStore } from "../core/submission-manager.js";
 import { SubmissionState } from "../types/intake-contract.js";
 
 /**

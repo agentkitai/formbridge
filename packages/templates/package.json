@@ -1,6 +1,7 @@
 {
   "name": "@formbridge/templates",
   "version": "0.1.0",
+  "publishConfig": { "access": "public" },
   "description": "Example intake templates for FormBridge",
   "type": "module",
   "main": "./dist/index.js",

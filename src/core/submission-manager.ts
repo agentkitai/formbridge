@@ -12,8 +12,8 @@ import type {
   SubmitRequest,
   IntakeError,
   IntakeDefinition,
-} from "../types/intake-contract";
-import { createIntakeError } from "../types/intake-contract";
+} from "../types/intake-contract.js";
+import { createIntakeError } from "../types/intake-contract.js";
 import type { Submission, FieldAttribution } from "../submission-types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";

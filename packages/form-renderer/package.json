@@ -1,6 +1,7 @@
 {
   "name": "@formbridge/form-renderer",
   "version": "0.1.0",
+  "publishConfig": { "access": "public" },
   "description": "FormBridge form renderer with React components and hooks",
   "type": "module",
   "main": "./dist/index.cjs",

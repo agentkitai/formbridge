@@ -8,7 +8,7 @@ import type {
   IntakeEvent,
   IntakeError,
   SubmissionState,
-} from "../types/intake-contract";
+} from "../types/intake-contract.js";
 import type { Submission } from "../submission-types";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
