@@ -39,6 +39,7 @@ import { z } from "zod";
 const eventTypeEnum = z.enum([
   "submission.created",
   "field.updated",
+  "fields.updated",
   "validation.passed",
   "validation.failed",
   "upload.requested",
@@ -56,6 +57,9 @@ const eventTypeEnum = z.enum([
   "submission.expired",
   "handoff.link_issued",
   "handoff.resumed",
+  "step.started",
+  "step.completed",
+  "step.validation_failed",
 ]);
 
 const queryParamsSchema = z
