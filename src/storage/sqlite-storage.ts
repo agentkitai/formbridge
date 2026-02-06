@@ -372,17 +372,17 @@ class SqliteEventStore implements EventStore {
     const whereStr = "WHERE " + whereClauses.join(" AND ");
     let sql = `SELECT * FROM events ${whereStr} ORDER BY ts ASC`;
 
-    if (filters?.offset) {
-      sql += ` OFFSET ${filters.offset}`;
-    }
     if (filters?.limit !== undefined) {
-      // Need to add LIMIT before OFFSET for proper SQL
-      const limitClause = ` LIMIT ${filters.limit}`;
+      sql += ` LIMIT ?`;
+      params.push(filters.limit);
       if (filters?.offset) {
-        sql = `SELECT * FROM events ${whereStr} ORDER BY ts ASC LIMIT ${filters.limit} OFFSET ${filters.offset}`;
-      } else {
-        sql += limitClause;
+        sql += ` OFFSET ?`;
+        params.push(filters.offset);
       }
+    } else if (filters?.offset) {
+      // OFFSET requires LIMIT in SQLite — use -1 for unlimited
+      sql += ` LIMIT -1 OFFSET ?`;
+      params.push(filters.offset);
     }
 
     const rawRows = this.db.prepare(sql).all(...params);
