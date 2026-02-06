@@ -63,6 +63,10 @@ export {
 // Parsers - Convert schemas to IntakeSchema IR
 // =============================================================================
 
+import { JSONSchemaParser } from './parsers/json-schema-parser';
+import { ZodParser } from './parsers/zod-parser';
+import { OpenAPIParser } from './parsers/openapi-parser';
+
 export {
   JSONSchemaParser,
   type JSONSchema,
@@ -82,6 +86,8 @@ export {
 // =============================================================================
 // Serializers - Convert IntakeSchema IR back to schemas
 // =============================================================================
+
+import { JSONSchemaSerializer } from './serializers/json-schema-serializer';
 
 export {
   JSONSchemaSerializer,
@@ -106,7 +112,6 @@ export {
  * ```
  */
 export function createJSONSchemaParser(options?: import('./types/parser').ParserOptions) {
-  const { JSONSchemaParser } = require('./parsers/json-schema-parser');
   return new JSONSchemaParser(options);
 }
 
@@ -123,7 +128,6 @@ export function createJSONSchemaParser(options?: import('./types/parser').Parser
  * ```
  */
 export function createZodParser(options?: import('./types/parser').ParserOptions) {
-  const { ZodParser } = require('./parsers/zod-parser');
   return new ZodParser(options);
 }
 
@@ -139,7 +143,6 @@ export function createZodParser(options?: import('./types/parser').ParserOptions
  * ```
  */
 export function createOpenAPIParser(options?: import('./types/parser').ParserOptions) {
-  const { OpenAPIParser } = require('./parsers/openapi-parser');
   return new OpenAPIParser(options);
 }
 
@@ -155,6 +158,5 @@ export function createOpenAPIParser(options?: import('./types/parser').ParserOpt
  * ```
  */
 export function createJSONSchemaSerializer(options?: import('./serializers/json-schema-serializer').SerializerOptions) {
-  const { JSONSchemaSerializer } = require('./serializers/json-schema-serializer');
   return new JSONSchemaSerializer(options);
 }
