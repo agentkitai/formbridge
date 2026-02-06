@@ -75,6 +75,7 @@ export interface ValidatorConfig {
 export class Validator {
   private readonly ajv: Ajv;
   private readonly compiledSchemas: Map<string, ValidateFunction> = new Map();
+  private readonly weakCache = new WeakMap<object, ValidateFunction>();
 
   constructor(config: ValidatorConfig = {}) {
     this.ajv = new Ajv({
@@ -368,7 +369,13 @@ export class Validator {
    * Caches compiled schemas for performance.
    */
   private getCompiledSchema(schema: JSONSchema): ValidateFunction {
-    // Create a stable key for the schema
+    // First-level cache: WeakMap keyed by object reference (skips JSON.stringify)
+    const weakHit = this.weakCache.get(schema);
+    if (weakHit) {
+      return weakHit;
+    }
+
+    // Second-level cache: string-key lookup (handles structurally identical but different objects)
     const schemaKey = this.getSchemaKey(schema);
 
     let validate = this.compiledSchemas.get(schemaKey);
@@ -376,6 +383,9 @@ export class Validator {
       validate = this.ajv.compile(schema);
       this.compiledSchemas.set(schemaKey, validate);
     }
+
+    // Store in WeakMap so next call with same reference skips JSON.stringify
+    this.weakCache.set(schema, validate);
 
     return validate;
   }
