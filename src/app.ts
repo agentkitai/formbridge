@@ -13,6 +13,7 @@ import { createIntakeRouter } from './routes/intake.js';
 import { createUploadRouter } from './routes/uploads.js';
 import { createHonoSubmissionRouter } from './routes/hono-submissions.js';
 import { createHonoEventRouter } from './routes/hono-events.js';
+import { timingSafeTokenCompare } from './core/errors.js';
 import { createHonoApprovalRouter } from './routes/hono-approvals.js';
 import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
 import { createHonoAnalyticsRouter, type AnalyticsDataProvider, type IntakeMetrics } from './routes/hono-analytics.js';
@@ -103,7 +104,7 @@ class InMemorySubmissionStore {
   async save(submission: Submission): Promise<void> {
     // O(1) stale token cleanup using reverse index
     const oldToken = this.lastKnownToken.get(submission.id);
-    if (oldToken && oldToken !== submission.resumeToken) {
+    if (oldToken && !timingSafeTokenCompare(oldToken, submission.resumeToken)) {
       this.resumeTokenIndex.delete(oldToken);
     }
 

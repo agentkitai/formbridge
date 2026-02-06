@@ -7,6 +7,7 @@ import type { Submission } from "../submission-types.js";
 import type { EventStore } from "../core/event-store.js";
 import type { StorageBackend } from "./storage-backend.js";
 import { InMemoryEventStore } from "../core/event-store.js";
+import { timingSafeTokenCompare } from "../core/errors.js";
 import type {
   FormBridgeStorage,
   SubmissionStorage,
@@ -44,7 +45,7 @@ export class InMemorySubmissionStorage implements SubmissionStorage {
   async save(submission: Submission): Promise<void> {
     // O(1) stale token cleanup using reverse index
     const oldToken = this.lastKnownToken.get(submission.id);
-    if (oldToken && oldToken !== submission.resumeToken) {
+    if (oldToken && !timingSafeTokenCompare(oldToken, submission.resumeToken)) {
       this.byResumeToken.delete(oldToken);
     }
 

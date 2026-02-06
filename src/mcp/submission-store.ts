@@ -10,6 +10,7 @@ import { randomBytes } from 'crypto';
 import type { Submission, SubmissionEntry } from "../submission-types";
 import type { SubmissionStore as ISubmissionStore } from "../core/submission-manager.js";
 import { SubmissionState } from "../types/intake-contract.js";
+import { timingSafeTokenCompare } from "../core/errors.js";
 
 /**
  * Upload metadata for a submission
@@ -66,7 +67,7 @@ export class InMemorySubmissionStore implements ISubmissionStore {
   async save(submission: Submission): Promise<void> {
     // O(1) stale token cleanup using reverse index
     const oldToken = this.lastKnownToken.get(submission.id);
-    if (oldToken && oldToken !== submission.resumeToken) {
+    if (oldToken && !timingSafeTokenCompare(oldToken, submission.resumeToken)) {
       this.resumeTokenIndex.delete(oldToken);
     }
 
