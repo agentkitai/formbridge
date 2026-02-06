@@ -416,6 +416,40 @@ class SqliteEventStore implements EventStore {
     return events;
   }
 
+  async countEvents(
+    submissionId: string,
+    filters?: EventFilters
+  ): Promise<number> {
+    const whereClauses = ["submissionId = ?"];
+    const params: unknown[] = [submissionId];
+
+    if (filters?.types && filters.types.length > 0) {
+      const placeholders = filters.types.map(() => "?").join(",");
+      whereClauses.push(`type IN (${placeholders})`);
+      params.push(...filters.types);
+    }
+    if (filters?.actorKind) {
+      whereClauses.push("json_extract(actor, '$.kind') = ?");
+      params.push(filters.actorKind);
+    }
+    if (filters?.since) {
+      whereClauses.push("ts >= ?");
+      params.push(filters.since);
+    }
+    if (filters?.until) {
+      whereClauses.push("ts <= ?");
+      params.push(filters.until);
+    }
+
+    const whereStr = "WHERE " + whereClauses.join(" AND ");
+    const sql = `SELECT COUNT(*) as cnt FROM events ${whereStr}`;
+
+    const row = this.db.prepare(sql).get(...params) as
+      | { cnt: number }
+      | undefined;
+    return row?.cnt ?? 0;
+  }
+
   async getStats(): Promise<EventStoreStats> {
     const statsRow = this.db
       .prepare(

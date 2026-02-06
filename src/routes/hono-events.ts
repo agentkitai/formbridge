@@ -195,15 +195,13 @@ export function createHonoEventRouter(
       const limit = params.limit ?? 100;
       const offset = params.offset ?? 0;
 
-      // Get total count (without pagination) for metadata
+      // Build content filters (no pagination) for count query
       const contentFilters = buildContentFilters(params);
       if ("error" in contentFilters) {
         return c.json({ ok: false, error: contentFilters.error }, 400);
       }
-      const allEvents = await manager.getEvents(submissionId, contentFilters);
-      const total = allEvents.length;
 
-      // Get paginated results
+      // Build paginated filters for data query
       const paginatedFilters = buildEventFilters(params);
       if ("error" in paginatedFilters) {
         return c.json({ ok: false, error: paginatedFilters.error }, 400);
@@ -211,7 +209,12 @@ export function createHonoEventRouter(
       // Apply defaults if not specified
       if (paginatedFilters.limit === undefined) paginatedFilters.limit = limit;
       if (paginatedFilters.offset === undefined) paginatedFilters.offset = offset;
-      const events = await manager.getEvents(submissionId, paginatedFilters);
+
+      // Parallel fetch: paginated data + total count
+      const [events, total] = await Promise.all([
+        manager.getEvents(submissionId, paginatedFilters),
+        manager.countEvents(submissionId, contentFilters),
+      ]);
 
       return c.json({
         submissionId,

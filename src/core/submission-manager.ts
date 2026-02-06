@@ -809,6 +809,21 @@ export class SubmissionManager {
   }
 
   /**
+   * Count events for a submission (without fetching event data).
+   * Useful for pagination metadata — uses SELECT COUNT(*) in SQLite.
+   */
+  async countEvents(
+    submissionId: string,
+    filters?: import("./event-store.js").EventFilters
+  ): Promise<number> {
+    const submission = await this.store.get(submissionId);
+    if (!submission) {
+      throw new SubmissionNotFoundError(submissionId);
+    }
+    return this.eventStore.countEvents(submissionId, filters);
+  }
+
+  /**
    * Generate a handoff URL for agent-to-human collaboration
    * Returns a shareable resume URL that allows a human to continue filling the form
    */

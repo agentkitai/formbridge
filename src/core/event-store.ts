@@ -115,6 +115,22 @@ export interface EventStore {
   getStats(): Promise<EventStoreStats>;
 
   /**
+   * Count events for a submission, optionally filtered.
+   *
+   * Returns the count of events matching the given content filters,
+   * ignoring pagination (limit/offset). Useful for computing pagination
+   * metadata without fetching full event data.
+   *
+   * @param submissionId The submission ID to query
+   * @param filters Optional content filters (types, actorKind, since, until). limit/offset are ignored.
+   * @returns Number of events matching the query
+   */
+  countEvents(
+    submissionId: string,
+    filters?: EventFilters
+  ): Promise<number>;
+
+  /**
    * Clean up old events for storage maintenance.
    *
    * Removes events older than the specified age.
@@ -316,6 +332,40 @@ export class InMemoryEventStore implements EventStore {
     }
 
     return filtered;
+  }
+
+  /**
+   * Count events for a submission, optionally filtered.
+   *
+   * Applies the same content filters as getEvents (types, actorKind, since, until)
+   * but ignores pagination (limit/offset) and returns only the count.
+   *
+   * @param submissionId The submission ID to query
+   * @param filters Optional content filters. limit/offset are ignored.
+   * @returns Number of events matching the query
+   */
+  async countEvents(
+    submissionId: string,
+    filters?: EventFilters
+  ): Promise<number> {
+    const events = this.eventsBySubmission.get(submissionId) ?? [];
+
+    if (!filters) {
+      return events.length;
+    }
+
+    let count = 0;
+    for (const event of events) {
+      if (filters.types && filters.types.length > 0) {
+        if (!filters.types.includes(event.type)) continue;
+      }
+      if (filters.actorKind && event.actor.kind !== filters.actorKind) continue;
+      if (filters.since && event.ts < filters.since) continue;
+      if (filters.until && event.ts > filters.until) continue;
+      count++;
+    }
+
+    return count;
   }
 
   /**
