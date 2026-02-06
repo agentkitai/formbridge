@@ -1,13 +1,13 @@
 #!/bin/bash
 # FormBridge Demo Recording Script
-# Run: TERM=xterm-256color asciinema rec --command="bash demo/record-demo.sh" /tmp/formbridge-demo.cast
-
 set -e
 
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
+DIM='\033[2m'
+BOLD='\033[1m'
 NC='\033[0m'
 
 type_slow() {
@@ -22,85 +22,95 @@ type_slow() {
 pause() { sleep "${1:-1.5}"; }
 
 clear
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}  📋 FormBridge — Forms for AI Agents + Humans${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}  📋 FormBridge — Mixed-mode forms for AI agents + humans${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 pause 2
 
 echo
-echo -e "${GREEN}# 1. Define a form schema${NC}"
-pause
-type_slow 'cat schema.json'
-pause 0.5
-echo -e "${CYAN}"
+echo -e "${GREEN}# An AI agent is onboarding a new customer...${NC}"
+echo -e "${DIM}# It has the CRM data, but needs a human for the rest.${NC}"
+pause 2
+
+echo
+echo -e "${BOLD}🤖 Agent${NC} ${DIM}(via MCP tool: formbridge_submit)${NC}"
+echo -e "   ${CYAN}\"I have Acme Corp's details from the CRM."
+echo -e "    Let me fill what I know and send the rest to a human.\"${NC}"
+pause 2
+
+echo
+echo -e "${DIM}─── Agent calls formbridge_submit ───${NC}"
+echo -e "${YELLOW}"
 cat << 'EOF'
-{
-  "title": "New Customer Onboarding",
-  "fields": {
-    "company":  { "type": "string", "required": true },
-    "email":    { "type": "string", "format": "email" },
-    "plan":     { "type": "string", "enum": ["starter","pro","enterprise"] },
-    "notes":    { "type": "string", "ui": "textarea" }
+  Tool: formbridge_submit
+  Args: {
+    "intakeId": "customer-onboarding",
+    "fields": {
+      "company":  "Acme Corp",
+      "email":    "cto@acme.com",
+      "plan":     "enterprise",
+      "industry": "SaaS"
+    }
   }
-}
 EOF
 echo -e "${NC}"
 pause 2
 
-echo -e "${GREEN}# 2. AI agent fills what it knows${NC}"
-pause
-type_slow 'curl -s -X POST http://localhost:3000/api/submit \'
-type_slow '  -H "Authorization: Bearer fbk_demo_key" \'
-type_slow '  -H "Content-Type: application/json" \'
-type_slow '  -d '\''{"intakeId":"onboarding","fields":{"company":"Acme Corp","email":"cto@acme.com","plan":"enterprise"},"source":"ai-agent"}'\'''
-pause
-echo
-echo -e "${YELLOW}{\"id\":\"sub_7f3k9x\",\"status\":\"partial\",\"resumeToken\":\"rt_abc123\",\"filledBy\":\"ai-agent\",\"missing\":[\"notes\"]}${NC}"
+echo -e "${DIM}─── FormBridge response ───${NC}"
+echo -e "${YELLOW}"
+cat << 'EOF'
+  {
+    "status": "partial",
+    "filled":  ["company", "email", "plan", "industry"],
+    "missing": ["notes", "signature", "billing_address"],
+    "resumeUrl": "https://forms.acme.dev/resume/rt_k8f2m9x"
+  }
+EOF
+echo -e "${NC}"
 pause 2
 
 echo
-echo -e "${GREEN}# 3. Human completes the rest via resume link${NC}"
-pause
-type_slow 'echo "→ https://forms.example.com/resume/rt_abc123"'
+echo -e "${BOLD}🤖 Agent${NC}"
+echo -e "   ${CYAN}\"Done — I filled 4/7 fields. Sending the link to"
+echo -e "    the account manager to complete the rest.\"${NC}"
+pause 2
+
+echo
+echo -e "${GREEN}# Human opens the resume link...${NC}"
 pause 1
 echo
-echo -e "   ${CYAN}┌─────────────────────────────────┐${NC}"
-echo -e "   ${CYAN}│  New Customer Onboarding        │${NC}"
-echo -e "   ${CYAN}│                                 │${NC}"
-echo -e "   ${CYAN}│  Company: Acme Corp      ✅ AI  │${NC}"
-echo -e "   ${CYAN}│  Email:   cto@acme.com   ✅ AI  │${NC}"
-echo -e "   ${CYAN}│  Plan:    Enterprise      ✅ AI  │${NC}"
-echo -e "   ${CYAN}│  Notes:   [___________]  ✏️  You │${NC}"
-echo -e "   ${CYAN}│                                 │${NC}"
-echo -e "   ${CYAN}│         [ Submit ]              │${NC}"
-echo -e "   ${CYAN}└─────────────────────────────────┘${NC}"
+echo -e "   ${CYAN}┌──────────────────────────────────────────┐${NC}"
+echo -e "   ${CYAN}│  ${BOLD}Customer Onboarding${NC}${CYAN}                     │${NC}"
+echo -e "   ${CYAN}│                                          │${NC}"
+echo -e "   ${CYAN}│  Company:  Acme Corp            🤖 ${DIM}agent${NC}${CYAN} │${NC}"
+echo -e "   ${CYAN}│  Email:    cto@acme.com          🤖 ${DIM}agent${NC}${CYAN} │${NC}"
+echo -e "   ${CYAN}│  Plan:     Enterprise            🤖 ${DIM}agent${NC}${CYAN} │${NC}"
+echo -e "   ${CYAN}│  Industry: SaaS                  🤖 ${DIM}agent${NC}${CYAN} │${NC}"
+echo -e "   ${CYAN}│  Notes:    [________________]   ✏️  ${DIM}you${NC}${CYAN}   │${NC}"
+echo -e "   ${CYAN}│  Signature:[________________]   ✏️  ${DIM}you${NC}${CYAN}   │${NC}"
+echo -e "   ${CYAN}│  Billing:  [________________]   ✏️  ${DIM}you${NC}${CYAN}   │${NC}"
+echo -e "   ${CYAN}│                                          │${NC}"
+echo -e "   ${CYAN}│           [ Complete & Submit ]           │${NC}"
+echo -e "   ${CYAN}└──────────────────────────────────────────┘${NC}"
 pause 3
 
 echo
-echo -e "${GREEN}# 4. Submission complete — full audit trail${NC}"
-pause
-type_slow 'curl -s http://localhost:3000/api/submissions/sub_7f3k9x | jq .'
-pause
+echo -e "${GREEN}# Every field tracked — who filled what${NC}"
+pause 1
 echo -e "${YELLOW}"
 cat << 'EOF'
-{
-  "id": "sub_7f3k9x",
-  "status": "completed",
-  "fields": {
-    "company": { "value": "Acme Corp", "source": "ai-agent" },
-    "email":   { "value": "cto@acme.com", "source": "ai-agent" },
-    "plan":    { "value": "enterprise", "source": "ai-agent" },
-    "notes":   { "value": "Fast-track onboarding", "source": "human" }
-  },
-  "completedAt": "2026-02-06T16:58:00Z"
-}
+  "company":  { "value": "Acme Corp",      "source": "ai-agent"  }
+  "email":    { "value": "cto@acme.com",   "source": "ai-agent"  }
+  "notes":    { "value": "Priority account","source": "human"     }
+  "signature":{ "value": "J. Smith",       "source": "human"     }
 EOF
 echo -e "${NC}"
 pause 2
 
 echo
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BLUE}  AI fills what it knows. Humans finish the rest.${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}  AI agents fill what they know. Humans finish the rest.${NC}"
+echo -e "${BLUE}  Full audit trail. Field-level attribution. MCP-native.${NC}"
 echo -e "${BLUE}  → github.com/amitpaz1/formbridge${NC}"
-echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${BLUE}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 pause 3
