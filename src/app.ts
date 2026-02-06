@@ -18,6 +18,7 @@ import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
 import { createHonoAnalyticsRouter, type AnalyticsDataProvider, type IntakeMetrics } from './routes/hono-analytics.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { createCorsMiddleware, type CorsOptions } from './middleware/cors.js';
+import { createApiKeyAuthMiddleware } from './middleware/auth.js';
 import { IntakeRegistry } from './core/intake-registry.js';
 import {
   SubmissionManager,
@@ -399,6 +400,11 @@ export function createFormBridgeAppWithIntakes(
 
   // Upload routes
   app.route('/intake', createUploadRouter(registry, manager));
+
+  // Auth middleware for protected routes (dev mode passthrough when no API key set)
+  const apiKeyAuth = createApiKeyAuthMiddleware();
+  app.use('/webhooks/*', apiKeyAuth);
+  app.use('/analytics/*', apiKeyAuth);
 
   // Webhook routes
   app.route('/', createHonoWebhookRouter(webhookManager));
