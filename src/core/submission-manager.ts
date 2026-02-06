@@ -27,6 +27,7 @@ import {
   SubmissionNotFoundError,
   SubmissionExpiredError,
   InvalidResumeTokenError,
+  timingSafeTokenCompare,
 } from "./errors.js";
 
 // Re-export for backward compatibility — consumers import from here
@@ -288,8 +289,8 @@ export class SubmissionManager {
       });
     }
 
-    // Verify resume token matches
-    if (submission.resumeToken !== request.resumeToken) {
+    // Verify resume token matches (timing-safe to prevent timing attacks)
+    if (!timingSafeTokenCompare(submission.resumeToken, request.resumeToken)) {
       throw new InvalidResumeTokenError();
     }
 
@@ -406,8 +407,8 @@ export class SubmissionManager {
       throw new SubmissionNotFoundError(input.submissionId);
     }
 
-    // Verify resume token
-    if (submission.resumeToken !== input.resumeToken) {
+    // Verify resume token (timing-safe to prevent timing attacks)
+    if (!timingSafeTokenCompare(submission.resumeToken, input.resumeToken)) {
       throw new InvalidResumeTokenError();
     }
 
@@ -525,8 +526,8 @@ export class SubmissionManager {
       throw new SubmissionNotFoundError(input.submissionId);
     }
 
-    // Verify resume token
-    if (submission.resumeToken !== input.resumeToken) {
+    // Verify resume token (timing-safe to prevent timing attacks)
+    if (!timingSafeTokenCompare(submission.resumeToken, input.resumeToken)) {
       throw new InvalidResumeTokenError();
     }
 
@@ -642,8 +643,8 @@ export class SubmissionManager {
       throw new SubmissionNotFoundError(request.submissionId);
     }
 
-    // Verify resume token
-    if (submission.resumeToken !== request.resumeToken) {
+    // Verify resume token (timing-safe to prevent timing attacks)
+    if (!timingSafeTokenCompare(submission.resumeToken, request.resumeToken)) {
       throw new InvalidResumeTokenError();
     }
 

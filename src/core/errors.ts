@@ -43,6 +43,7 @@ export class InvalidStateError extends Error {
  * Prevents timing attacks that could leak token characters.
  */
 export function timingSafeTokenCompare(a: string, b: string): boolean {
+  if (!a || !b) return false;
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
