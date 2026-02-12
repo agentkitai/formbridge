@@ -397,9 +397,16 @@ The test suite covers:
 - [ ] Form analytics dashboard with charts
 - [ ] Hosted cloud version
 
-## See Also
+## 🔗 Part of the AgentKit Ecosystem
 
-**[AgentGate](https://github.com/amitpaz1/agentgate)** — Human-in-the-loop approval system for AI agents. If FormBridge handles *data collection* between agents and humans, AgentGate handles *action approval*. Together they cover the full spectrum of human-AI collaboration: agents gather data (FormBridge), then request permission to act on it (AgentGate).
+| Project | What it does | Link |
+|---------|-------------|------|
+| **AgentLens** | Observability & audit trail for AI agents | [github.com/amitpaz1/agentlens](https://github.com/amitpaz1/agentlens) |
+| **AgentGate** | Human-in-the-loop approval gateway | [github.com/amitpaz1/agentgate](https://github.com/amitpaz1/agentgate) |
+| **FormBridge** | Structured data collection for AI agents | **You are here** |
+| **Lore** | Cross-agent memory and lesson sharing | [github.com/amitpaz1/lore](https://github.com/amitpaz1/lore) |
+
+**Together:** Agents collect data (FormBridge) → request approval to act (AgentGate) → share lessons learned (Lore) → all observed and audited (AgentLens).
 
 ## Contributing
 
