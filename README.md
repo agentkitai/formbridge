@@ -397,18 +397,6 @@ The test suite covers:
 - [ ] Form analytics dashboard with charts
 - [ ] Hosted cloud version
 
-## 🔗 Part of the AgentKit Ecosystem
-
-| Project | What it does | Link |
-|---------|-------------|------|
-| **AgentLens** | Observability & audit trail for AI agents | [github.com/amitpaz1/agentlens](https://github.com/amitpaz1/agentlens) |
-| **AgentGate** | Human-in-the-loop approval gateway | [github.com/amitpaz1/agentgate](https://github.com/amitpaz1/agentgate) |
-| **FormBridge** | Structured data collection for AI agents | **You are here** |
-| **Lore** | Cross-agent memory and lesson sharing | [github.com/amitpaz1/lore](https://github.com/amitpaz1/lore) |
-| **AgentEval** | Testing & evaluation framework for AI agents | [github.com/amitpaz1/agenteval](https://github.com/amitpaz1/agenteval) |
-
-**Together:** Agents collect data (FormBridge) → request approval to act (AgentGate) → share lessons learned (Lore) → all observed and audited (AgentLens) → tested and evaluated (AgentEval).
-
 ## Contributing
 
 Contributions welcome! Please open an issue first to discuss what you'd like to change.
@@ -421,6 +409,20 @@ npm run test:run   # All tests pass
 npm run typecheck  # Zero errors
 npm run lint       # Clean
 ```
+
+
+## 🧰 AgentKit Ecosystem
+
+| Project | Description | |
+|---------|-------------|-|
+| [AgentLens](https://github.com/agentkitai/agentlens) | Observability & audit trail for AI agents | |
+| [Lore](https://github.com/agentkitai/lore) | Cross-agent memory and lesson sharing | |
+| [AgentGate](https://github.com/agentkitai/agentgate) | Human-in-the-loop approval gateway | |
+| **FormBridge** | Agent-human mixed-mode forms | ⬅️ you are here |
+| [AgentEval](https://github.com/agentkitai/agenteval) | Testing & evaluation framework | |
+| [agentkit-mesh](https://github.com/agentkitai/agentkit-mesh) | Agent discovery & delegation | |
+| [agentkit-cli](https://github.com/agentkitai/agentkit-cli) | Unified CLI orchestrator | |
+| [agentkit-guardrails](https://github.com/agentkitai/agentkit-guardrails) | Reactive policy guardrails | |
 
 ## License
 
