@@ -38,11 +38,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/amitpaz1/formbridge.git"
+    "url": "https://github.com/agentkitai/formbridge.git"
   },
-  "homepage": "https://github.com/amitpaz1/formbridge#readme",
+  "homepage": "https://github.com/agentkitai/formbridge#readme",
   "bugs": {
-    "url": "https://github.com/amitpaz1/formbridge/issues"
+    "url": "https://github.com/agentkitai/formbridge/issues"
   },
   "dependencies": {
     "@formbridge/shared": "*",
