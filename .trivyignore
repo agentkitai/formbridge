@@ -1,5 +1,15 @@
 # Trivy ignore file for FormBridge
 # Format: CVE-YYYY-NNNNN
-# Add entries with justification comments and expiry dates
-#
-# No known suppressions at this time.
+# Each entry must have justification and expiry date
+
+# glob: Command injection via malicious patterns — not user-exploitable in FormBridge
+# (glob is a transitive build dep leftover, not used at runtime)
+# Expires: 2026-04-01
+CVE-2025-64756
+
+# node-tar: Arbitrary file overwrite vulnerabilities — tar is a transitive dep
+# from npm/node internals, not used for untrusted archive extraction at runtime
+# Expires: 2026-04-01
+CVE-2026-23745
+CVE-2026-23950
+CVE-2026-24842
