@@ -245,3 +245,43 @@ export function getAuthContext(c: Context): AuthContext | undefined {
   }
   return undefined;
 }
+
+// =============================================================================
+// § Tenant Scoping Helpers
+// =============================================================================
+
+/**
+ * Get the tenant ID from the auth context for the current request.
+ * Returns undefined if auth is disabled or no tenant context.
+ */
+export function getRequestTenantId(c: Context): string | undefined {
+  const auth = getAuthContext(c);
+  return auth?.tenantId;
+}
+
+/**
+ * Check if the current request should bypass tenant filtering.
+ * Admin role can access all tenants.
+ */
+export function isTenantFilterBypassed(c: Context): boolean {
+  const auth = getAuthContext(c);
+  return auth?.role === "admin";
+}
+
+/**
+ * Check if a submission matches the tenant scope of the current request.
+ * Returns true if:
+ * - The user is admin (bypasses tenant filter)
+ * - The submission's tenantId matches the request's tenantId
+ * - The submission has no tenantId (legacy data)
+ */
+export function matchesTenantScope(
+  c: Context,
+  submissionTenantId: string | undefined
+): boolean {
+  if (isTenantFilterBypassed(c)) return true;
+  const requestTenantId = getRequestTenantId(c);
+  if (!requestTenantId) return true; // No tenant context (auth disabled)
+  if (!submissionTenantId) return true; // Legacy data without tenant
+  return submissionTenantId === requestTenantId;
+}

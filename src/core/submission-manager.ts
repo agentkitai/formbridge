@@ -221,6 +221,7 @@ export class SubmissionManager {
       idempotencyKey: request.idempotencyKey,
       events: [],
       ttlMs: request.ttlMs,
+      tenantId: request.tenantId,
     };
 
     if (request.ttlMs) {

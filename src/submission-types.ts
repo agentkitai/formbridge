@@ -103,6 +103,13 @@ export interface Submission {
   expiresAt?: string;
 
   /**
+   * Tenant ID for multi-tenancy isolation.
+   * Set from auth context when auth is enabled.
+   * "default" when auth is disabled.
+   */
+  tenantId?: string;
+
+  /**
    * Current field values
    */
   fields: Record<string, unknown>;

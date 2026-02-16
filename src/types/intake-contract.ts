@@ -324,6 +324,8 @@ export interface CreateSubmissionRequest {
   actor: Actor;
   initialFields?: Record<string, unknown>;
   ttlMs?: number;
+  /** Tenant ID for multi-tenancy isolation */
+  tenantId?: string;
 }
 
 /**

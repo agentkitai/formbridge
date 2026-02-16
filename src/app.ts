@@ -20,7 +20,7 @@ import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
 import { createHonoAnalyticsRouter, type AnalyticsDataProvider, type IntakeMetrics } from './routes/hono-analytics.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { createCorsMiddleware, type CorsOptions } from './middleware/cors.js';
-import { createAuthMiddleware, requirePermission, type AuthConfig } from './auth/middleware.js';
+import { createAuthMiddleware, requirePermission, getRequestTenantId, matchesTenantScope, isTenantFilterBypassed, type AuthConfig } from './auth/middleware.js';
 import { loadAuthConfigFromEnv } from './auth/config.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { requestLoggerMiddleware } from './middleware/request-logger.js';
@@ -145,8 +145,10 @@ class InMemorySubmissionStore {
     return this.submissions.get(id) ?? null;
   }
 
-  getAll(): Submission[] {
-    return Array.from(this.submissions.values());
+  getAll(tenantId?: string): Submission[] {
+    const all = Array.from(this.submissions.values());
+    if (!tenantId) return all;
+    return all.filter(s => !s.tenantId || s.tenantId === tenantId);
   }
 
   /** Returns submissions with expiresAt in the past that are not in a terminal state */
@@ -576,11 +578,12 @@ export function createFormBridgeAppWithIntakes(
       }
     }
 
-    // Create submission
+    // Create submission with tenant context
     const result = await manager.createSubmission({
       intakeId: IntakeId(intakeId),
       actor,
       idempotencyKey: body.idempotencyKey,
+      tenantId: getRequestTenantId(c),
     });
 
     // If initial fields provided, set them via setFields to trigger state transition + token rotation
@@ -633,6 +636,17 @@ export function createFormBridgeAppWithIntakes(
 
     const submission = await manager.getSubmission(submissionId);
     if (!submission) {
+      return c.json(
+        {
+          ok: false,
+          error: { type: 'not_found', message: `Submission '${submissionId}' not found` },
+        },
+        404
+      );
+    }
+
+    // Tenant isolation — cross-tenant access returns not_found (not 403)
+    if (!matchesTenantScope(c, submission.tenantId)) {
       return c.json(
         {
           ok: false,
