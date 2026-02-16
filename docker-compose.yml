@@ -1,0 +1,15 @@
+services:
+  formbridge:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - FORMBRIDGE_AUTH_ENABLED=false
+      - LOG_FORMAT=pretty
+      - DATABASE_PATH=/app/data/formbridge.db
+    volumes:
+      - formbridge-data:/app/data
+
+volumes:
+  formbridge-data:

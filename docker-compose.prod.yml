@@ -1,0 +1,25 @@
+services:
+  formbridge:
+    environment:
+      - NODE_ENV=production
+      - FORMBRIDGE_AUTH_ENABLED=true
+      - LOG_FORMAT=json
+      - FORMBRIDGE_API_KEY_FILE=/run/secrets/api_key
+      - FORMBRIDGE_WEBHOOK_SECRET_FILE=/run/secrets/webhook_secret
+    secrets:
+      - api_key
+      - webhook_secret
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "1.0"
+      restart_policy:
+        condition: on-failure
+        max_attempts: 5
+
+secrets:
+  api_key:
+    file: ./secrets/api_key.txt
+  webhook_secret:
+    file: ./secrets/webhook_secret.txt
