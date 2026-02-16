@@ -153,6 +153,9 @@ export type { FormBridgeStorage, SubmissionStorage, SubmissionFilter, PaginatedR
 export { MemoryStorage, InMemorySubmissionStorage } from './storage/memory-storage.js';
 export { SqliteStorage } from './storage/sqlite-storage.js';
 export type { SqliteStorageOptions } from './storage/sqlite-storage.js';
+export { PostgresStorage } from './storage/postgres-storage.js';
+export type { PostgresStorageOptions } from './storage/postgres-storage.js';
+export { createStorageFromEnv } from './storage/storage-factory.js';
 export { migrateStorage } from './storage/migration.js';
 export type { MigrationResult, MigrationOptions } from './storage/migration.js';
 

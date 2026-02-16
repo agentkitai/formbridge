@@ -233,7 +233,7 @@ npx @formbridge/create --name my-intake --schema zod --interface http,mcp
 - **Event Stream** — Append-only audit trail for every state change, field update, and action
 - **Auth & RBAC** — API key auth, OAuth provider, role-based access control, rate limiting
 - **Multi-Tenancy** — Tenant isolation with configurable storage and access boundaries
-- **Pluggable Storage** — In-memory (dev), SQLite (single-server), S3 (file uploads)
+- **Pluggable Storage** — In-memory (dev), SQLite (single-server), PostgreSQL (multi-replica HA), S3 (file uploads)
 
 ### Developer Experience
 - **MCP Server** — Auto-generates MCP tools from intake definitions for AI agent integration
@@ -275,6 +275,44 @@ draft → submitted → approved → delivered
 - **approved** — Passed approval gates, queued for delivery
 - **rejected** — Rejected by reviewer
 - **delivered** — Webhook successfully delivered to destination
+
+## Storage Backends
+
+FormBridge supports multiple storage backends, selected via the `FORMBRIDGE_STORAGE` environment variable.
+
+| Backend | Value | Use Case | Dependency |
+|---------|-------|----------|------------|
+| In-Memory | `memory` (default) | Development, testing | None |
+| SQLite | `sqlite` | Single-server production | `better-sqlite3` |
+| PostgreSQL | `postgres` | Multi-replica HA deployments | `pg` |
+
+### PostgreSQL Configuration
+
+```bash
+# Required
+export FORMBRIDGE_STORAGE=postgres
+export DATABASE_URL=postgresql://user:password@host:5432/formbridge
+
+# Optional: install pg driver
+npm install pg
+```
+
+```typescript
+import { PostgresStorage } from '@formbridge/mcp-server';
+
+const storage = new PostgresStorage({
+  connectionString: process.env.DATABASE_URL!,
+  maxConnections: 20,        // default: 10
+  idleTimeoutMillis: 30000,  // default: 30000
+});
+await storage.initialize(); // runs migrations automatically
+
+// Or use the factory:
+import { createStorageFromEnv } from '@formbridge/mcp-server';
+const storage = await createStorageFromEnv(); // reads FORMBRIDGE_STORAGE + DATABASE_URL
+```
+
+The PostgreSQL schema uses proper Postgres types: `UUID` for IDs, `JSONB` for structured data, and `TIMESTAMPTZ` for timestamps. The migration file is at `migrations/001_init.sql`.
 
 ## Architecture
 
@@ -391,7 +429,7 @@ The test suite covers:
 ## Roadmap
 
 - [x] npm package publishing (5 packages live on npm)
-- [ ] PostgreSQL storage backend
+- [x] PostgreSQL storage backend
 - [ ] Real-time collaboration (WebSocket field locking)
 - [ ] Email notifications for pending approvals
 - [ ] Form analytics dashboard with charts
