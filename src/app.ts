@@ -43,6 +43,7 @@ import { BridgingEventEmitter } from './core/bridging-event-emitter.js';
 import { WebhookNotifierImpl } from './core/webhook-notifier-impl.js';
 import { ExpiryScheduler } from './core/expiry-scheduler.js';
 import { redactEventTokens } from './routes/event-sanitizer.js';
+import { attachMetricsListeners, getMetricsText, getMetricsContentType } from './metrics.js';
 import { parseActor } from './routes/shared/actor-validation.js';
 import { SubmissionId, IntakeId, ResumeToken } from "./types/branded.js";
 
@@ -287,6 +288,12 @@ export function createFormBridgeApp(options?: FormBridgeAppOptions): Hono {
     app.use('*', createCorsMiddleware(options.cors));
   }
 
+  // Prometheus metrics endpoint (bypasses auth)
+  app.get('/metrics', async (c) => {
+    const text = await getMetricsText();
+    return c.text(text, 200, { 'Content-Type': getMetricsContentType() });
+  });
+
   // Health check (liveness probe — unchanged)
   app.route('/health', createHealthRouter());
 
@@ -341,6 +348,12 @@ export function createFormBridgeAppWithIntakes(
     getIntakeCount: () => registry.listIntakeIds().length,
   }));
 
+  // Prometheus metrics endpoint (bypasses auth)
+  app.get('/metrics', async (c) => {
+    const text = await getMetricsText();
+    return c.text(text, 200, { 'Content-Type': getMetricsContentType() });
+  });
+
   // Intake schema routes
   app.route('/intake', createIntakeRouter(registry));
 
@@ -348,6 +361,9 @@ export function createFormBridgeAppWithIntakes(
   const store = new InMemorySubmissionStore();
   const eventStore = new InMemoryEventStore();
   const emitter = new BridgingEventEmitter();
+
+  // Attach Prometheus metrics listeners to the event emitter
+  attachMetricsListeners(emitter);
 
   // Pass the shared eventStore to SubmissionManager — it already appends events
   // via its triple-write pattern (submission.events + emitter.emit + eventStore.appendEvent).
