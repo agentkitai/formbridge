@@ -20,7 +20,7 @@ import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
 import { createHonoAnalyticsRouter, type AnalyticsDataProvider, type IntakeMetrics } from './routes/hono-analytics.js';
 import { createErrorHandler } from './middleware/error-handler.js';
 import { createCorsMiddleware, type CorsOptions } from './middleware/cors.js';
-import { createAuthMiddleware, requirePermission, getRequestTenantId, matchesTenantScope, isTenantFilterBypassed, type AuthConfig } from './auth/middleware.js';
+import { createAuthMiddleware, requirePermission, getRequestTenantId, matchesTenantScope, type AuthConfig } from './auth/middleware.js';
 import { loadAuthConfigFromEnv } from './auth/config.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { requestLoggerMiddleware } from './middleware/request-logger.js';
