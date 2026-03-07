@@ -2,7 +2,7 @@ services:
   formbridge:
     build: .
     ports:
-      - "3000:3000"
+      - "3005:3000"
     environment:
       - NODE_ENV=development
       - FORMBRIDGE_AUTH_ENABLED=false
