@@ -2,7 +2,7 @@
 
 Mixed-mode agent-human form submission infrastructure. AI agents fill what they know, humans complete the rest — with full field-level attribution, approval workflows, and webhook delivery.
 
-[![CI](https://github.com/amitpaz1/formbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/amitpaz1/formbridge/actions/workflows/ci.yml)
+[![CI](https://github.com/agentkitai/formbridge/actions/workflows/ci.yml/badge.svg)](https://github.com/agentkitai/formbridge/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
@@ -440,7 +440,7 @@ The test suite covers:
 Contributions welcome! Please open an issue first to discuss what you'd like to change.
 
 ```bash
-git clone https://github.com/amitpaz1/formbridge.git
+git clone https://github.com/agentkitai/formbridge.git
 cd formbridge
 npm install
 npm run test:run   # All tests pass
