@@ -68,6 +68,19 @@ describe("PostgresStorage", () => {
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS submissions");
       expect(sql).toContain("CREATE TABLE IF NOT EXISTS events");
     });
+
+    // Regression guard: FormBridge generates prefixed string ids (sub_<uuid>,
+    // evt_<uuid>) which are NOT valid PostgreSQL UUIDs. If these columns are
+    // declared UUID, every real insert fails at runtime. The mocked pg pool
+    // can't catch that, so assert the schema declares them as TEXT.
+    // (A real-Postgres insert was verified manually; see fix report.)
+    it("should declare id/foreign-key columns as TEXT, not UUID", () => {
+      const sql = mockQuery.mock.calls[0][0] as string;
+      expect(sql).toMatch(/id TEXT PRIMARY KEY/);
+      expect(sql).toMatch(/event_id TEXT PRIMARY KEY/);
+      expect(sql).toMatch(/submission_id TEXT NOT NULL/);
+      expect(sql).not.toMatch(/UUID/i);
+    });
   });
 
   describe("healthCheck", () => {

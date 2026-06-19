@@ -22,6 +22,7 @@ import { InMemoryEventStore } from "./event-store.js";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 import { SubmissionId, ResumeToken, EventId } from "../types/branded.js";
+import { notifyHandoff } from "./handoff-notifier.js";
 
 import {
   SubmissionNotFoundError,
@@ -129,6 +130,12 @@ export interface SubmissionManagerOptions {
   baseUrl?: string;
   storageBackend?: StorageBackend;
   eventStore?: EventStore;
+  /**
+   * Optional outbound webhook URL for human-handoff notifications. When set,
+   * a small JSON payload is POSTed here each time a handoff resume URL is
+   * created. Defaults to FORMBRIDGE_NOTIFY_URL; unset = no-op.
+   */
+  handoffNotifyUrl?: string;
 }
 
 export class SubmissionManager {
@@ -138,6 +145,7 @@ export class SubmissionManager {
   private baseUrl: string;
   private storageBackend?: StorageBackend;
   private eventStore: EventStore;
+  private handoffNotifyUrl?: string;
 
   constructor(options: SubmissionManagerOptions) {
     this.store = options.store;
@@ -147,6 +155,7 @@ export class SubmissionManager {
     this.storageBackend = options.storageBackend;
     // Initialize event store (defaults to in-memory implementation)
     this.eventStore = options.eventStore ?? new InMemoryEventStore();
+    this.handoffNotifyUrl = options.handoffNotifyUrl ?? process.env["FORMBRIDGE_NOTIFY_URL"];
   }
 
   /**
@@ -858,6 +867,14 @@ export class SubmissionManager {
     };
 
     await this.recordEvent(submission, event);
+
+    // Notify a human that a handoff is ready (opt-in via FORMBRIDGE_NOTIFY_URL).
+    // notifyHandoff never throws and is a no-op when no URL is configured.
+    await notifyHandoff(this.handoffNotifyUrl, {
+      submissionId: submission.id,
+      intakeId: submission.intakeId,
+      resumeUrl,
+    });
 
     return resumeUrl;
   }
