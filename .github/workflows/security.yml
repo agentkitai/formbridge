@@ -37,7 +37,7 @@ jobs:
         run: docker build -t formbridge:scan .
 
       - name: Trivy vulnerability scan
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: formbridge:scan
           severity: CRITICAL,HIGH
@@ -46,7 +46,7 @@ jobs:
           trivyignores: .trivyignore
 
       - name: Generate SBOM
-        uses: aquasecurity/trivy-action@0.28.0
+        uses: aquasecurity/trivy-action@v0.28.0
         with:
           image-ref: formbridge:scan
           format: spdx-json
