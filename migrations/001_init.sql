@@ -1,8 +1,10 @@
 -- FormBridge PostgreSQL Schema
 -- Migration: 001_init.sql
 
+-- Note: id columns are TEXT (not UUID): FormBridge generates prefixed string ids
+-- like sub_<uuid> / evt_<uuid>, which are not valid PostgreSQL UUIDs.
 CREATE TABLE IF NOT EXISTS submissions (
-  id UUID PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   intake_id TEXT NOT NULL,
   state TEXT NOT NULL,
   resume_token TEXT NOT NULL,
@@ -19,9 +21,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_idempotency_key ON submissions
 CREATE INDEX IF NOT EXISTS idx_submissions_created_at ON submissions(created_at);
 
 CREATE TABLE IF NOT EXISTS events (
-  event_id UUID PRIMARY KEY,
+  event_id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
-  submission_id UUID NOT NULL,
+  submission_id TEXT NOT NULL,
   ts TIMESTAMPTZ NOT NULL,
   version INTEGER NOT NULL,
   actor JSONB NOT NULL,

@@ -5,8 +5,8 @@
  * This is an optional peer dependency — users must install `pg` separately.
  *
  * Tables:
- * - submissions: id (UUID), intake_id, state, resume_token, data (JSONB), ...
- * - events: event_id (UUID), type, submission_id, ts (TIMESTAMPTZ), actor (JSONB), ...
+ * - submissions: id (TEXT, e.g. sub_<uuid>), intake_id, state, resume_token, data (JSONB), ...
+ * - events: event_id (TEXT, e.g. evt_<uuid>), type, submission_id, ts (TIMESTAMPTZ), actor (JSONB), ...
  *
  * Environment:
  * - DATABASE_URL: PostgreSQL connection string
@@ -448,7 +448,7 @@ class NoopStorageBackend implements StorageBackend {
 
 const INIT_SQL = `
 CREATE TABLE IF NOT EXISTS submissions (
-  id UUID PRIMARY KEY,
+  id TEXT PRIMARY KEY,
   intake_id TEXT NOT NULL,
   state TEXT NOT NULL,
   resume_token TEXT NOT NULL,
@@ -465,9 +465,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_idempotency_key ON submissions
 CREATE INDEX IF NOT EXISTS idx_submissions_created_at ON submissions(created_at);
 
 CREATE TABLE IF NOT EXISTS events (
-  event_id UUID PRIMARY KEY,
+  event_id TEXT PRIMARY KEY,
   type TEXT NOT NULL,
-  submission_id UUID NOT NULL,
+  submission_id TEXT NOT NULL,
   ts TIMESTAMPTZ NOT NULL,
   version INTEGER NOT NULL,
   actor JSONB NOT NULL,
