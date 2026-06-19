@@ -60,6 +60,7 @@
   "overrides": {
     "express-rate-limit": "^8.5.1",
     "fast-uri": "^3.1.2",
+    "fast-xml-parser": "5.3.5",
     "path-to-regexp": "^8.4.0"
   },
   "devDependencies": {
