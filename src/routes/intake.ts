@@ -64,7 +64,7 @@ export function createIntakeRouter(registry: IntakeRegistry): Hono {
    * -> { ok: true, intakeId: "vendor-onboarding", schema: {...} }
    */
   router.get('/:id/schema', async (c: Context) => {
-    const intakeId = c.req.param('id');
+    const intakeId = c.req.param('id')!;
 
     try {
       // Retrieve schema from registry
@@ -113,7 +113,7 @@ export function createIntakeRouter(registry: IntakeRegistry): Hono {
  */
 export function createGetSchemaHandler(registry: IntakeRegistry) {
   return async (c: Context) => {
-    const intakeId = c.req.param('id');
+    const intakeId = c.req.param('id')!;
 
     try {
       const schema = registry.getSchema(intakeId);

@@ -507,7 +507,7 @@ export function createFormBridgeAppWithIntakes(
 
   // POST /intake/:intakeId/submissions — create submission (submission:write)
   app.post('/intake/:intakeId/submissions', requirePermission('submission:write'), async (c) => {
-    const intakeId = c.req.param('intakeId');
+    const intakeId = c.req.param('intakeId')!;
 
     // Verify intake exists
     if (!registry.hasIntake(intakeId)) {
@@ -645,8 +645,8 @@ export function createFormBridgeAppWithIntakes(
 
   // GET /intake/:intakeId/submissions/:submissionId — get submission (submission:read)
   app.get('/intake/:intakeId/submissions/:submissionId', requirePermission('submission:read'), async (c) => {
-    const intakeId = c.req.param('intakeId');
-    const submissionId = c.req.param('submissionId');
+    const intakeId = c.req.param('intakeId')!;
+    const submissionId = c.req.param('submissionId')!;
 
     // Verify intake exists
     if (!registry.hasIntake(intakeId)) {
@@ -710,8 +710,8 @@ export function createFormBridgeAppWithIntakes(
 
   // PATCH /intake/:intakeId/submissions/:submissionId — update fields (submission:write)
   app.patch('/intake/:intakeId/submissions/:submissionId', requirePermission('submission:write'), async (c) => {
-    const intakeId = c.req.param('intakeId');
-    const submissionId = c.req.param('submissionId');
+    const intakeId = c.req.param('intakeId')!;
+    const submissionId = c.req.param('submissionId')!;
 
     // Verify intake exists
     if (!registry.hasIntake(intakeId)) {

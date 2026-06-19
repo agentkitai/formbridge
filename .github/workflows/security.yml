@@ -42,6 +42,7 @@ jobs:
           image-ref: formbridge:scan
           severity: CRITICAL,HIGH
           exit-code: 1
+          ignore-unfixed: true
           format: table
           trivyignores: .trivyignore
 

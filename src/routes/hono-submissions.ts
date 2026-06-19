@@ -208,8 +208,8 @@ export function createHonoSubmissionRouter(
   router.post(
     "/intake/:intakeId/submissions/:submissionId/submit",
     async (c: Context) => {
-      const intakeId = c.req.param("intakeId");
-      const submissionId = c.req.param("submissionId");
+      const intakeId = c.req.param("intakeId")!;
+      const submissionId = c.req.param("submissionId")!;
 
       const body = await c.req.json();
 

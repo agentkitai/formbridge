@@ -114,8 +114,8 @@ export function createUploadRouter(
    * }
    */
   router.post('/:id/submissions/:sid/uploads', async (c: Context) => {
-    const intakeId = c.req.param('id');
-    const submissionId = c.req.param('sid');
+    const intakeId = c.req.param('id')!;
+    const submissionId = c.req.param('sid')!;
 
     try {
       // Parse request body
@@ -276,9 +276,9 @@ export function createUploadRouter(
    * }
    */
   router.post('/:id/submissions/:sid/uploads/:uploadId/confirm', async (c: Context) => {
-    const intakeId = c.req.param('id');
-    const submissionId = c.req.param('sid');
-    const uploadId = c.req.param('uploadId');
+    const intakeId = c.req.param('id')!;
+    const submissionId = c.req.param('sid')!;
+    const uploadId = c.req.param('uploadId')!;
 
     try {
       // Parse request body
