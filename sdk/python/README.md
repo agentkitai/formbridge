@@ -1,11 +1,14 @@
 # formbridge-sdk
 
-Python SDK for [FormBridge](https://github.com/your-org/formbridge) — async and sync HTTP client for managing form submissions.
+Python SDK for [FormBridge](https://github.com/agentkitai/formbridge) — async and sync HTTP client for managing form submissions.
 
 ## Installation
 
+This SDK is not yet published to PyPI. Install it from source:
+
 ```bash
-pip install formbridge-sdk
+git clone https://github.com/agentkitai/formbridge.git
+pip install ./formbridge/sdk/python
 ```
 
 ## Quick Start (Async)

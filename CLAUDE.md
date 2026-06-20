@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 npm run build                    # Build root package (tsc)
 npm run build --workspaces       # Build all 6 workspace packages
 
-# Test (root — vitest, 641 tests across 30 files)
+# Test (root — vitest, 1,427 tests across 59 files)
 npm test                         # Watch mode
 npm run test:run                 # Single run
 npx vitest run tests/api.test.ts # Single test file

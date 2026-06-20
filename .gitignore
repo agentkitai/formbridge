@@ -21,6 +21,7 @@ __pycache__/
 # Coverage reports
 .coverage
 coverage/
+coverage-report.json
 
 # Environment files
 .env
@@ -32,6 +33,21 @@ coverage/
 # Build outputs
 dist/
 *.tsbuildinfo
+
+# Compiled output accidentally emitted into src/
+src/*.js
+src/*.js.map
+src/*.d.ts
+src/*.d.ts.map
+src/**/*.js
+src/**/*.js.map
+src/**/*.d.ts
+src/**/*.d.ts.map
+
+# SQLite runtime files
+*.db
+*.db-shm
+*.db-wal
 
 # BMAD planning artifacts
 _bmad/
