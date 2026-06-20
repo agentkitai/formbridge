@@ -6,7 +6,7 @@ Mixed-mode agent-human form submission infrastructure. AI agents fill what they 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
-[![Tests](https://img.shields.io/badge/tests-1339%20passing-brightgreen.svg)](#testing)
+[![Tests](https://img.shields.io/badge/tests-1427%20passing-brightgreen.svg)](#testing)
 [![@formbridge/create](https://img.shields.io/npm/v/@formbridge/create?label=%40formbridge%2Fcreate)](https://www.npmjs.com/package/@formbridge/create)
 [![@formbridge/form-renderer](https://img.shields.io/npm/v/@formbridge/form-renderer?label=%40formbridge%2Fform-renderer)](https://www.npmjs.com/package/@formbridge/form-renderer)
 [![@formbridge/schema-normalizer](https://img.shields.io/npm/v/@formbridge/schema-normalizer?label=%40formbridge%2Fschema-normalizer)](https://www.npmjs.com/package/@formbridge/schema-normalizer)
@@ -63,9 +63,16 @@ Agent                          FormBridge                        Human
 
 ### Installation
 
+The core server package (`@formbridge/mcp-server`) is not yet published to npm. Install it from source:
+
 ```bash
-npm install @formbridge/mcp-server
+git clone https://github.com/agentkitai/formbridge.git
+cd formbridge
+npm install
+npm run build
 ```
+
+The companion packages (`@formbridge/create`, `@formbridge/form-renderer`, `@formbridge/schema-normalizer`, `@formbridge/shared`, `@formbridge/templates`) are published and can be installed directly from npm.
 
 ### Option 1: HTTP API Server
 
@@ -380,7 +387,7 @@ packages/
   demo/               # Demo app with sample intakes and pre-configured workflows
 
 docs/               # VitePress documentation site
-tests/              # 1,339 tests across 50 files
+tests/              # 1,427 tests across 59 files
 .github/workflows/  # CI (lint + typecheck + tests on Node 18/20/22) + release
 ```
 
@@ -390,7 +397,7 @@ tests/              # 1,339 tests across 50 files
 # Install dependencies
 npm install
 
-# Run all 1,339 tests
+# Run all 1,427 tests
 npm run test:run
 
 # Watch mode
@@ -423,8 +430,10 @@ The test suite covers:
 - **Webhook delivery** — HMAC signing, retry logic, delivery tracking
 
 ```
-1,339 tests passing across 50 test files, 85.9% code coverage
+1,427 tests passing across 59 test files
 ```
+
+(Two upload-path tests assert POSIX `/` separators and fail on Windows; they pass on Linux/macOS, which is what CI runs.)
 
 ## Roadmap
 
