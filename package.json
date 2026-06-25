@@ -1,6 +1,6 @@
 {
   "name": "@formbridge/mcp-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "FormBridge MCP Server - Mixed-mode agent-human form submission",
   "type": "module",
   "main": "./dist/index.js",
