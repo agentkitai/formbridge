@@ -17,12 +17,15 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      # No registry-url on purpose: setup-node would write an .npmrc with a
+      # `${NODE_AUTH_TOKEN}` placeholder that breaks OIDC trusted publishing (404).
       - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-          registry-url: https://registry.npmjs.org
       - run: npm ci
+      # OIDC trusted publishing needs npm >= 11.5.1; node 24 ships npm 10.
+      - run: npm install -g npm@latest
       - run: npm run --workspace packages/shared build
       - run: npm run build
       - run: npm run test:run
@@ -38,3 +41,21 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
+
+      # `changeset publish` only covers the workspace members (packages/*). The
+      # flagship @formbridge/mcp-server is the workspace ROOT, so publish it here
+      # when its committed version isn't on npm yet (idempotent — skips otherwise).
+      # Requires a one-time npm Trusted Publisher for @formbridge/mcp-server:
+      #   npmjs.com -> package Settings -> repo agentkitai/formbridge, workflow release.yml.
+      - name: Publish root @formbridge/mcp-server (OIDC trusted publishing)
+        env:
+          NPM_CONFIG_PROVENANCE: true
+        run: |
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION already on npm — skipping"
+          else
+            echo "Publishing $NAME@$VERSION"
+            npm publish --access public
+          fi
