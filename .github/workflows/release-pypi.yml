@@ -1,0 +1,40 @@
+name: Publish Python SDK to PyPI
+
+# Builds sdk/python and publishes `formbridge-sdk` to PyPI via OIDC Trusted
+# Publishing — no token, no secrets. Triggered by a `formbridge-sdk-v*` tag or a
+# manual dispatch (the npm packages release independently via release.yml).
+#
+# One-time setup (owner, in a browser — nothing stored in the repo):
+#   PyPI -> project `formbridge-sdk` -> Publishing -> add a Trusted Publisher:
+#     repo = agentkitai/formbridge, workflow = release-pypi.yml, environment = (blank).
+#   (formbridge-sdk already exists on PyPI, so this is a normal publisher add —
+#   no "pending publisher" needed.)
+
+on:
+  push:
+    tags: ['formbridge-sdk-v*']
+  workflow_dispatch: {}
+
+jobs:
+  pypi:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write   # PyPI Trusted Publishing — no token
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build sdist + wheel
+        run: |
+          python -m pip install --upgrade build
+          python -m build sdk/python --outdir dist
+
+      - name: Publish to PyPI (Trusted Publishing / OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          skip-existing: true   # idempotent re-runs / dispatch
+          packages-dir: dist
