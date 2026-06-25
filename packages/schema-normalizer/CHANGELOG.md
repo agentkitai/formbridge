@@ -1,5 +1,13 @@
 # @formbridge/schema-normalizer
 
+## 0.3.0
+
+### Minor Changes
+
+- Release the accumulated work since 0.2.0. Notably, schema-normalizer removes
+  `require()` calls from the ESM module (fixes a runtime break in the published
+  0.2.0); form-renderer / create / templates / shared carry accumulated fixes.
+
 ## 0.2.0
 
 ### Minor Changes
