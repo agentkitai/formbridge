@@ -43,11 +43,11 @@ jobs:
           NPM_CONFIG_PROVENANCE: true
 
       # `changeset publish` only covers the workspace members (packages/*). The
-      # flagship @formbridge/mcp-server is the workspace ROOT, so publish it here
+      # flagship @agentkitai/formbridge-mcp-server is the workspace ROOT, so publish it here
       # when its committed version isn't on npm yet (idempotent — skips otherwise).
-      # Requires a one-time npm Trusted Publisher for @formbridge/mcp-server:
+      # Requires a one-time npm Trusted Publisher for @agentkitai/formbridge-mcp-server:
       #   npmjs.com -> package Settings -> repo agentkitai/formbridge, workflow release.yml.
-      - name: Publish root @formbridge/mcp-server (OIDC trusted publishing)
+      - name: Publish root @agentkitai/formbridge-mcp-server (OIDC trusted publishing)
         env:
           NPM_CONFIG_PROVENANCE: true
         run: |

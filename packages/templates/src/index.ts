@@ -1,5 +1,5 @@
 /**
- * @formbridge/templates — Example intake templates
+ * @agentkitai/formbridge-templates — Example intake templates
  *
  * Each template exports:
  * - schema: Zod schema for validation

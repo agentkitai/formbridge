@@ -1,5 +1,5 @@
 /**
- * Basic Usage Examples for @formbridge/schema-normalizer
+ * Basic Usage Examples for @agentkitai/formbridge-schema-normalizer
  *
  * This file demonstrates how to use the schema normalizer to convert
  * Zod schemas, JSON Schema documents, and OpenAPI specs into the unified
@@ -415,7 +415,7 @@ function example7_ParserOptions() {
 function main() {
   console.log('\n');
   console.log('═══════════════════════════════════════════════════════════');
-  console.log('  @formbridge/schema-normalizer - Basic Usage Examples');
+  console.log('  @agentkitai/formbridge-schema-normalizer - Basic Usage Examples');
   console.log('═══════════════════════════════════════════════════════════');
   console.log('\n');
 

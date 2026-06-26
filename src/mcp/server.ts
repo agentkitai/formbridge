@@ -35,7 +35,7 @@ import { handleRequestUpload, handleConfirmUpload } from './handlers/upload-hand
  * @example
  * ```typescript
  * import { z } from 'zod';
- * import { FormBridgeMCPServer } from '@formbridge/mcp-server-sdk';
+ * import { FormBridgeMCPServer } from '@agentkitai/formbridge-mcp-server-sdk';
  *
  * const vendorIntake: IntakeDefinition = {
  *   id: 'vendor_onboarding',

@@ -281,7 +281,7 @@ The notifier is optional -- if not configured, `notifyReviewers()` is a no-op.
 - No separate deployment steps required beyond standard server deployment
 - `ApprovalManager` instantiated with same `SubmissionStore` and `EventEmitter` as `SubmissionManager`
 - `WebhookNotifier` is optional -- approval workflow works without notifications
-- React components available in `@formbridge/form-renderer` package
+- React components available in `@agentkitai/formbridge-form-renderer` package
 - Python runtime (`formbridge/runtime.py`, `formbridge/types.py`) also updated with approval state transitions
 
 ## Observability & Monitoring

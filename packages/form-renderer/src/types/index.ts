@@ -1,5 +1,5 @@
 /**
- * Main types and interfaces for @formbridge/react-form-renderer
+ * Main types and interfaces for @agentkitai/formbridge-react-form-renderer
  */
 
 import type { ReactNode } from 'react';

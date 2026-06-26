@@ -1,4 +1,4 @@
-# @formbridge/form-renderer
+# @agentkitai/formbridge-form-renderer
 
 > React component library for rendering FormBridge intake schemas as interactive forms with agent-human attribution tracking
 
@@ -7,7 +7,7 @@
 
 ## Overview
 
-`@formbridge/form-renderer` provides a complete React toolkit for the FormBridge mixed-mode form system. It renders JSON Schema-based intake definitions as interactive forms, tracks which actor (agent or human) filled each field, and supports the full submission lifecycle including agent-to-human handoff and reviewer approval workflows.
+`@agentkitai/formbridge-form-renderer` provides a complete React toolkit for the FormBridge mixed-mode form system. It renders JSON Schema-based intake definitions as interactive forms, tracks which actor (agent or human) filled each field, and supports the full submission lifecycle including agent-to-human handoff and reviewer approval workflows.
 
 ## Features
 
@@ -23,7 +23,7 @@
 ## Installation
 
 ```bash
-npm install @formbridge/form-renderer
+npm install @agentkitai/formbridge-form-renderer
 ```
 
 Peer dependencies:
@@ -35,8 +35,8 @@ npm install react react-dom
 ## Quick Start
 
 ```tsx
-import { FormBridgeForm } from '@formbridge/form-renderer';
-import '@formbridge/form-renderer/styles.css';
+import { FormBridgeForm } from '@agentkitai/formbridge-form-renderer';
+import '@agentkitai/formbridge-form-renderer/styles.css';
 
 const schema = {
   type: 'object',
@@ -64,7 +64,7 @@ function MyForm() {
 ### Resume Flow (Agent-to-Human Handoff)
 
 ```tsx
-import { ResumeFormPage } from '@formbridge/form-renderer';
+import { ResumeFormPage } from '@agentkitai/formbridge-form-renderer';
 
 // Renders a full form from a resume token (typically from a URL like /resume?token=rt_xyz)
 function ResumePage() {
@@ -80,7 +80,7 @@ function ResumePage() {
 ### Approval Workflow
 
 ```tsx
-import { ReviewerView, ApprovalActions } from '@formbridge/form-renderer';
+import { ReviewerView, ApprovalActions } from '@agentkitai/formbridge-form-renderer';
 
 function ReviewPage({ submission, schema }) {
   const reviewer = { kind: 'human', id: 'reviewer@acme.com' };
@@ -151,7 +151,7 @@ function ReviewPage({ submission, schema }) {
 Import the default stylesheet:
 
 ```tsx
-import '@formbridge/form-renderer/styles.css';
+import '@agentkitai/formbridge-form-renderer/styles.css';
 ```
 
 All components accept a `className` prop. Default CSS classes use the `formbridge-` prefix.
@@ -172,6 +172,6 @@ Tests use `jsdom` environment for DOM simulation.
 
 ## Related Packages
 
-- `@formbridge/schema-normalizer` — Schema parsing and normalization
-- `@formbridge/admin-dashboard` — Admin UI for managing submissions
-- `@formbridge/create-formbridge` — Project scaffolding CLI
+- `@agentkitai/formbridge-schema-normalizer` — Schema parsing and normalization
+- `@agentkitai/formbridge-admin-dashboard` — Admin UI for managing submissions
+- `@agentkitai/formbridge-create-formbridge` — Project scaffolding CLI

@@ -1,4 +1,4 @@
-# @formbridge/schema-normalizer
+# @agentkitai/formbridge-schema-normalizer
 
 > Schema normalization engine that converts Zod schemas, JSON Schema, and OpenAPI specs into a unified IntakeSchema IR
 
@@ -7,7 +7,7 @@
 
 ## Overview
 
-`@formbridge/schema-normalizer` is a foundational library that enables FormBridge's "define once, use everywhere" approach by abstracting over three popular schema formats:
+`@agentkitai/formbridge-schema-normalizer` is a foundational library that enables FormBridge's "define once, use everywhere" approach by abstracting over three popular schema formats:
 
 - **Zod schemas** - TypeScript-first validation library
 - **JSON Schema** - Industry-standard JSON schema format (draft-07 and draft-2020-12)
@@ -47,7 +47,7 @@ All three formats are normalized into a unified **IntakeSchema IR** (Internal Re
 ## Installation
 
 ```bash
-npm install @formbridge/schema-normalizer
+npm install @agentkitai/formbridge-schema-normalizer
 ```
 
 ### Optional Peer Dependencies
@@ -65,7 +65,7 @@ Zod is an optional peer dependency - you can use JSON Schema and OpenAPI parsers
 ### JSON Schema
 
 ```typescript
-import { JSONSchemaParser } from '@formbridge/schema-normalizer';
+import { JSONSchemaParser } from '@agentkitai/formbridge-schema-normalizer';
 
 const parser = new JSONSchemaParser();
 
@@ -86,7 +86,7 @@ console.log(intakeSchema);
 ### Zod Schema
 
 ```typescript
-import { ZodParser } from '@formbridge/schema-normalizer';
+import { ZodParser } from '@agentkitai/formbridge-schema-normalizer';
 import { z } from 'zod';
 
 const parser = new ZodParser();
@@ -104,7 +104,7 @@ console.log(intakeSchema);
 ### OpenAPI Document
 
 ```typescript
-import { OpenAPIParser } from '@formbridge/schema-normalizer';
+import { OpenAPIParser } from '@agentkitai/formbridge-schema-normalizer';
 
 const parser = new OpenAPIParser();
 
@@ -151,7 +151,7 @@ const intakeSchema2 = parser.parse(openApiDoc, {
 ### Full Example with All Field Types
 
 ```typescript
-import { JSONSchemaParser } from '@formbridge/schema-normalizer';
+import { JSONSchemaParser } from '@agentkitai/formbridge-schema-normalizer';
 
 const parser = new JSONSchemaParser();
 
@@ -246,7 +246,7 @@ if (ir.schema.type === 'object') {
 ### Working with Nested Zod Schemas
 
 ```typescript
-import { ZodParser } from '@formbridge/schema-normalizer';
+import { ZodParser } from '@agentkitai/formbridge-schema-normalizer';
 import { z } from 'zod';
 
 const parser = new ZodParser();
@@ -276,7 +276,7 @@ console.log(JSON.stringify(ir, null, 2));
 import {
   JSONSchemaParser,
   JSONSchemaSerializer
-} from '@formbridge/schema-normalizer';
+} from '@agentkitai/formbridge-schema-normalizer';
 
 const parser = new JSONSchemaParser();
 const serializer = new JSONSchemaSerializer();
@@ -301,7 +301,7 @@ console.log('Round-trip successful!');
 console.log(JSON.stringify(output, null, 2));
 
 // You can also use the convenience function
-import { serializeToJSONSchema } from '@formbridge/schema-normalizer';
+import { serializeToJSONSchema } from '@agentkitai/formbridge-schema-normalizer';
 
 const jsonSchema = serializeToJSONSchema(ir, {
   schemaVersion: 'draft-2020-12',
@@ -317,7 +317,7 @@ import {
   UnsupportedFeatureError,
   SchemaValidationError,
   ParserError
-} from '@formbridge/schema-normalizer';
+} from '@agentkitai/formbridge-schema-normalizer';
 
 const parser = new JSONSchemaParser();
 
@@ -363,7 +363,7 @@ try {
 ### Parser Options
 
 ```typescript
-import { JSONSchemaParser } from '@formbridge/schema-normalizer';
+import { JSONSchemaParser } from '@agentkitai/formbridge-schema-normalizer';
 
 // Strict mode (default: true) - fail on unsupported features
 const strictParser = new JSONSchemaParser({ strict: true });
@@ -698,7 +698,7 @@ import {
   isStringField,
   isObjectField,
   isArrayField
-} from '@formbridge/schema-normalizer';
+} from '@agentkitai/formbridge-schema-normalizer';
 
 const field = ir.schema;
 
@@ -905,9 +905,9 @@ MIT © FormBridge Team
 
 This package is part of the FormBridge ecosystem:
 
-- `@formbridge/validator` - Runtime validation using IntakeSchema IR
-- `@formbridge/form-renderer` - Dynamic form generation from IntakeSchema IR
-- `@formbridge/mcp-tools` - MCP tool generation from IntakeSchema IR
+- `@agentkitai/formbridge-validator` - Runtime validation using IntakeSchema IR
+- `@agentkitai/formbridge-form-renderer` - Dynamic form generation from IntakeSchema IR
+- `@agentkitai/formbridge-mcp-tools` - MCP tool generation from IntakeSchema IR
 
 ## Support
 

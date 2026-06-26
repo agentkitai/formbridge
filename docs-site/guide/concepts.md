@@ -6,7 +6,7 @@ FormBridge is a mixed-mode agent-human form submission system. AI agents create 
 
 An intake is a template for data collection. Every intake has a unique `id`, a `version`, and defines:
 
-- **Schema** — the fields to collect, expressed as JSON Schema, Zod, or OpenAPI (normalized to a common IR by `@formbridge/schema-normalizer`)
+- **Schema** — the fields to collect, expressed as JSON Schema, Zod, or OpenAPI (normalized to a common IR by `@agentkitai/formbridge-schema-normalizer`)
 - **Approval Gates** — optional reviewer configuration requiring human sign-off before finalization
 - **Destination** — where to deliver finalized submissions (webhook, callback, or queue)
 - **TTL** — optional time-to-live after which incomplete submissions expire

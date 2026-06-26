@@ -5,8 +5,8 @@
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { BrowserRouter, Routes, Route, Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { ResumeFormPage, ReviewerView, ApprovalActions, createApiClient } from '@formbridge/form-renderer';
-import type { ReviewSubmission, FieldComment } from '@formbridge/form-renderer';
+import { ResumeFormPage, ReviewerView, ApprovalActions, createApiClient } from '@agentkitai/formbridge-form-renderer';
+import type { ReviewSubmission, FieldComment } from '@agentkitai/formbridge-form-renderer';
 import { WizardForm } from '../../form-renderer/src/components/WizardForm';
 
 // ═══════════════════════════════════════════════════════════════

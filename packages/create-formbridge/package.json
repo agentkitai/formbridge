@@ -1,5 +1,5 @@
 {
-  "name": "@formbridge/create",
+  "name": "@agentkitai/formbridge-create",
   "version": "0.3.0",
   "publishConfig": {
     "access": "public"

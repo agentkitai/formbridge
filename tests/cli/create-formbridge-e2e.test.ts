@@ -1,7 +1,7 @@
 /**
  * End-to-end tests for `create-formbridge` CLI.
  *
- * These tests invoke the built CLI as a child process (simulating `npx @formbridge/create`)
+ * These tests invoke the built CLI as a child process (simulating `npx @agentkitai/formbridge-create`)
  * with non-interactive CLI args, then verify the generated output on disk.
  */
 

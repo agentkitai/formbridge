@@ -1,4 +1,4 @@
-# @formbridge/create
+# @agentkitai/formbridge-create
 
 ## 0.3.0
 
@@ -16,11 +16,11 @@
 
   **Packages:**
 
-  - `@formbridge/shared` — Isomorphic utilities (condition evaluator, step validator)
-  - `@formbridge/create` — CLI scaffolding tool (`npx @formbridge/create`)
-  - `@formbridge/form-renderer` — React components for resume forms, wizards, reviewer views
-  - `@formbridge/schema-normalizer` — Converts Zod/JSON Schema/OpenAPI to unified IR
-  - `@formbridge/templates` — Pre-built intake templates (vendor onboarding, IT access, etc.)
+  - `@agentkitai/formbridge-shared` — Isomorphic utilities (condition evaluator, step validator)
+  - `@agentkitai/formbridge-create` — CLI scaffolding tool (`npx @agentkitai/formbridge-create`)
+  - `@agentkitai/formbridge-form-renderer` — React components for resume forms, wizards, reviewer views
+  - `@agentkitai/formbridge-schema-normalizer` — Converts Zod/JSON Schema/OpenAPI to unified IR
+  - `@agentkitai/formbridge-templates` — Pre-built intake templates (vendor onboarding, IT access, etc.)
 
   **Quality:**
 

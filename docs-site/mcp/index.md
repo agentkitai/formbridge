@@ -13,7 +13,7 @@ The MCP server exposes tools that allow AI agents to:
 ## Quick Setup
 
 ```typescript
-import { FormBridgeMCPServer } from '@formbridge/mcp-server';
+import { FormBridgeMCPServer } from '@agentkitai/formbridge-mcp-server';
 
 const server = new FormBridgeMCPServer({
   name: 'my-formbridge',

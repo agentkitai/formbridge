@@ -1,5 +1,5 @@
 {
-  "name": "@formbridge/admin-dashboard",
+  "name": "@agentkitai/formbridge-admin-dashboard",
   "version": "0.1.0",
   "private": true,
   "description": "FormBridge Admin Dashboard — React SPA for managing intakes, submissions, and approvals",

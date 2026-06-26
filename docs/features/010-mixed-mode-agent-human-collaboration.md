@@ -160,7 +160,7 @@ Every call to `setFields()` records the requesting actor against each field path
 ## Deployment & Release
 
 - No separate deployment required; included in standard server deployment
-- React components (`ActorBadge`, `FieldWrapper`, `ResumeFormPage`) available in `@formbridge/form-renderer` package
+- React components (`ActorBadge`, `FieldWrapper`, `ResumeFormPage`) available in `@agentkitai/formbridge-form-renderer` package
 - MCP `handoffToHuman` tool automatically registered when MCP server starts
 - No database migrations required (attribution stored within submission record)
 

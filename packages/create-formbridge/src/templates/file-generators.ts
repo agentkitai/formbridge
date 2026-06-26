@@ -13,7 +13,7 @@ import type { TemplateContext } from "../template-engine.js";
 
 export function getPackageJson(ctx: TemplateContext): string {
   const deps: Record<string, string> = {
-    "@formbridge/mcp-server": "^0.1.0",
+    "@agentkitai/formbridge-mcp-server": "^0.1.0",
     zod: "^3.25.0",
   };
   const devDeps: Record<string, string> = {
@@ -149,7 +149,7 @@ export default {{camelName}}OpenApiSchema;
 }
 
 function getTemplateSchemaFile(format: SchemaFormat, templateId: string): string {
-  // Reference the template from @formbridge/templates
+  // Reference the template from @agentkitai/formbridge-templates
   switch (format) {
     case "zod":
       return `/**
@@ -159,8 +159,8 @@ function getTemplateSchemaFile(format: SchemaFormat, templateId: string): string
  */
 import { z } from "zod";
 
-// TODO: Import from @formbridge/templates when published:
-// import { ${toCamelCase(templateId)} } from "@formbridge/templates";
+// TODO: Import from @agentkitai/formbridge-templates when published:
+// import { ${toCamelCase(templateId)} } from "@agentkitai/formbridge-templates";
 
 export const {{camelName}}Schema = z.object({
   // Schema fields from "${templateId}" template

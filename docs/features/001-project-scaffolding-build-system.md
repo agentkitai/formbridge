@@ -25,7 +25,7 @@
 
 ## Summary
 
-Feature 001 initializes the FormBridge monorepo from scratch with a complete development environment. It establishes npm workspaces containing four packages (`@formbridge/core`, `@formbridge/react`, `@formbridge/mcp`, `@formbridge/schema-normalizer`), configures TypeScript in strict mode targeting ES2022, sets up tsup for ESM bundling with declaration files, configures Vitest with V8 coverage at 80% thresholds, and installs ESLint and Prettier for code quality. This foundation enables all subsequent features to build on a consistent, type-safe, tested codebase.
+Feature 001 initializes the FormBridge monorepo from scratch with a complete development environment. It establishes npm workspaces containing four packages (`@agentkitai/formbridge-core`, `@agentkitai/formbridge-react`, `@agentkitai/formbridge-mcp`, `@agentkitai/formbridge-schema-normalizer`), configures TypeScript in strict mode targeting ES2022, sets up tsup for ESM bundling with declaration files, configures Vitest with V8 coverage at 80% thresholds, and installs ESLint and Prettier for code quality. This foundation enables all subsequent features to build on a consistent, type-safe, tested codebase.
 
 ## Dependencies
 
@@ -143,7 +143,7 @@ Feature 001 initializes the FormBridge monorepo from scratch with a complete dev
 - [x] Tests passing (placeholder tests execute)
 - [x] Code reviewed
 - [x] Documentation updated
-- [x] Monorepo structure exists with @formbridge/core, @formbridge/react, @formbridge/mcp, @formbridge/schema-normalizer
+- [x] Monorepo structure exists with @agentkitai/formbridge-core, @agentkitai/formbridge-react, @agentkitai/formbridge-mcp, @agentkitai/formbridge-schema-normalizer
 - [x] TypeScript compiles with strict mode across all packages
 - [x] Vitest runs and reports results
 - [x] ESLint and Prettier configured and passing

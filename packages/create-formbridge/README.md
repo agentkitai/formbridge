@@ -1,4 +1,4 @@
-# @formbridge/create
+# @agentkitai/formbridge-create
 
 > CLI scaffolding tool for creating new FormBridge projects with schema, interface, and template options
 
@@ -7,14 +7,14 @@
 
 ## Overview
 
-`@formbridge/create` generates a new FormBridge project with the right schema format, server interfaces, and optional starter template. It can run interactively (prompting for each option) or non-interactively with all flags specified.
+`@agentkitai/formbridge-create` generates a new FormBridge project with the right schema format, server interfaces, and optional starter template. It can run interactively (prompting for each option) or non-interactively with all flags specified.
 
 ## Usage
 
 ### Interactive Mode
 
 ```bash
-npx @formbridge/create
+npx @agentkitai/formbridge-create
 ```
 
 Prompts for project name, schema format, interfaces, and optional template.
@@ -22,7 +22,7 @@ Prompts for project name, schema format, interfaces, and optional template.
 ### Non-Interactive Mode
 
 ```bash
-npx @formbridge/create \
+npx @agentkitai/formbridge-create \
   --name my-intake \
   --schema zod \
   --interface mcp,http \
@@ -72,7 +72,7 @@ When a `--template` is specified, the schema file is pre-populated with the temp
 
 ```bash
 # Create a vendor onboarding project with HTTP API and MCP server
-npx @formbridge/create --name vendor-intake --schema zod --interface http,mcp --template vendor-onboarding
+npx @agentkitai/formbridge-create --name vendor-intake --schema zod --interface http,mcp --template vendor-onboarding
 
 cd vendor-intake
 npm install
@@ -81,6 +81,6 @@ npm run dev
 
 ## Related Packages
 
-- `@formbridge/templates` — Template definitions used by the scaffolder
-- `@formbridge/schema-normalizer` — Schema parsing and normalization
-- `@formbridge/form-renderer` — React form rendering components
+- `@agentkitai/formbridge-templates` — Template definitions used by the scaffolder
+- `@agentkitai/formbridge-schema-normalizer` — Schema parsing and normalization
+- `@agentkitai/formbridge-form-renderer` — React form rendering components

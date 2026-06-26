@@ -30,7 +30,7 @@ npx tsx src/test-server.ts
 
 FormBridge is a **mixed-mode agent-human form submission system**. AI agents create submissions, fill fields they know, and hand off to humans via resume URLs to complete the rest — with field-level attribution tracking.
 
-**Monorepo** using npm workspaces with 6 packages under `packages/` and the core `@formbridge/mcp-server` at root (`src/`).
+**Monorepo** using npm workspaces with 6 packages under `packages/` and the core `@agentkitai/formbridge-mcp-server` at root (`src/`).
 
 ### Core Backend (`src/`)
 

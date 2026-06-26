@@ -23,7 +23,7 @@
     /* Path mapping */
     "baseUrl": ".",
     "paths": {
-      "@formbridge/form-renderer": ["../form-renderer/src/index.ts"]
+      "@agentkitai/formbridge-form-renderer": ["../form-renderer/src/index.ts"]
     }
   },
   "include": ["src"],

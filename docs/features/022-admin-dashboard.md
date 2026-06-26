@@ -306,7 +306,7 @@ The dashboard assumes the following API endpoints exist (some may need to be cre
 
 ## Deployment & Release
 
-- **Package name:** `@formbridge/admin-dashboard`
+- **Package name:** `@agentkitai/formbridge-admin-dashboard`
 - **Build output:** Static HTML/JS/CSS bundle (Vite build)
 - **Deployment options:**
   1. Standalone: serve static files from any web server

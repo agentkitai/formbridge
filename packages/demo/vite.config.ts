@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   resolve: {
     alias: {
-      '@formbridge/form-renderer': resolve(__dirname, '../form-renderer/src/index.ts'),
+      '@agentkitai/formbridge-form-renderer': resolve(__dirname, '../form-renderer/src/index.ts'),
     },
   },
   server: {

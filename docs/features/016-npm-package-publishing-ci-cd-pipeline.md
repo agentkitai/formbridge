@@ -45,7 +45,7 @@ Establish an automated CI/CD pipeline using GitHub Actions that lints, type-chec
 - **Dual ESM/CJS output:** Use `tsup` (already in devDependencies) to produce both ESM (`.mjs`) and CJS (`.cjs`) bundles with `.d.ts` declarations. The `exports` map in `package.json` routes consumers to the correct format.
 - **Provenance:** Enable npm provenance attestation via `--provenance` flag in the publish step, which requires the workflow to run on GitHub Actions with `id-token: write` permission.
 - **Package size tracking:** Use `size-limit` to set budgets for the published package size and fail CI if budgets are exceeded.
-- **npm scope:** All packages publish under `@formbridge/` scope. The main package is `@formbridge/mcp-server` (already configured in `package.json`).
+- **npm scope:** All packages publish under `@agentkitai/formbridge-` scope. The main package is `@agentkitai/formbridge-mcp-server` (already configured in `package.json`).
 
 ### Patterns to follow
 - GitHub Actions workflow structure follows community best practices: separate CI and release workflows, matrix testing for multiple Node.js versions.
@@ -183,7 +183,7 @@ Establish an automated CI/CD pipeline using GitHub Actions that lints, type-chec
 
 ### Task 9: Configure npm Scope
 
-- [ ] Verify `package.json` `name` is `@formbridge/mcp-server` (already configured)
+- [ ] Verify `package.json` `name` is `@agentkitai/formbridge-mcp-server` (already configured)
 - [ ] Add `publishConfig` to `package.json`: `{ "access": "public", "registry": "https://registry.npmjs.org/" }`
 - [ ] Ensure the `@formbridge` npm organization exists on npmjs.com (or create it)
 - [ ] Configure `NPM_TOKEN` as a GitHub repository secret with publish permissions for the `@formbridge` scope

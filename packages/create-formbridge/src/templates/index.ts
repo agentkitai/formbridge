@@ -1,7 +1,7 @@
 /**
  * Template catalog for the CLI scaffolding tool.
  *
- * Maps template IDs from @formbridge/templates to interactive prompt choices.
+ * Maps template IDs from @agentkitai/formbridge-templates to interactive prompt choices.
  */
 
 export const TEMPLATE_CHOICES = [

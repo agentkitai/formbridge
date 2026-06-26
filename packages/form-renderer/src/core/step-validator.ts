@@ -1,5 +1,5 @@
 /**
- * Step Validator — re-exports from @formbridge/shared.
+ * Step Validator — re-exports from @agentkitai/formbridge-shared.
  *
  * The canonical implementation lives in packages/shared/src/core/step-validator.ts.
  * This file re-exports everything for backward compatibility.
@@ -15,4 +15,4 @@ export {
   getVisibleSteps,
   getNextStep,
   getPreviousStep,
-} from '@formbridge/shared';
+} from '@agentkitai/formbridge-shared';

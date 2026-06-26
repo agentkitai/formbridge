@@ -1,4 +1,4 @@
-# @formbridge/templates
+# @agentkitai/formbridge-templates
 
 > Pre-built intake templates for common form use cases, providing both Zod and JSON Schema definitions
 
@@ -7,7 +7,7 @@
 
 ## Overview
 
-`@formbridge/templates` provides ready-made intake schema templates for common business workflows. Each template includes both a Zod schema and a JSON Schema representation, along with metadata describing the template's purpose and category.
+`@agentkitai/formbridge-templates` provides ready-made intake schema templates for common business workflows. Each template includes both a Zod schema and a JSON Schema representation, along with metadata describing the template's purpose and category.
 
 ## Available Templates
 
@@ -22,13 +22,13 @@
 ## Installation
 
 ```bash
-npm install @formbridge/templates
+npm install @agentkitai/formbridge-templates
 ```
 
 ## Quick Start
 
 ```ts
-import { allTemplates } from '@formbridge/templates';
+import { allTemplates } from '@agentkitai/formbridge-templates';
 
 // Get a specific template
 const vendorTemplate = allTemplates['vendor-onboarding'];
@@ -60,13 +60,13 @@ interface TemplateMetadata {
 
 ## Customization
 
-Templates are designed as starting points. Use them with `@formbridge/create` to scaffold a new project, then modify the generated schema to fit your needs:
+Templates are designed as starting points. Use them with `@agentkitai/formbridge-create` to scaffold a new project, then modify the generated schema to fit your needs:
 
 ```bash
-npx @formbridge/create --template vendor-onboarding --schema zod --interface http
+npx @agentkitai/formbridge-create --template vendor-onboarding --schema zod --interface http
 ```
 
 ## Related Packages
 
-- `@formbridge/create-formbridge` — CLI scaffolder that uses these templates
-- `@formbridge/schema-normalizer` — Converts templates between schema formats
+- `@agentkitai/formbridge-create-formbridge` — CLI scaffolder that uses these templates
+- `@agentkitai/formbridge-schema-normalizer` — Converts templates between schema formats
