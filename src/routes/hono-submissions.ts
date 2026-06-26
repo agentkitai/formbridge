@@ -18,6 +18,7 @@ import {
 } from "../core/submission-manager.js";
 import { parseActor, parseActorWithFallback } from "./shared/actor-validation.js";
 import { SubmissionId } from "../types/branded.js";
+import { toHandoffUiSpec } from "../core/handoff-ui-adapter.js";
 
 /**
  * Creates a Hono router with submission endpoints.
@@ -130,6 +131,12 @@ export function createHonoSubmissionRouter(
 
     // Get intake schema and details from the manager
     const intakeDetails = await manager.getIntakeDetailsForSubmission(submission);
+
+    // AG-UI / A2UI handoff adapter (#14): render the governed prefilled form
+    // (with attribution badges) as a declarative spec for in-agent clients.
+    if (c.req.query("format") === "ag-ui") {
+      return c.json(toHandoffUiSpec(submission, intakeDetails.schema as never));
+    }
 
     return c.json({
       id: submission.id,
