@@ -60,6 +60,24 @@ describe("handoff UI adapter (#14)", () => {
     expect(company.needsInput).toBe(false);
   });
 
+  it("surfaces per-field confidence and flags low-confidence filled fields (#16)", () => {
+    const withConf = {
+      ...submission,
+      fieldConfidence: { companyName: 0.3, email: 0.95 },
+    };
+    const spec = toHandoffUiSpec(withConf, schema);
+    const company = spec.fields.find((f) => f.name === "companyName")!;
+    const email = spec.fields.find((f) => f.name === "email")!;
+    expect(company.confidence).toBe(0.3);
+    expect(company.lowConfidence).toBe(true); // 0.3 ≤ 0.5 and filled
+    expect(email.confidence).toBe(0.95);
+    expect(email.lowConfidence).toBe(false);
+    // a field with no confidence reported → undefined + not low
+    const taxId = spec.fields.find((f) => f.name === "taxId")!;
+    expect(taxId.confidence).toBeUndefined();
+    expect(taxId.lowConfidence).toBe(false);
+  });
+
   it("exposes a submit action", () => {
     expect(toHandoffUiSpec(submission, schema).actions).toContainEqual({
       type: "submit",

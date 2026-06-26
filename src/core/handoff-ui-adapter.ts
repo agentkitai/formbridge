@@ -12,6 +12,9 @@
 
 export type FilledBy = "agent" | "human" | "system" | "unknown";
 
+/** Confidence at/below this is flagged for human review (#16). */
+export const LOW_CONFIDENCE_THRESHOLD = 0.5;
+
 export interface HandoffUiField {
   name: string;
   label: string;
@@ -20,6 +23,10 @@ export interface HandoffUiField {
   filledBy: FilledBy;
   required: boolean;
   needsInput: boolean; // required && not yet filled — the human's to-do list
+  /** Per-field confidence in [0,1] the writer reported, if any (#16). */
+  confidence?: number;
+  /** Filled but low-confidence → prioritize for human review (#16). */
+  lowConfidence: boolean;
 }
 
 export interface HandoffUiSpec {
@@ -38,6 +45,7 @@ interface SubmissionLike {
   state: string;
   fields: Record<string, unknown>;
   fieldAttribution: Record<string, { kind?: string } | undefined>;
+  fieldConfidence?: Record<string, number>;
 }
 
 interface JsonSchemaLike {
@@ -65,6 +73,7 @@ export function toHandoffUiSpec(submission: SubmissionLike, schema?: JsonSchemaL
     const filledBy: FilledBy =
       kind === "agent" || kind === "human" || kind === "system" ? kind : "unknown";
     const value = submission.fields[name] ?? null;
+    const confidence = submission.fieldConfidence?.[name];
     return {
       name,
       label: prop?.title ?? name,
@@ -73,6 +82,11 @@ export function toHandoffUiSpec(submission: SubmissionLike, schema?: JsonSchemaL
       required: required.has(name),
       needsInput: required.has(name) && !isFilled(submission.fields[name]),
       filledBy,
+      ...(typeof confidence === "number" ? { confidence } : {}),
+      lowConfidence:
+        typeof confidence === "number" &&
+        confidence <= LOW_CONFIDENCE_THRESHOLD &&
+        isFilled(submission.fields[name]),
     };
   });
 

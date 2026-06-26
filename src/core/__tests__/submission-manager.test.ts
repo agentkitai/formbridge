@@ -918,4 +918,42 @@ describe("SubmissionManager", () => {
       expect(sub!.fields.email).toBe("jane@acme.com");
     });
   });
+
+  describe("field confidence at intake (#16)", () => {
+    const actor: Actor = { kind: "agent", id: "agt_conf" };
+
+    it("records per-field confidence on create and setFields", async () => {
+      const created = await manager.createSubmission({
+        intakeId: "intake_vendor_onboarding",
+        actor,
+        initialFields: { companyName: "Acme" },
+        confidence: { companyName: 0.9 },
+      });
+      let sub = await store.get(created.submissionId);
+      expect(sub!.fieldConfidence).toEqual({ companyName: 0.9 });
+
+      await manager.setFields({
+        submissionId: created.submissionId,
+        resumeToken: created.resumeToken,
+        actor,
+        fields: { contactEmail: "a@b.co" },
+        confidence: { contactEmail: 0.4 },
+      });
+      sub = await store.get(created.submissionId);
+      expect(sub!.fieldConfidence).toEqual({ companyName: 0.9, contactEmail: 0.4 });
+    });
+
+    it("ignores out-of-range / non-numeric scores and scores for unset fields", async () => {
+      const created = await manager.createSubmission({ intakeId: "intake_vendor_onboarding", actor });
+      await manager.setFields({
+        submissionId: created.submissionId,
+        resumeToken: created.resumeToken,
+        actor,
+        fields: { a: "1", b: "2" },
+        confidence: { a: 1.5, b: 0.7, notSet: 0.9, a2: NaN } as Record<string, number>,
+      });
+      const sub = await store.get(created.submissionId);
+      expect(sub!.fieldConfidence).toEqual({ b: 0.7 }); // 1.5 dropped, notSet dropped, NaN dropped
+    });
+  });
 });

@@ -144,6 +144,7 @@ export function createHonoSubmissionRouter(
       state: submission.state,
       fields: submission.fields,
       fieldAttribution: submission.fieldAttribution,
+      fieldConfidence: submission.fieldConfidence,
       expiresAt: submission.expiresAt,
       schema: intakeDetails.schema,
     });

@@ -323,6 +323,8 @@ export interface CreateSubmissionRequest {
   idempotencyKey?: string;
   actor: Actor;
   initialFields?: Record<string, unknown>;
+  /** Optional per-field confidence in [0,1] (#16) for initialFields. */
+  confidence?: Record<string, number>;
   ttlMs?: number;
   /** Tenant ID for multi-tenancy isolation */
   tenantId?: string;
@@ -348,6 +350,8 @@ export interface SetFieldsRequest {
   resumeToken: ResumeToken;
   actor: Actor;
   fields: Record<string, unknown>;
+  /** Optional per-field confidence in [0,1] (#16), keyed by field path. */
+  confidence?: Record<string, number>;
 }
 
 /**

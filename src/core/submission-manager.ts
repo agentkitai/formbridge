@@ -163,6 +163,26 @@ export class SubmissionManager {
     this.piiRedactor = options.piiRedactor;
   }
 
+  /**
+   * Merge per-field confidence (#16) onto a submission for the given field paths.
+   * Keeps only finite scores in [0,1]; ignores confidence for fields not set in
+   * this operation. Mutates `submission.fieldConfidence` in place.
+   */
+  private recordConfidence(
+    submission: Submission,
+    confidence: Record<string, number> | undefined,
+    fieldPaths: string[]
+  ): void {
+    if (!confidence) return;
+    const allowed = new Set(fieldPaths);
+    for (const [path, score] of Object.entries(confidence)) {
+      if (!allowed.has(path)) continue;
+      if (typeof score !== "number" || !Number.isFinite(score) || score < 0 || score > 1) continue;
+      submission.fieldConfidence ??= {};
+      submission.fieldConfidence[path] = score;
+    }
+  }
+
   /** Redact a field value when a PII redactor is configured (#13). */
   private redactField(value: unknown): { value: unknown; redacted: boolean } {
     if (!this.piiRedactor) return { value, redacted: false };
@@ -244,6 +264,9 @@ export class SubmissionManager {
       ttlMs: request.ttlMs,
       tenantId: request.tenantId,
     };
+
+    // Per-field confidence for initial fields (#16)
+    this.recordConfidence(submission, request.confidence, Object.keys(request.initialFields ?? {}));
 
     if (request.ttlMs) {
       submission.expiresAt = new Date(
@@ -363,6 +386,9 @@ export class SubmissionManager {
       submission.fieldAttribution[fieldPath] = request.actor;
       fieldUpdates.push({ fieldPath, oldValue, newValue });
     });
+
+    // Per-field confidence for the updated fields (#16)
+    this.recordConfidence(submission, request.confidence, Object.keys(request.fields));
 
     // Update metadata
     submission.updatedAt = now;
