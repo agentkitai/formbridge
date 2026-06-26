@@ -35,6 +35,7 @@ import {
 } from './core/submission-manager.js';
 import { ApprovalManager } from './core/approval-manager.js';
 import { approvalDelegateFromEnv } from './core/agentgate-delegate.js';
+import { createPiiRedactor } from './core/pii-redactor.js';
 import { InMemoryEventStore } from './core/event-store.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
@@ -375,7 +376,7 @@ export function createFormBridgeAppWithIntakes(
   // Pass the shared eventStore to SubmissionManager — it already appends events
   // via its triple-write pattern (submission.events + emitter.emit + eventStore.appendEvent).
   // No need for an additional listener on the emitter to avoid duplicates.
-  const manager = new SubmissionManager({ store, eventEmitter: emitter, intakeRegistry: registry, baseUrl: 'http://localhost:3000', eventStore });
+  const manager = new SubmissionManager({ store, eventEmitter: emitter, intakeRegistry: registry, baseUrl: 'http://localhost:3000', eventStore, piiRedactor: createPiiRedactor() });
 
   // Webhook manager — wired to receive events from the bridging emitter
   const signingSecret = process.env['FORMBRIDGE_WEBHOOK_SECRET'];

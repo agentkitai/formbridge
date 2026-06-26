@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { SubmissionManager } from "../submission-manager";
+import { createPiiRedactor } from "../pii-redactor.js";
 import type {
   Actor,
   IntakeEvent,
@@ -859,6 +860,62 @@ describe("SubmissionManager", () => {
       });
 
       expect(second.submissionId).not.toBe(first.submissionId);
+    });
+  });
+
+  describe("PII redaction at intake (#13)", () => {
+    const actor: Actor = { kind: "agent", id: "agt_pii" };
+
+    function managerWithRedaction() {
+      const s = new MockSubmissionStore();
+      const e = new MockEventEmitter();
+      const mgr = new SubmissionManager({
+        store: s as never,
+        eventEmitter: e as never,
+        piiRedactor: createPiiRedactor({ FORMBRIDGE_PII_REDACTION: "1" } as NodeJS.ProcessEnv),
+      });
+      return { s, e, mgr };
+    }
+
+    it("masks PII in initialFields at create", async () => {
+      const { s, mgr } = managerWithRedaction();
+      const res = await mgr.createSubmission({
+        intakeId: "intake_vendor_onboarding",
+        actor,
+        initialFields: { email: "jane@acme.com", note: "all good" },
+      });
+      const sub = await s.get(res.submissionId);
+      expect(sub!.fields.email).toBe("[redacted:email]");
+      expect(sub!.fields.note).toBe("all good"); // clean field untouched
+    });
+
+    it("masks PII in setFields and records redactedFields on the event", async () => {
+      const { s, e, mgr } = managerWithRedaction();
+      const created = await mgr.createSubmission({ intakeId: "intake_vendor_onboarding", actor });
+      e.clear();
+      await mgr.setFields({
+        submissionId: created.submissionId,
+        resumeToken: created.resumeToken,
+        actor,
+        fields: { contact: "reach me: bob@x.io", city: "Paris" },
+      });
+      const sub = await s.get(created.submissionId);
+      expect(sub!.fields.contact).toContain("[redacted:email]");
+      expect(sub!.fields.city).toBe("Paris");
+      const updated = e.events.find((ev) => ev.type === "fields.updated");
+      expect((updated!.payload as { redactedFields?: string[] }).redactedFields).toEqual(["contact"]);
+    });
+
+    it("without a redactor, fields are stored verbatim", async () => {
+      const s = new MockSubmissionStore();
+      const mgr = new SubmissionManager({ store: s as never, eventEmitter: new MockEventEmitter() as never });
+      const res = await mgr.createSubmission({
+        intakeId: "intake_vendor_onboarding",
+        actor,
+        initialFields: { email: "jane@acme.com" },
+      });
+      const sub = await s.get(res.submissionId);
+      expect(sub!.fields.email).toBe("jane@acme.com");
     });
   });
 });
