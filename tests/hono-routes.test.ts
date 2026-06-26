@@ -109,6 +109,24 @@ describe("Hono Submission Routes", () => {
     expect(data.state).toBe("draft");
   });
 
+  it("GET /submissions/resume/:token?format=ag-ui returns a handoff UI spec (#14)", async () => {
+    const sub = await manager.createSubmission({
+      intakeId: "test-intake",
+      actor: testActor,
+      initialFields: { companyName: "Acme" },
+    });
+
+    const res = await app.request(`/submissions/resume/${sub.resumeToken}?format=ag-ui`);
+    expect(res.status).toBe(200);
+    const spec = await res.json();
+    expect(spec.protocol).toBe("agentkitai.handoff/v1");
+    expect(spec.submissionId).toBe(sub.submissionId);
+    const company = spec.fields.find((f: { name: string }) => f.name === "companyName") as
+      | { filledBy: string }
+      | undefined;
+    expect(company?.filledBy).toBe("agent");
+  });
+
   it("GET /submissions/resume/:token returns 404 for invalid token", async () => {
     const res = await app.request("/submissions/resume/invalid-token");
     expect(res.status).toBe(404);
