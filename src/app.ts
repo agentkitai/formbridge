@@ -14,6 +14,9 @@ import { createIntakeRouter } from './routes/intake.js';
 import { createUploadRouter } from './routes/uploads.js';
 import { createHonoSubmissionRouter } from './routes/hono-submissions.js';
 import { createHonoEventRouter } from './routes/hono-events.js';
+import { createHonoWellKnownRouter } from './routes/hono-well-known.js';
+import { createHonoReceiptRouter } from './routes/hono-receipts.js';
+import { loadReceiptManagerFromEnv } from './core/receipt-manager.js';
 import { timingSafeTokenCompare } from './core/errors.js';
 import { createHonoApprovalRouter } from './routes/hono-approvals.js';
 import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
@@ -376,7 +379,11 @@ export function createFormBridgeAppWithIntakes(
   // Pass the shared eventStore to SubmissionManager — it already appends events
   // via its triple-write pattern (submission.events + emitter.emit + eventStore.appendEvent).
   // No need for an additional listener on the emitter to avoid duplicates.
-  const manager = new SubmissionManager({ store, eventEmitter: emitter, intakeRegistry: registry, baseUrl: 'http://localhost:3000', eventStore, piiRedactor: createPiiRedactor() });
+  // Provenance receipt signer (#15) — issues JWT-VC receipts at finalize.
+  // Unsigned mode when FORMBRIDGE_RECEIPT_PRIVATE_KEY is unset (finalize still works).
+  const receiptManager = loadReceiptManagerFromEnv('http://localhost:3000');
+
+  const manager = new SubmissionManager({ store, eventEmitter: emitter, intakeRegistry: registry, baseUrl: 'http://localhost:3000', eventStore, piiRedactor: createPiiRedactor(), receiptManager });
 
   // Webhook manager — wired to receive events from the bridging emitter
   const signingSecret = process.env['FORMBRIDGE_WEBHOOK_SECRET'];
@@ -508,6 +515,38 @@ export function createFormBridgeAppWithIntakes(
 
   // Analytics routes
   app.route('/', createHonoAnalyticsRouter(analyticsProvider));
+
+  // Provenance receipts (#15)
+  // Public: JWKS (offline verification) + /receipts/verify (self-contained JWS).
+  app.route('/', createHonoWellKnownRouter(receiptManager));
+  // GET a stored receipt needs auth + submission:read; POST /receipts/verify stays public.
+  app.get('/receipts/:submissionId', authMiddleware, requirePermission('submission:read'));
+  app.route('/', createHonoReceiptRouter(manager, receiptManager));
+
+  // POST /intake/:intakeId/submissions/:submissionId/finalize — finalize + issue receipt
+  // (auth from the /intake/* middleware above; submission:write here)
+  app.post(
+    '/intake/:intakeId/submissions/:submissionId/finalize',
+    requirePermission('submission:write'),
+    async (c) => {
+      const submissionId = c.req.param('submissionId')!;
+      let body: { actor?: unknown } = {};
+      try {
+        body = await c.req.json();
+      } catch {
+        // actor validated below
+      }
+      const actorResult = parseActor(body.actor);
+      if (!actorResult.ok) {
+        return c.json(
+          { ok: false, error: { type: 'invalid_request', message: `Invalid actor: ${actorResult.error}` } },
+          400
+        );
+      }
+      const { submission, receipt } = await manager.finalize(submissionId, actorResult.actor);
+      return c.json({ ok: true, submissionId: submission.id, state: submission.state, receipt });
+    }
+  );
 
   // POST /intake/:intakeId/submissions — create submission (submission:write)
   app.post('/intake/:intakeId/submissions', requirePermission('submission:write'), async (c) => {

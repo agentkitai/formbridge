@@ -171,6 +171,12 @@ export interface Submission {
    * Review decisions made by approval reviewers
    */
   reviewDecisions?: import("./core/approval-manager").ReviewDecision[];
+
+  /**
+   * Signed provenance receipt (#15), set when the submission is finalized.
+   * A JWT-VC over the submission's provenance; verifiable via /.well-known/jwks.json.
+   */
+  receipt?: import("./core/receipt-manager").ProvenanceReceipt;
 }
 
 /**

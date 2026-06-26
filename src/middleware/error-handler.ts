@@ -24,6 +24,11 @@ import {
   IntakeDuplicateError,
   IntakeValidationError,
 } from '../core/intake-registry.js';
+import {
+  ReceiptNotFoundError,
+  ReceiptVerificationError,
+  ReceiptSigningDisabledError,
+} from '../core/errors.js';
 
 /**
  * Generic error response structure for non-submission errors
@@ -84,6 +89,17 @@ function getStatusCodeForError(error: unknown): ContentfulStatusCode {
   }
   if (error instanceof IntakeValidationError) {
     return 400;
+  }
+
+  // Receipt errors (#15)
+  if (error instanceof ReceiptNotFoundError) {
+    return 404;
+  }
+  if (error instanceof ReceiptVerificationError) {
+    return 400;
+  }
+  if (error instanceof ReceiptSigningDisabledError) {
+    return 501;
   }
 
   // Submission errors map to 400-level codes based on error type

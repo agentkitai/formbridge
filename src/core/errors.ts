@@ -47,3 +47,27 @@ export function timingSafeTokenCompare(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   return timingSafeEqual(Buffer.from(a), Buffer.from(b));
 }
+
+/** Requested receipt does not exist (#15). */
+export class ReceiptNotFoundError extends Error {
+  constructor(submissionId: string) {
+    super(`Receipt not found for submission: ${submissionId}`);
+    this.name = "ReceiptNotFoundError";
+  }
+}
+
+/** A receipt JWT failed verification (#15). */
+export class ReceiptVerificationError extends Error {
+  constructor(message = "Receipt verification failed") {
+    super(message);
+    this.name = "ReceiptVerificationError";
+  }
+}
+
+/** Receipt signing/verification attempted with no signing key configured (#15). */
+export class ReceiptSigningDisabledError extends Error {
+  constructor(message = "Receipt signing is not configured (no signing key)") {
+    super(message);
+    this.name = "ReceiptSigningDisabledError";
+  }
+}
