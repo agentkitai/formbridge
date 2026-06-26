@@ -24,11 +24,13 @@ import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 import { SubmissionId, ResumeToken, EventId } from "../types/branded.js";
 import { notifyHandoff } from "./handoff-notifier.js";
+import type { ReceiptManager, ProvenanceReceipt } from "./receipt-manager.js";
 
 import {
   SubmissionNotFoundError,
   SubmissionExpiredError,
   InvalidResumeTokenError,
+  ReceiptNotFoundError,
   timingSafeTokenCompare,
 } from "./errors.js";
 
@@ -139,6 +141,11 @@ export interface SubmissionManagerOptions {
    * created. Defaults to FORMBRIDGE_NOTIFY_URL; unset = no-op.
    */
   handoffNotifyUrl?: string;
+  /**
+   * Optional issuer of signed provenance receipts (#15). When set, finalize()
+   * issues a JWT-VC receipt; unset → finalize still works (unsigned marker).
+   */
+  receiptManager?: ReceiptManager;
 }
 
 export class SubmissionManager {
@@ -150,6 +157,7 @@ export class SubmissionManager {
   private storageBackend?: StorageBackend;
   private eventStore: EventStore;
   private handoffNotifyUrl?: string;
+  private receiptManager?: ReceiptManager;
 
   constructor(options: SubmissionManagerOptions) {
     this.store = options.store;
@@ -161,6 +169,59 @@ export class SubmissionManager {
     this.eventStore = options.eventStore ?? new InMemoryEventStore();
     this.handoffNotifyUrl = options.handoffNotifyUrl ?? process.env["FORMBRIDGE_NOTIFY_URL"];
     this.piiRedactor = options.piiRedactor;
+    this.receiptManager = options.receiptManager;
+  }
+
+  /**
+   * Finalize a submission (#15): transition submitted|approved → finalized and
+   * issue a signed provenance receipt (JWT-VC). Idempotent — re-finalizing an
+   * already-finalized submission returns the stored receipt without re-issuing.
+   */
+  async finalize(
+    submissionId: string,
+    actor: Actor
+  ): Promise<{ submission: Submission; receipt: ProvenanceReceipt | undefined }> {
+    const submission = await this.store.get(submissionId);
+    if (!submission) {
+      throw new SubmissionNotFoundError(submissionId);
+    }
+    // Idempotent: already finalized → return what we stored.
+    if (submission.state === "finalized") {
+      return { submission, receipt: submission.receipt };
+    }
+    assertValidTransition(submission.state, "finalized");
+    const now = new Date().toISOString();
+    submission.state = "finalized";
+    submission.updatedAt = now;
+    submission.updatedBy = actor;
+    submission.resumeToken = ResumeToken(`rtok_${randomUUID()}`);
+
+    const receipt = this.receiptManager
+      ? await this.receiptManager.signReceipt(submission, actor, now)
+      : undefined;
+    if (receipt) submission.receipt = receipt;
+
+    const event: IntakeEvent = {
+      eventId: EventId(`evt_${randomUUID()}`),
+      type: "submission.finalized",
+      submissionId: submission.id,
+      ts: now,
+      actor,
+      state: submission.state,
+      payload: receipt ? { receipt } : {},
+    };
+    await this.recordEvent(submission, event);
+
+    return { submission, receipt };
+  }
+
+  /** Fetch a finalized submission's stored provenance receipt (#15). */
+  async getReceipt(submissionId: string): Promise<ProvenanceReceipt> {
+    const submission = await this.store.get(submissionId);
+    if (!submission || !submission.receipt) {
+      throw new ReceiptNotFoundError(submissionId);
+    }
+    return submission.receipt;
   }
 
   /**
