@@ -5,7 +5,7 @@ Get started with FormBridge in minutes.
 ## Installation
 
 ```bash
-npm install @formbridge/mcp-server
+npm install @agentkitai/formbridge-mcp-server
 ```
 
 ## Create an Intake Definition
@@ -13,7 +13,7 @@ npm install @formbridge/mcp-server
 An intake definition describes the data you want to collect:
 
 ```typescript
-import { createFormBridgeAppWithIntakes } from '@formbridge/mcp-server';
+import { createFormBridgeAppWithIntakes } from '@agentkitai/formbridge-mcp-server';
 
 const vendorIntake = {
   id: 'vendor-onboarding',

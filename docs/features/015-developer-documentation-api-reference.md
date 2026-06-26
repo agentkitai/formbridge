@@ -81,7 +81,7 @@ Build a comprehensive developer documentation site covering the FormBridge SDK, 
 ### Task 2: Write Quickstart Guide
 
 - [ ] Write `docs-site/guide/quickstart.md` targeting a 10-minute setup experience
-- [ ] Cover installation: `npm install @formbridge/mcp-server`
+- [ ] Cover installation: `npm install @agentkitai/formbridge-mcp-server`
 - [ ] Cover defining a schema (Zod example as primary, JSON Schema as alternative)
 - [ ] Cover creating an MCP server from the schema with `FormBridgeMCPServer`
 - [ ] Cover starting the server with stdio transport

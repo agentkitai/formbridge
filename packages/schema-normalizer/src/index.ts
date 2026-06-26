@@ -1,5 +1,5 @@
 /**
- * @formbridge/schema-normalizer
+ * @agentkitai/formbridge-schema-normalizer
  *
  * Schema normalization engine that converts Zod schemas, JSON Schema, and OpenAPI specs
  * into a unified IntakeSchema IR (Internal Representation).
@@ -105,7 +105,7 @@ export {
  *
  * @example
  * ```typescript
- * import { createJSONSchemaParser } from '@formbridge/schema-normalizer';
+ * import { createJSONSchemaParser } from '@agentkitai/formbridge-schema-normalizer';
  *
  * const parser = createJSONSchemaParser();
  * const ir = parser.parse({ type: 'string', minLength: 3 });
@@ -120,7 +120,7 @@ export function createJSONSchemaParser(options?: import('./types/parser').Parser
  *
  * @example
  * ```typescript
- * import { createZodParser } from '@formbridge/schema-normalizer';
+ * import { createZodParser } from '@agentkitai/formbridge-schema-normalizer';
  * import { z } from 'zod';
  *
  * const parser = createZodParser();
@@ -136,7 +136,7 @@ export function createZodParser(options?: import('./types/parser').ParserOptions
  *
  * @example
  * ```typescript
- * import { createOpenAPIParser } from '@formbridge/schema-normalizer';
+ * import { createOpenAPIParser } from '@agentkitai/formbridge-schema-normalizer';
  *
  * const parser = createOpenAPIParser();
  * const ir = parser.parse(openApiDoc, { operationId: 'createUser' });
@@ -151,7 +151,7 @@ export function createOpenAPIParser(options?: import('./types/parser').ParserOpt
  *
  * @example
  * ```typescript
- * import { createJSONSchemaSerializer } from '@formbridge/schema-normalizer';
+ * import { createJSONSchemaSerializer } from '@agentkitai/formbridge-schema-normalizer';
  *
  * const serializer = createJSONSchemaSerializer();
  * const jsonSchema = serializer.serialize(intakeSchema);

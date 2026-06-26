@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * @formbridge/create — CLI scaffolding tool for FormBridge intake projects.
+ * @agentkitai/formbridge-create — CLI scaffolding tool for FormBridge intake projects.
  *
  * Usage:
- *   npx @formbridge/create
- *   npx @formbridge/create --name my-project --schema zod --interface mcp,http --template vendor-onboarding
+ *   npx @agentkitai/formbridge-create
+ *   npx @agentkitai/formbridge-create --name my-project --schema zod --interface mcp,http --template vendor-onboarding
  */
 
 import { runInteractive } from "./prompts.js";

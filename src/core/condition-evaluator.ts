@@ -1,5 +1,5 @@
 /**
- * Condition Evaluator — re-exports from @formbridge/shared.
+ * Condition Evaluator — re-exports from @agentkitai/formbridge-shared.
  *
  * The canonical implementation lives in packages/shared/src/core/condition-evaluator.ts.
  * This file re-exports everything for backward compatibility.
@@ -19,4 +19,4 @@ export {
   evaluateCondition,
   evaluateConditions,
   detectCircularConditions,
-} from '@formbridge/shared';
+} from '@agentkitai/formbridge-shared';

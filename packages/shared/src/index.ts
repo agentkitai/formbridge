@@ -1,5 +1,5 @@
 /**
- * @formbridge/shared — Isomorphic utilities shared between server and client packages.
+ * @agentkitai/formbridge-shared — Isomorphic utilities shared between server and client packages.
  *
  * Zero-dependency modules for condition evaluation, step validation,
  * and nested value accessors. Safe to use in both Node.js and browser environments.

@@ -1,5 +1,5 @@
 {
-  "name": "@formbridge/mcp-server",
+  "name": "@agentkitai/formbridge-mcp-server",
   "version": "0.3.0",
   "description": "FormBridge MCP Server - Mixed-mode agent-human form submission",
   "type": "module",
@@ -45,7 +45,7 @@
     "url": "https://github.com/agentkitai/formbridge/issues"
   },
   "dependencies": {
-    "@formbridge/shared": "*",
+    "@agentkitai/formbridge-shared": "*",
     "@hono/node-server": "^1.19.13",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "ajv": "^8.12.0",

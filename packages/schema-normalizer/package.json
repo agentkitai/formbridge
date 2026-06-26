@@ -1,5 +1,5 @@
 {
-  "name": "@formbridge/schema-normalizer",
+  "name": "@agentkitai/formbridge-schema-normalizer",
   "version": "0.3.0",
   "publishConfig": {
     "access": "public"

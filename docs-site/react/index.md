@@ -1,11 +1,11 @@
 # React Form Renderer
 
-The `@formbridge/form-renderer` package provides React components for rendering forms from intake schemas, handling agent-to-human handoff, and managing approval workflows.
+The `@agentkitai/formbridge-form-renderer` package provides React components for rendering forms from intake schemas, handling agent-to-human handoff, and managing approval workflows.
 
 ## Installation
 
 ```bash
-npm install @formbridge/form-renderer
+npm install @agentkitai/formbridge-form-renderer
 ```
 
 Peer dependencies: `react` (>=18), `react-dom` (>=18).
@@ -13,8 +13,8 @@ Peer dependencies: `react` (>=18), `react-dom` (>=18).
 ## Quick Start
 
 ```tsx
-import { FormBridgeForm } from '@formbridge/form-renderer';
-import '@formbridge/form-renderer/styles.css';
+import { FormBridgeForm } from '@agentkitai/formbridge-form-renderer';
+import '@agentkitai/formbridge-form-renderer/styles.css';
 
 function MyForm() {
   const schema = {
@@ -356,7 +356,7 @@ const { submission, loading, error, refetch } = useResumeSubmission({
 Multi-step progressive form with step validation and navigation.
 
 ```tsx
-import { WizardForm } from '@formbridge/form-renderer';
+import { WizardForm } from '@agentkitai/formbridge-form-renderer';
 
 const steps = [
   { id: 'company', title: 'Company Info', fields: ['companyName', 'industry'] },
@@ -409,7 +409,7 @@ const [state, actions] = useWizardNavigation(steps, formValues, fieldSchemas);
 Full-page component for the agent-to-human handoff flow. Fetches a submission by resume token and renders the form for human completion.
 
 ```tsx
-import { ResumeFormPage } from '@formbridge/form-renderer';
+import { ResumeFormPage } from '@agentkitai/formbridge-form-renderer';
 
 <ResumeFormPage
   resumeToken="rt_xyz789"
@@ -435,7 +435,7 @@ import { ResumeFormPage } from '@formbridge/form-renderer';
 Read-only view of a submission for reviewer inspection. Displays all fields with their values and actor attribution.
 
 ```tsx
-import { ReviewerView, ApprovalActions } from '@formbridge/form-renderer';
+import { ReviewerView, ApprovalActions } from '@agentkitai/formbridge-form-renderer';
 
 <ReviewerView
   submission={submission}
@@ -555,7 +555,7 @@ Visual progress indicator for wizard forms showing completed, current, and upcom
 Import the default CSS to get base styles for all components:
 
 ```tsx
-import '@formbridge/form-renderer/styles.css';
+import '@agentkitai/formbridge-form-renderer/styles.css';
 ```
 
 All components accept a `className` prop for custom styling. The default styles use BEM-style class names prefixed with `formbridge-` for easy overriding.

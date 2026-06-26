@@ -7,11 +7,11 @@ Mixed-mode agent-human form submission infrastructure. AI agents fill what they 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js](https://img.shields.io/badge/Node.js-%3E%3D18-green.svg)](https://nodejs.org/)
 [![Tests](https://img.shields.io/badge/tests-1427%20passing-brightgreen.svg)](#testing)
-[![@formbridge/create](https://img.shields.io/npm/v/@formbridge/create?label=%40formbridge%2Fcreate)](https://www.npmjs.com/package/@formbridge/create)
-[![@formbridge/form-renderer](https://img.shields.io/npm/v/@formbridge/form-renderer?label=%40formbridge%2Fform-renderer)](https://www.npmjs.com/package/@formbridge/form-renderer)
-[![@formbridge/schema-normalizer](https://img.shields.io/npm/v/@formbridge/schema-normalizer?label=%40formbridge%2Fschema-normalizer)](https://www.npmjs.com/package/@formbridge/schema-normalizer)
-[![@formbridge/shared](https://img.shields.io/npm/v/@formbridge/shared?label=%40formbridge%2Fshared)](https://www.npmjs.com/package/@formbridge/shared)
-[![@formbridge/templates](https://img.shields.io/npm/v/@formbridge/templates?label=%40formbridge%2Ftemplates)](https://www.npmjs.com/package/@formbridge/templates)
+[![@agentkitai/formbridge-create](https://img.shields.io/npm/v/@agentkitai/formbridge-create?label=%40formbridge%2Fcreate)](https://www.npmjs.com/package/@agentkitai/formbridge-create)
+[![@agentkitai/formbridge-form-renderer](https://img.shields.io/npm/v/@agentkitai/formbridge-form-renderer?label=%40formbridge%2Fform-renderer)](https://www.npmjs.com/package/@agentkitai/formbridge-form-renderer)
+[![@agentkitai/formbridge-schema-normalizer](https://img.shields.io/npm/v/@agentkitai/formbridge-schema-normalizer?label=%40formbridge%2Fschema-normalizer)](https://www.npmjs.com/package/@agentkitai/formbridge-schema-normalizer)
+[![@agentkitai/formbridge-shared](https://img.shields.io/npm/v/@agentkitai/formbridge-shared?label=%40formbridge%2Fshared)](https://www.npmjs.com/package/@agentkitai/formbridge-shared)
+[![@agentkitai/formbridge-templates](https://img.shields.io/npm/v/@agentkitai/formbridge-templates?label=%40formbridge%2Ftemplates)](https://www.npmjs.com/package/@agentkitai/formbridge-templates)
 
 <p align="center">
   <img src="docs/public/demo.gif" alt="FormBridge Demo" width="700">
@@ -51,19 +51,19 @@ Agent                          FormBridge                        Human
 
 | Package | npm | Description |
 |---------|-----|-------------|
-| `@formbridge/mcp-server` | — | Core server — HTTP API, MCP tools, submission lifecycle, storage backends (main package) |
-| `@formbridge/create` | [![npm](https://img.shields.io/npm/v/@formbridge/create)](https://www.npmjs.com/package/@formbridge/create) | CLI scaffolding tool (`npx @formbridge/create`) |
-| `@formbridge/form-renderer` | [![npm](https://img.shields.io/npm/v/@formbridge/form-renderer)](https://www.npmjs.com/package/@formbridge/form-renderer) | React components and hooks for rendering forms and resuming agent-started submissions |
-| `@formbridge/schema-normalizer` | [![npm](https://img.shields.io/npm/v/@formbridge/schema-normalizer)](https://www.npmjs.com/package/@formbridge/schema-normalizer) | Converts Zod, JSON Schema, and OpenAPI specs into a unified IntakeSchema IR |
-| `@formbridge/shared` | [![npm](https://img.shields.io/npm/v/@formbridge/shared)](https://www.npmjs.com/package/@formbridge/shared) | Shared utilities across packages |
-| `@formbridge/templates` | [![npm](https://img.shields.io/npm/v/@formbridge/templates)](https://www.npmjs.com/package/@formbridge/templates) | Ready-made intake templates (vendor onboarding, IT access, customer intake, expense report, bug report) |
-| `@formbridge/admin-dashboard` | — | React SPA for managing intakes, reviewing submissions, and configuring approvals |
+| `@agentkitai/formbridge-mcp-server` | — | Core server — HTTP API, MCP tools, submission lifecycle, storage backends (main package) |
+| `@agentkitai/formbridge-create` | [![npm](https://img.shields.io/npm/v/@agentkitai/formbridge-create)](https://www.npmjs.com/package/@agentkitai/formbridge-create) | CLI scaffolding tool (`npx @agentkitai/formbridge-create`) |
+| `@agentkitai/formbridge-form-renderer` | [![npm](https://img.shields.io/npm/v/@agentkitai/formbridge-form-renderer)](https://www.npmjs.com/package/@agentkitai/formbridge-form-renderer) | React components and hooks for rendering forms and resuming agent-started submissions |
+| `@agentkitai/formbridge-schema-normalizer` | [![npm](https://img.shields.io/npm/v/@agentkitai/formbridge-schema-normalizer)](https://www.npmjs.com/package/@agentkitai/formbridge-schema-normalizer) | Converts Zod, JSON Schema, and OpenAPI specs into a unified IntakeSchema IR |
+| `@agentkitai/formbridge-shared` | [![npm](https://img.shields.io/npm/v/@agentkitai/formbridge-shared)](https://www.npmjs.com/package/@agentkitai/formbridge-shared) | Shared utilities across packages |
+| `@agentkitai/formbridge-templates` | [![npm](https://img.shields.io/npm/v/@agentkitai/formbridge-templates)](https://www.npmjs.com/package/@agentkitai/formbridge-templates) | Ready-made intake templates (vendor onboarding, IT access, customer intake, expense report, bug report) |
+| `@agentkitai/formbridge-admin-dashboard` | — | React SPA for managing intakes, reviewing submissions, and configuring approvals |
 
 ## Quick Start
 
 ### Installation
 
-The core server package (`@formbridge/mcp-server`) is not yet published to npm. Install it from source:
+The core server package (`@agentkitai/formbridge-mcp-server`) is not yet published to npm. Install it from source:
 
 ```bash
 git clone https://github.com/agentkitai/formbridge.git
@@ -72,12 +72,12 @@ npm install
 npm run build
 ```
 
-The companion packages (`@formbridge/create`, `@formbridge/form-renderer`, `@formbridge/schema-normalizer`, `@formbridge/shared`, `@formbridge/templates`) are published and can be installed directly from npm.
+The companion packages (`@agentkitai/formbridge-create`, `@agentkitai/formbridge-form-renderer`, `@agentkitai/formbridge-schema-normalizer`, `@agentkitai/formbridge-shared`, `@agentkitai/formbridge-templates`) are published and can be installed directly from npm.
 
 ### Option 1: HTTP API Server
 
 ```typescript
-import { createFormBridgeApp } from '@formbridge/mcp-server';
+import { createFormBridgeApp } from '@agentkitai/formbridge-mcp-server';
 import { serve } from '@hono/node-server';
 
 const app = createFormBridgeApp({
@@ -141,7 +141,7 @@ curl -X POST http://localhost:3000/intake/contact-form/submissions/sub_.../submi
 ### Option 2: MCP Server (for AI agents)
 
 ```typescript
-import { FormBridgeMCPServer } from '@formbridge/mcp-server';
+import { FormBridgeMCPServer } from '@agentkitai/formbridge-mcp-server';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
@@ -181,7 +181,7 @@ await server.getServer().connect(transport);
 ### Option 3: React Form Renderer
 
 ```tsx
-import { FormBridgeForm, ResumeFormPage } from '@formbridge/form-renderer';
+import { FormBridgeForm, ResumeFormPage } from '@agentkitai/formbridge-form-renderer';
 
 // Standalone form
 function ContactPage() {
@@ -213,10 +213,10 @@ function ResumePage() {
 
 ```bash
 # Interactive — walks you through setup
-npx @formbridge/create
+npx @agentkitai/formbridge-create
 
 # Non-interactive
-npx @formbridge/create --name my-intake --schema zod --interface http,mcp
+npx @agentkitai/formbridge-create --name my-intake --schema zod --interface http,mcp
 ```
 
 ## Features
@@ -245,7 +245,7 @@ npx @formbridge/create --name my-intake --schema zod --interface http,mcp
 ### Developer Experience
 - **MCP Server** — Auto-generates MCP tools from intake definitions for AI agent integration
 - **Admin Dashboard** — React SPA for managing intakes, reviewing submissions, analytics
-- **CLI Scaffolding** — `npx @formbridge/create` generates a ready-to-run project
+- **CLI Scaffolding** — `npx @agentkitai/formbridge-create` generates a ready-to-run project
 - **5 Starter Templates** — Vendor onboarding, IT access request, customer intake, expense report, bug report
 - **VitePress Docs** — API reference, guides, walkthroughs, and concept docs
 - **CI/CD** — GitHub Actions for lint, typecheck, and tests on Node 18/20/22
@@ -305,7 +305,7 @@ npm install pg
 ```
 
 ```typescript
-import { PostgresStorage } from '@formbridge/mcp-server';
+import { PostgresStorage } from '@agentkitai/formbridge-mcp-server';
 
 const storage = new PostgresStorage({
   connectionString: process.env.DATABASE_URL!,
@@ -315,7 +315,7 @@ const storage = new PostgresStorage({
 await storage.initialize(); // runs migrations automatically
 
 // Or use the factory:
-import { createStorageFromEnv } from '@formbridge/mcp-server';
+import { createStorageFromEnv } from '@agentkitai/formbridge-mcp-server';
 const storage = await createStorageFromEnv(); // reads FORMBRIDGE_STORAGE + DATABASE_URL
 ```
 

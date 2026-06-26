@@ -50,7 +50,7 @@ describe("MCP Tool Generator", () => {
 
     // Create server instance
     server = new McpServer({
-      name: "@formbridge/mcp-server-test",
+      name: "@agentkitai/formbridge-mcp-server-test",
       version: "0.1.0-test",
     });
   });
@@ -156,7 +156,7 @@ describe("MCP Tool Generator", () => {
 
       expect(server).toBeDefined();
       const info = getServerInfo(server);
-      expect(info?.name).toBe("@formbridge/mcp-server");
+      expect(info?.name).toBe("@agentkitai/formbridge-mcp-server");
       expect(info?.version).toBe("0.1.0");
     });
 

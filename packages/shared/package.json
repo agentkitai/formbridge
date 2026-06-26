@@ -1,5 +1,5 @@
 {
-  "name": "@formbridge/shared",
+  "name": "@agentkitai/formbridge-shared",
   "version": "0.3.0",
   "publishConfig": {
     "access": "public"

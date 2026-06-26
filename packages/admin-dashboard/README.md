@@ -1,4 +1,4 @@
-# @formbridge/admin-dashboard
+# @agentkitai/formbridge-admin-dashboard
 
 > React SPA for managing FormBridge intakes, submissions, approvals, and webhook deliveries
 
@@ -7,7 +7,7 @@
 
 ## Overview
 
-`@formbridge/admin-dashboard` is a Vite-powered React single-page application for administering a FormBridge instance. It provides a visual interface for browsing intakes, inspecting submissions, managing approval queues, viewing analytics, and monitoring webhook deliveries.
+`@agentkitai/formbridge-admin-dashboard` is a Vite-powered React single-page application for administering a FormBridge instance. It provides a visual interface for browsing intakes, inspecting submissions, managing approval queues, viewing analytics, and monitoring webhook deliveries.
 
 ## Features
 
@@ -73,6 +73,6 @@ npm run preview   # Preview production build
 
 ## Related Packages
 
-- `@formbridge/form-renderer` — React form rendering components
-- `@formbridge/schema-normalizer` — Schema parsing and normalization
-- `@formbridge/create-formbridge` — Project scaffolding CLI
+- `@agentkitai/formbridge-form-renderer` — React form rendering components
+- `@agentkitai/formbridge-schema-normalizer` — Schema parsing and normalization
+- `@agentkitai/formbridge-create-formbridge` — Project scaffolding CLI

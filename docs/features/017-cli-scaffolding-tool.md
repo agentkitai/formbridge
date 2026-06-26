@@ -5,7 +5,7 @@
 
 ## Summary
 
-Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffolds new FormBridge projects. The wizard prompts the developer to select a schema format (Zod, JSON Schema, or OpenAPI), choose one or more interfaces (React form, MCP server, HTTP API), and pick a template (vendor onboarding, IT access request, customer intake, or blank). It then generates a ready-to-run project with the selected schema, interface configuration, working imports, a dev server, and a README with next steps. A non-interactive mode with CLI flags supports automation and CI use cases. The scaffolded project runs with `npm run dev` and completes setup in under 10 seconds.
+Build an interactive CLI wizard invoked via `npx @agentkitai/formbridge-create` that scaffolds new FormBridge projects. The wizard prompts the developer to select a schema format (Zod, JSON Schema, or OpenAPI), choose one or more interfaces (React form, MCP server, HTTP API), and pick a template (vendor onboarding, IT access request, customer intake, or blank). It then generates a ready-to-run project with the selected schema, interface configuration, working imports, a dev server, and a README with next steps. A non-interactive mode with CLI flags supports automation and CI use cases. The scaffolded project runs with `npm run dev` and completes setup in under 10 seconds.
 
 ## Dependencies
 
@@ -51,20 +51,20 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 - **Prompt library:** Use `@clack/prompts` (modern, beautiful CLI prompts) or `prompts` (lightweight). `@clack/prompts` provides a better visual experience with spinners, groups, and confirmation steps. Alternative: `inquirer` (more established but heavier).
 - **Template engine:** Use a simple string interpolation engine (e.g., Handlebars-style `{{variable}}` replacement) rather than a full templating language. Templates are TypeScript/JSON files with placeholder markers. This keeps the CLI lightweight and avoids a template language learning curve.
 - **Output structure:** Generated projects follow standard Node.js conventions: `package.json`, `tsconfig.json`, `src/`, `README.md`, `.gitignore`. The structure mirrors what a developer would create manually.
-- **Dependency versions:** Generated `package.json` pins the current stable version of `@formbridge/mcp-server` and other dependencies. Version is injected at CLI build time.
+- **Dependency versions:** Generated `package.json` pins the current stable version of `@agentkitai/formbridge-mcp-server` and other dependencies. Version is injected at CLI build time.
 - **Non-interactive mode:** All prompts have equivalent CLI flags (e.g., `--schema zod --interface mcp,http --template vendor-onboarding --name my-project`). This enables automation and testing.
 
 ### Patterns to follow
-- The CLI is a separate npm package (`@formbridge/create`) following the `create-*` convention used by Vite, Next.js, and others.
-- The `bin` field in `package.json` maps `create-formbridge` to the built entry point, enabling `npx @formbridge/create`.
-- Generated code imports from `@formbridge/mcp-server` using the public API exported from `src/index.ts`.
+- The CLI is a separate npm package (`@agentkitai/formbridge-create`) following the `create-*` convention used by Vite, Next.js, and others.
+- The `bin` field in `package.json` maps `create-formbridge` to the built entry point, enabling `npx @agentkitai/formbridge-create`.
+- Generated code imports from `@agentkitai/formbridge-mcp-server` using the public API exported from `src/index.ts`.
 
 ## Implementation Tasks
 
 ### Task 1: CLI Package Setup
 
 - [ ] Create `packages/create-formbridge/` directory structure
-- [ ] Create `package.json` with `name: "@formbridge/create"`, `bin: { "create-formbridge": "./dist/index.js" }`, `type: "module"`
+- [ ] Create `package.json` with `name: "@agentkitai/formbridge-create"`, `bin: { "create-formbridge": "./dist/index.js" }`, `type: "module"`
 - [ ] Create `tsconfig.json` extending the root configuration, targeting Node.js
 - [ ] Add dependencies: `@clack/prompts` (or `prompts`), `picocolors` (terminal colors), `fs-extra` (file operations)
 - [ ] Create `src/index.ts` entry point with shebang (`#!/usr/bin/env node`)
@@ -130,7 +130,7 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 - [ ] Create `src/templates/interfaces/http-api.ts.template` -- Express server setup using `createIntakeRouter`, `createSubmissionRouter`, port configuration
 - [ ] Create `src/templates/interfaces/react-form.tsx.template` -- React component setup with FormBridge form rendering, submission handling
 - [ ] Create `src/templates/interfaces/react-app.tsx.template` -- React App wrapper with routing (if React is selected)
-- [ ] Each interface template imports from `@formbridge/mcp-server` and the generated schema
+- [ ] Each interface template imports from `@agentkitai/formbridge-mcp-server` and the generated schema
 - [ ] MCP server template includes a `start` script and stdio transport configuration
 - [ ] HTTP API template includes Express setup, middleware (CORS, error handling), and health endpoint
 - [ ] React template includes form component, submission handler, and basic styling
@@ -169,7 +169,7 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 
 **Dependencies:** Task 2
 **Effort:** M
-**Validation:** `npx @formbridge/create --name my-app --schema zod --interface mcp --template blank --yes` generates a project without prompts. Invalid flags produce helpful error messages. `--help` shows usage. Mixed mode prompts only for missing values.
+**Validation:** `npx @agentkitai/formbridge-create --name my-app --schema zod --interface mcp --template blank --yes` generates a project without prompts. Invalid flags produce helpful error messages. `--help` shows usage. Mixed mode prompts only for missing values.
 
 ### Task 8: Implement README Generation
 
@@ -206,17 +206,17 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 
 ### Task 10: npm Package Configuration
 
-- [ ] Configure `package.json` for publishing: `name: "@formbridge/create"`, `version: "0.1.0"`, `bin`, `files: ["dist"]`
+- [ ] Configure `package.json` for publishing: `name: "@agentkitai/formbridge-create"`, `version: "0.1.0"`, `bin`, `files: ["dist"]`
 - [ ] Add `publishConfig: { "access": "public" }`
 - [ ] Add `keywords`: `["formbridge", "create", "scaffold", "mcp", "intake", "cli"]`
 - [ ] Build the CLI with `tsup` to produce a single file bundle (minimize install size)
-- [ ] Verify `npx @formbridge/create` works from a clean environment (no local install)
+- [ ] Verify `npx @agentkitai/formbridge-create` works from a clean environment (no local install)
 - [ ] Add the package to the release workflow (Feature 016) for automated publishing
 - [ ] Test with `npm pack` and inspect tarball contents and size
 
 **Dependencies:** Tasks 1, 9
 **Effort:** S
-**Validation:** `npm pack` produces a tarball with the CLI bundle. `npx @formbridge/create` downloads and runs. Package size is under 500KB. Published package includes bin entry.
+**Validation:** `npm pack` produces a tarball with the CLI bundle. `npx @agentkitai/formbridge-create` downloads and runs. Package size is under 500KB. Published package includes bin entry.
 
 ## Test Plan
 
@@ -240,7 +240,7 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 - [ ] Add CLI reference to the FormBridge developer documentation site (Feature 015)
 - [ ] Document all available templates and their use cases
 - [ ] Document how to create custom templates (for advanced users)
-- [ ] Add `npx @formbridge/create` to the quickstart guide (Feature 015)
+- [ ] Add `npx @agentkitai/formbridge-create` to the quickstart guide (Feature 015)
 
 ## Code Review Checklist
 
@@ -257,8 +257,8 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 - **Migration steps:** None. This is a new developer tool.
 - **Release steps:**
   1. Build and test the CLI package
-  2. Publish to npm under `@formbridge/create`
-  3. Verify `npx @formbridge/create` works from a clean environment
+  2. Publish to npm under `@agentkitai/formbridge-create`
+  3. Verify `npx @agentkitai/formbridge-create` works from a clean environment
   4. Add to the FormBridge documentation quickstart
   5. Announce availability
 
@@ -266,7 +266,7 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 
 - **Logging:** CLI logs are local to the developer's terminal. No remote logging.
 - **Metrics to track:**
-  - npm download count for `@formbridge/create` (npmjs.com)
+  - npm download count for `@agentkitai/formbridge-create` (npmjs.com)
   - Schema format selection distribution (via anonymous opt-in telemetry, if implemented)
   - Template selection distribution (same)
   - Error reports (via GitHub Issues)
@@ -286,7 +286,7 @@ Build an interactive CLI wizard invoked via `npx @formbridge/create` that scaffo
 ## Definition of Done
 
 - [ ] All acceptance criteria met:
-  1. Interactive setup wizard works via `npx @formbridge/create`
+  1. Interactive setup wizard works via `npx @agentkitai/formbridge-create`
   2. Schema format selection (Zod, JSON Schema, OpenAPI)
   3. Interface multi-select (React form, MCP server, HTTP API)
   4. Template selection (vendor onboarding, IT access, customer intake, blank)

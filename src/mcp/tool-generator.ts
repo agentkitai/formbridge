@@ -264,7 +264,7 @@ export function createMcpServer(
   }
 ): McpServer {
   const server = new McpServer({
-    name: options?.name || "@formbridge/mcp-server",
+    name: options?.name || "@agentkitai/formbridge-mcp-server",
     version: options?.version || "0.1.0",
   });
 

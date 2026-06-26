@@ -66,7 +66,7 @@ Templates must be self-contained: no runtime dependencies beyond Zod and the For
 
 ### Consumption Patterns
 
-1. **npm import:** `import { vendorOnboarding } from '@formbridge/templates'`
+1. **npm import:** `import { vendorOnboarding } from '@agentkitai/formbridge-templates'`
 2. **Copy-paste:** Each template directory is self-contained; developers can copy the folder into their project
 3. **JSON Schema:** The `.json` files can be consumed by non-TypeScript toolchains
 
@@ -165,7 +165,7 @@ Templates must be self-contained: no runtime dependencies beyond Zod and the For
 **Validation:** All tests pass; coverage > 90% on schema validation logic
 
 ### Task 10: npm Packaging and Publishing
-- [ ] Configure `@formbridge/templates` package metadata (name, version, description, keywords, license)
+- [ ] Configure `@agentkitai/formbridge-templates` package metadata (name, version, description, keywords, license)
 - [ ] Set up proper `exports` field in package.json for tree-shaking individual templates
 - [ ] Add `files` field to include only built output and JSON schemas
 - [ ] Verify package installs and imports correctly in a clean project
@@ -201,7 +201,7 @@ Templates must be self-contained: no runtime dependencies beyond Zod and the For
 
 ## Deployment & Release
 
-- **Package name:** `@formbridge/templates`
+- **Package name:** `@agentkitai/formbridge-templates`
 - **Release strategy:** Publish alongside main FormBridge SDK releases
 - **Breaking change policy:** Template schema changes are semver-major (consumers may depend on field names)
 - **Distribution:** npm registry + copy-pasteable from GitHub repository
@@ -225,7 +225,7 @@ Templates must be self-contained: no runtime dependencies beyond Zod and the For
 
 - [ ] At least 5 templates implemented (vendor onboarding, IT access, customer intake, expense report, bug report)
 - [ ] Each template has a Zod schema and JSON Schema equivalent
-- [ ] Templates are importable as `@formbridge/templates` npm package
+- [ ] Templates are importable as `@agentkitai/formbridge-templates` npm package
 - [ ] Templates are copy-pasteable as standalone directories
 - [ ] Each template has a documented walkthrough with usage examples
 - [ ] All acceptance criteria met

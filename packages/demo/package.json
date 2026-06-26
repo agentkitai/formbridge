@@ -1,5 +1,5 @@
 {
-  "name": "@formbridge/demo",
+  "name": "@agentkitai/formbridge-demo",
   "version": "0.1.0",
   "description": "FormBridge demo application showcasing agent-to-human handoff workflow",
   "type": "module",
@@ -12,7 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@formbridge/form-renderer": "*",
+    "@agentkitai/formbridge-form-renderer": "*",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-router-dom": "^6.20.0"

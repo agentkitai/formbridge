@@ -136,7 +136,7 @@ Build the foundational SDK: project scaffolding, schema normalization, Intake Co
 
 **Description**
 
-Initialize the FormBridge monorepo with TypeScript configuration, package structure (@formbridge/core, @formbridge/react, @formbridge/mcp), build system (tsup or unbuild), test framework (Vitest), linting (ESLint + Prettier), and package.json scaffolding. Establish the foundational project architecture that all other features build upon.
+Initialize the FormBridge monorepo with TypeScript configuration, package structure (@agentkitai/formbridge-core, @agentkitai/formbridge-react, @agentkitai/formbridge-mcp), build system (tsup or unbuild), test framework (Vitest), linting (ESLint + Prettier), and package.json scaffolding. Establish the foundational project architecture that all other features build upon.
 
 **Rationale**
 
@@ -149,7 +149,7 @@ Nothing can be built without project infrastructure. The entire codebase is gree
 
 **Acceptance Criteria**
 
-- [x] Monorepo structure exists with @formbridge/core, @formbridge/react, and @formbridge/mcp packages
+- [x] Monorepo structure exists with @agentkitai/formbridge-core, @agentkitai/formbridge-react, and @agentkitai/formbridge-mcp packages
 - [x] TypeScript compiles successfully across all packages with strict mode enabled
 - [x] Vitest runs and reports results for placeholder test files
 - [x] ESLint and Prettier are configured and pass on all source files
@@ -771,7 +771,7 @@ Bridge between internal development and community adoption.
 
 **Description**
 
-`npx @formbridge/create` scaffolds new project with interactive prompts for schema format, interfaces, and templates.
+`npx @agentkitai/formbridge-create` scaffolds new project with interactive prompts for schema format, interfaces, and templates.
 
 **Rationale**
 

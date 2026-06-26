@@ -190,7 +190,7 @@ Field type mapping:
 
 ## Deployment & Release
 
-- Package published as `@formbridge/form-renderer` (npm)
+- Package published as `@agentkitai/formbridge-form-renderer` (npm)
 - Demo app deployable as static site (Vite build output)
 - No server-side dependencies — purely client-side React component
 - Peer dependencies: React 18+, ReactDOM 18+

@@ -1,4 +1,4 @@
-import { IntakeSchema } from '@formbridge/form-renderer';
+import { IntakeSchema } from '@agentkitai/formbridge-form-renderer';
 
 /**
  * Vendor Onboarding Schema

@@ -5,7 +5,7 @@
 
 ## Implementation Summary
 
-> Implemented as the `@formbridge/schema-normalizer` package. Provides a parser-based architecture where each input format (Zod, JSON Schema, OpenAPI) has a dedicated parser that converts to a unified IntakeSchema IR. A JSON Schema serializer enables round-trip conversion. The IR type system uses a discriminated union with type guards for safe field access.
+> Implemented as the `@agentkitai/formbridge-schema-normalizer` package. Provides a parser-based architecture where each input format (Zod, JSON Schema, OpenAPI) has a dedicated parser that converts to a unified IntakeSchema IR. A JSON Schema serializer enables round-trip conversion. The IR type system uses a discriminated union with type guards for safe field access.
 
 **Key files:**
 - `packages/schema-normalizer/src/types/intake-schema.ts` -- IntakeSchema IR type definitions (discriminated union, type guards)
@@ -38,7 +38,7 @@ Feature 002 implements a schema normalization engine that accepts schemas from t
 
 ## Architecture & Design
 
-- **Package:** `@formbridge/schema-normalizer` -- standalone package in `packages/schema-normalizer/`
+- **Package:** `@agentkitai/formbridge-schema-normalizer` -- standalone package in `packages/schema-normalizer/`
 - **Parser pattern:** Each parser implements the `Parser` interface with a `parse()` method that returns an `IntakeSchema` IR document. Parsers are stateless and instantiated via factory functions (`createJSONSchemaParser()`, `createZodParser()`, `createOpenAPIParser()`).
 - **IntakeSchema IR:** Root document with `version: '1.0'`, `title`, `description`, `schema` (root field), and `metadata` (source format tracking). The `schema` field is a discriminated union (`IntakeSchemaField`) with 9 variants: `string`, `number`, `integer`, `boolean`, `null`, `object`, `array`, `enum`, `file`.
 - **Type guards:** `isStringField()`, `isNumberField()`, `isIntegerField()`, `isBooleanField()`, `isNullField()`, `isObjectField()`, `isArrayField()`, `isEnumField()`, `isFileField()` for safe narrowing.
