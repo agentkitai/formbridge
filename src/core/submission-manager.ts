@@ -19,6 +19,7 @@ import type { StorageBackend } from "../storage/storage-backend.js";
 import type { UploadStatus } from "./validator.js";
 import type { EventStore } from "./event-store.js";
 import { InMemoryEventStore } from "./event-store.js";
+import type { PiiRedactor } from "./pii-redactor.js";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 import { SubmissionId, ResumeToken, EventId } from "../types/branded.js";
@@ -130,6 +131,8 @@ export interface SubmissionManagerOptions {
   baseUrl?: string;
   storageBackend?: StorageBackend;
   eventStore?: EventStore;
+  /** Optional per-field PII redactor applied at intake (#13). Unset = no redaction. */
+  piiRedactor?: PiiRedactor;
   /**
    * Optional outbound webhook URL for human-handoff notifications. When set,
    * a small JSON payload is POSTed here each time a handoff resume URL is
@@ -143,6 +146,7 @@ export class SubmissionManager {
   private eventEmitter: EventEmitter;
   private intakeRegistry?: IntakeRegistry;
   private baseUrl: string;
+  private piiRedactor?: PiiRedactor;
   private storageBackend?: StorageBackend;
   private eventStore: EventStore;
   private handoffNotifyUrl?: string;
@@ -156,6 +160,14 @@ export class SubmissionManager {
     // Initialize event store (defaults to in-memory implementation)
     this.eventStore = options.eventStore ?? new InMemoryEventStore();
     this.handoffNotifyUrl = options.handoffNotifyUrl ?? process.env["FORMBRIDGE_NOTIFY_URL"];
+    this.piiRedactor = options.piiRedactor;
+  }
+
+  /** Redact a field value when a PII redactor is configured (#13). */
+  private redactField(value: unknown): { value: unknown; redacted: boolean } {
+    if (!this.piiRedactor) return { value, redacted: false };
+    const r = this.piiRedactor.redactValue(value);
+    return { value: r.value, redacted: r.found.length > 0 };
   }
 
   /**
@@ -208,10 +220,10 @@ export class SubmissionManager {
     const fieldAttribution: FieldAttribution = {};
     const fields: Record<string, unknown> = {};
 
-    // If initial fields provided, record actor attribution
+    // If initial fields provided, record actor attribution (redacting PII #13)
     if (request.initialFields) {
       Object.entries(request.initialFields).forEach(([key, value]) => {
-        fields[key] = value;
+        fields[key] = this.redactField(value).value;
         fieldAttribution[key] = request.actor;
       });
     }
@@ -342,11 +354,14 @@ export class SubmissionManager {
       newValue: unknown;
     }> = [];
 
+    const redactedFields: string[] = [];
     Object.entries(request.fields).forEach(([fieldPath, value]) => {
+      const { value: newValue, redacted } = this.redactField(value);
+      if (redacted) redactedFields.push(fieldPath);
       const oldValue = submission.fields[fieldPath];
-      submission.fields[fieldPath] = value;
+      submission.fields[fieldPath] = newValue;
       submission.fieldAttribution[fieldPath] = request.actor;
-      fieldUpdates.push({ fieldPath, oldValue, newValue: value });
+      fieldUpdates.push({ fieldPath, oldValue, newValue });
     });
 
     // Update metadata
@@ -379,6 +394,7 @@ export class SubmissionManager {
       state: submission.state,
       payload: {
         diffs,
+        ...(redactedFields.length > 0 ? { redactedFields } : {}),
       },
     };
 
