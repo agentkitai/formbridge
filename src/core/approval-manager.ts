@@ -83,6 +83,16 @@ export interface WebhookNotifier {
   notifyReviewers(notification: ReviewerNotification): Promise<void>;
 }
 
+/**
+ * Optional delegate that routes the approval gate to an external gateway
+ * (AgentGate) when configured (#12). Best-effort: local reviewer notification
+ * remains the fallback, so a disabled/unreachable delegate never blocks review.
+ */
+export interface ApprovalDelegate {
+  enabled(): boolean;
+  delegate(notification: ReviewerNotification): Promise<{ requestId: string } | null>;
+}
+
 export interface ApproveRequest {
   submissionId: string;
   resumeToken: string;
@@ -121,7 +131,8 @@ export class ApprovalManager {
   constructor(
     private store: SubmissionStore,
     private eventEmitter: EventEmitter,
-    private webhookNotifier?: WebhookNotifier
+    private webhookNotifier?: WebhookNotifier,
+    private approvalDelegate?: ApprovalDelegate
   ) {}
 
   /**
@@ -361,11 +372,6 @@ export class ApprovalManager {
     reviewerIds: string[],
     reviewUrl?: string
   ): Promise<void> {
-    if (!this.webhookNotifier) {
-      // Webhook notifier not configured, skip notification
-      return;
-    }
-
     const notification: ReviewerNotification = {
       submissionId: submission.id,
       intakeId: submission.intakeId,
@@ -376,6 +382,21 @@ export class ApprovalManager {
       reviewUrl,
     };
 
+    // Delegate the gate to AgentGate when configured (#12). Best-effort — it
+    // never throws into the review flow, and the local webhook notification
+    // below remains the fallback (and runs regardless).
+    if (this.approvalDelegate?.enabled()) {
+      try {
+        await this.approvalDelegate.delegate(notification);
+      } catch {
+        // swallow — delegation is best-effort; local notification still fires
+      }
+    }
+
+    if (!this.webhookNotifier) {
+      // Webhook notifier not configured, skip local notification
+      return;
+    }
     await this.webhookNotifier.notifyReviewers(notification);
   }
 }

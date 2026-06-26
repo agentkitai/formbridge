@@ -34,6 +34,7 @@ import {
   InvalidResumeTokenError,
 } from './core/submission-manager.js';
 import { ApprovalManager } from './core/approval-manager.js';
+import { approvalDelegateFromEnv } from './core/agentgate-delegate.js';
 import { InMemoryEventStore } from './core/event-store.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
@@ -389,7 +390,9 @@ export function createFormBridgeAppWithIntakes(
   // Webhook notifier for approval reviewer notifications
   const reviewerNotificationUrl = process.env['FORMBRIDGE_REVIEWER_WEBHOOK_URL'];
   const webhookNotifier = new WebhookNotifierImpl(webhookManager, reviewerNotificationUrl);
-  const approvalManager = new ApprovalManager(store, emitter, webhookNotifier);
+  // Optionally delegate the approval gate to AgentGate (#12); undefined when
+  // FORMBRIDGE_AGENTGATE_URL/API_KEY are unset → local approval flow, unchanged.
+  const approvalManager = new ApprovalManager(store, emitter, webhookNotifier, approvalDelegateFromEnv());
 
   // Submission TTL expiry scheduler (checks every 60s)
   const expiryScheduler = new ExpiryScheduler(manager);
