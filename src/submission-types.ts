@@ -121,6 +121,13 @@ export interface Submission {
   fieldAttribution: FieldAttribution;
 
   /**
+   * Field-level confidence (#16) — per-field score in [0,1] an agent reports for
+   * the value it filled, so reviewers can prioritize low-confidence fields.
+   * Sparse: only set for fields the writer scored.
+   */
+  fieldConfidence?: Record<string, number>;
+
+  /**
    * Actor who created this submission
    */
   createdBy: Actor;
