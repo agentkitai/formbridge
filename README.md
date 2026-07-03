@@ -222,7 +222,7 @@ npx @agentkitai/formbridge-create --name my-intake --schema zod --interface http
 ## Features
 
 ### Core
-- **Submission State Machine** — `draft → submitted → approved → delivered` with configurable transitions
+- **Submission State Machine** — `draft → in_progress → submitted → finalized` with configurable transitions
 - **Field Attribution** — Every field tracks which actor (agent, human, system) set it and when
 - **Resume Tokens** — Secure, rotating tokens for handoff URLs (rotated on every state change)
 - **Idempotent Submissions** — Duplicate requests with the same key return the existing submission
@@ -260,28 +260,38 @@ npx @agentkitai/formbridge-create --name my-intake --schema zod --interface http
 | `GET` | `/intake/:id/schema` | Get intake schema |
 | `POST` | `/intake/:id/submissions` | Create submission |
 | `GET` | `/intake/:id/submissions/:subId` | Get submission |
-| `PATCH` | `/intake/:id/submissions/:subId/fields` | Update fields |
+| `PATCH` | `/intake/:id/submissions/:subId` | Update fields |
 | `POST` | `/intake/:id/submissions/:subId/submit` | Submit |
-| `GET` | `/intake/:id/submissions/:subId/events` | Get event stream |
-| `POST` | `/intake/:id/submissions/:subId/approve` | Approve submission |
-| `POST` | `/intake/:id/submissions/:subId/reject` | Reject submission |
+| `GET` | `/submissions/:subId/events` | Get event stream |
+| `POST` | `/submissions/:subId/approve` | Approve submission |
+| `POST` | `/submissions/:subId/reject` | Reject submission |
 | `POST` | `/intake/:id/submissions/:subId/uploads` | Request file upload URL |
-| `POST` | `/intake/:id/submissions/:subId/uploads/:uploadId/verify` | Verify file upload |
-| `GET` | `/webhooks/deliveries` | List webhook deliveries |
-| `GET` | `/analytics` | Submission analytics |
+| `POST` | `/intake/:id/submissions/:subId/uploads/:uploadId/confirm` | Confirm file upload |
+| `GET` | `/submissions/:subId/deliveries` | List webhook deliveries for a submission |
+| `GET` | `/webhooks/deliveries/:deliveryId` | Get a single webhook delivery |
+| `GET` | `/analytics/summary` | Submission analytics summary |
+| `GET` | `/analytics/volume` | Submission volume over time |
+| `GET` | `/analytics/funnel` | Submission funnel by state |
+| `GET` | `/analytics/intakes` | Per-intake metrics |
 
 ### Submission States
 
 ```
-draft → submitted → approved → delivered
-                  ↘ rejected
+draft → in_progress → submitted → finalized
+          │  ↘ awaiting_upload
+          ↘ needs_review → approved → submitted/finalized
+                        ↘ rejected
 ```
 
-- **draft** — Being filled by agent and/or human
+- **draft** — Newly created, being filled by agent and/or human
+- **in_progress** — Fields are being set
+- **awaiting_upload** — Waiting for a file upload to complete
 - **submitted** — All required fields complete, pending review (or auto-approved)
-- **approved** — Passed approval gates, queued for delivery
-- **rejected** — Rejected by reviewer
-- **delivered** — Webhook successfully delivered to destination
+- **needs_review** — Paused at an approval gate awaiting a reviewer decision
+- **approved** — Passed approval gates
+- **rejected** — Rejected by reviewer (terminal)
+- **finalized** — Completed and delivered to destination (terminal)
+- **cancelled** / **expired** — Terminal states for cancelled or TTL-expired submissions
 
 ## Storage Backends
 

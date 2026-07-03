@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Build
 npm run build                    # Build root package (tsc)
-npm run build --workspaces       # Build all 6 workspace packages
+npm run build --workspaces       # Build all 7 workspace packages
 
 # Test (root — vitest, 1,427 tests across 59 files)
 npm test                         # Watch mode
@@ -23,14 +23,14 @@ npm run typecheck                # tsc --noEmit
 npm run lint                     # eslint src/
 
 # Dev server (HTTP API on port 3000)
-npx tsx src/test-server.ts
+npx tsx tests/test-server.ts
 ```
 
 ## Architecture
 
 FormBridge is a **mixed-mode agent-human form submission system**. AI agents create submissions, fill fields they know, and hand off to humans via resume URLs to complete the rest — with field-level attribution tracking.
 
-**Monorepo** using npm workspaces with 6 packages under `packages/` and the core `@agentkitai/formbridge-mcp-server` at root (`src/`).
+**Monorepo** using npm workspaces with 7 packages under `packages/` and the core `@agentkitai/formbridge-mcp-server` at root (`src/`).
 
 ### Core Backend (`src/`)
 

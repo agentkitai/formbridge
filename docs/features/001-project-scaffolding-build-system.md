@@ -25,7 +25,7 @@
 
 ## Summary
 
-Feature 001 initializes the FormBridge monorepo from scratch with a complete development environment. It establishes npm workspaces containing four packages (`@agentkitai/formbridge-core`, `@agentkitai/formbridge-react`, `@agentkitai/formbridge-mcp`, `@agentkitai/formbridge-schema-normalizer`), configures TypeScript in strict mode targeting ES2022, sets up tsup for ESM bundling with declaration files, configures Vitest with V8 coverage at 80% thresholds, and installs ESLint and Prettier for code quality. This foundation enables all subsequent features to build on a consistent, type-safe, tested codebase.
+Feature 001 initializes the FormBridge monorepo from scratch with a complete development environment. It establishes the core `@agentkitai/formbridge-mcp-server` package at the repo root plus npm workspaces containing the `@agentkitai/formbridge-shared`, `-form-renderer`, `-schema-normalizer`, `-admin-dashboard`, `-create`, `-demo`, and `-templates` packages, configures TypeScript in strict mode targeting ES2022, sets up tsup for ESM bundling with declaration files, configures Vitest with V8 coverage at 80% thresholds, and installs ESLint and Prettier for code quality. This foundation enables all subsequent features to build on a consistent, type-safe, tested codebase.
 
 ## Dependencies
 

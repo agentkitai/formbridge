@@ -3,7 +3,7 @@ services:
     environment:
       - NODE_ENV=production
       - FORMBRIDGE_AUTH_ENABLED=true
-      - LOG_FORMAT=json
+      - FORMBRIDGE_LOG_FORMAT=json
       - FORMBRIDGE_API_KEY_FILE=/run/secrets/api_key
       - FORMBRIDGE_WEBHOOK_SECRET_FILE=/run/secrets/webhook_secret
     secrets:

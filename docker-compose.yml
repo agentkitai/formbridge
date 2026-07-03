@@ -6,8 +6,9 @@ services:
     environment:
       - NODE_ENV=development
       - FORMBRIDGE_AUTH_ENABLED=false
-      - LOG_FORMAT=pretty
-      - DATABASE_PATH=/app/data/formbridge.db
+      - FORMBRIDGE_LOG_FORMAT=pretty
+      - FORMBRIDGE_STORAGE=sqlite
+      - SQLITE_PATH=/app/data/formbridge.db
     volumes:
       - formbridge-data:/app/data
 
