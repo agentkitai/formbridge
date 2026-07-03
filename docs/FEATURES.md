@@ -136,7 +136,7 @@ Build the foundational SDK: project scaffolding, schema normalization, Intake Co
 
 **Description**
 
-Initialize the FormBridge monorepo with TypeScript configuration, package structure (@agentkitai/formbridge-core, @agentkitai/formbridge-react, @agentkitai/formbridge-mcp), build system (tsup or unbuild), test framework (Vitest), linting (ESLint + Prettier), and package.json scaffolding. Establish the foundational project architecture that all other features build upon.
+Initialize the FormBridge monorepo with TypeScript configuration, package structure (the core `@agentkitai/formbridge-mcp-server` at root plus the `@agentkitai/formbridge-shared`, `-form-renderer`, `-schema-normalizer`, `-admin-dashboard`, `-create`, `-demo`, and `-templates` workspace packages), build system (tsup or unbuild), test framework (Vitest), linting (ESLint + Prettier), and package.json scaffolding. Establish the foundational project architecture that all other features build upon.
 
 **Rationale**
 
@@ -149,7 +149,7 @@ Nothing can be built without project infrastructure. The entire codebase is gree
 
 **Acceptance Criteria**
 
-- [x] Monorepo structure exists with @agentkitai/formbridge-core, @agentkitai/formbridge-react, and @agentkitai/formbridge-mcp packages
+- [x] Monorepo structure exists with the root `@agentkitai/formbridge-mcp-server` package plus the `@agentkitai/formbridge-shared`, `-form-renderer`, `-schema-normalizer`, `-admin-dashboard`, `-create`, `-demo`, and `-templates` workspace packages
 - [x] TypeScript compiles successfully across all packages with strict mode enabled
 - [x] Vitest runs and reports results for placeholder test files
 - [x] ESLint and Prettier are configured and pass on all source files
@@ -214,7 +214,7 @@ The "define once, use everywhere" promise requires a schema normalization layer.
 
 **Description**
 
-Core Intake Contract runtime: submission state machine (draft, validating, accepted, rejected, needs_review, approved, forwarded) with validation engine producing structured, typed errors categorized by type (missing, invalid, conflict, needs_approval).
+Core Intake Contract runtime: submission state machine (draft, in_progress, awaiting_upload, submitted, needs_review, approved, rejected, finalized, cancelled, expired) with validation engine producing structured, typed errors categorized by type (missing, invalid, conflict, needs_approval).
 
 **Rationale**
 
@@ -751,7 +751,7 @@ Bridge between internal development and community adoption.
 - [x] Provenance attestation
 - [x] Conventional commit changelog
 - [x] Semver enforcement
-- [x] @formbridge scope
+- [x] @agentkitai scope
 - [x] Package size tracking
 - [x] Integration tests against real MCP/HTTP
 

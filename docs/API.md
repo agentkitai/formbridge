@@ -41,7 +41,7 @@ Creates a new FormBridge MCP server instance.
 
 **Example:**
 ```typescript
-import { FormBridgeMCPServer } from '@agentkitai/formbridge-mcp-server-sdk';
+import { FormBridgeMCPServer } from '@agentkitai/formbridge-mcp-server';
 
 const server = new FormBridgeMCPServer({
   name: 'my-intake-server',
@@ -270,22 +270,40 @@ const destination: Destination = {
 
 #### SubmissionState
 
-Enumeration of submission lifecycle states.
+Union of submission lifecycle states. `SubmissionState` is a TypeScript union type
+(not an `enum`); a companion `SubmissionState` const object exposes the same values
+as named constants (e.g. `SubmissionState.DRAFT`, `SubmissionState.COMPLETED`). It
+covers both the core form lifecycle states and the MCP-session / upload-negotiation
+states.
 
 ```typescript
-enum SubmissionState {
-  CREATED = 'created',               // Initial state
-  VALIDATING = 'validating',         // Being validated
-  INVALID = 'invalid',               // Validation failed
-  VALID = 'valid',                   // Validation passed
-  PENDING_APPROVAL = 'pending_approval', // Awaiting approval
-  UPLOADING = 'uploading',           // File upload in progress
-  SUBMITTING = 'submitting',         // Being processed
-  COMPLETED = 'completed',           // Successfully completed
-  FAILED = 'failed',                 // Processing failed
-  CANCELLED = 'cancelled',           // Submission cancelled
-  EXPIRED = 'expired'                // Submission expired
-}
+// Core submission lifecycle states (form workflow)
+type CoreSubmissionState =
+  | 'draft'            // Newly created, being filled
+  | 'in_progress'      // Fields are being set
+  | 'awaiting_input'   // Waiting for additional field input
+  | 'awaiting_upload'  // Waiting for a file upload to complete
+  | 'submitted'        // All required fields complete, pending review
+  | 'needs_review'     // Paused at an approval gate
+  | 'approved'         // Passed approval gates
+  | 'rejected'         // Rejected by reviewer (terminal)
+  | 'finalized'        // Completed and delivered (terminal)
+  | 'cancelled'        // Submission cancelled (terminal)
+  | 'expired';         // Submission expired (terminal)
+
+// MCP session / upload negotiation states
+type MCPSessionState =
+  | 'created'
+  | 'validating'
+  | 'invalid'
+  | 'valid'
+  | 'uploading'
+  | 'submitting'
+  | 'completed'
+  | 'failed'
+  | 'pending_approval';
+
+type SubmissionState = CoreSubmissionState | MCPSessionState;
 ```
 
 #### IntakeErrorType
@@ -600,7 +618,7 @@ function generateToolsFromIntake(
 
 **Example:**
 ```typescript
-import { generateToolsFromIntake } from '@agentkitai/formbridge-mcp-server-sdk';
+import { generateToolsFromIntake } from '@agentkitai/formbridge-mcp-server';
 
 const tools = generateToolsFromIntake(vendorIntake, {
   includeOptionalFields: true,
@@ -632,7 +650,7 @@ function parseToolName(toolName: string): {
 
 **Example:**
 ```typescript
-import { parseToolName } from '@agentkitai/formbridge-mcp-server-sdk';
+import { parseToolName } from '@agentkitai/formbridge-mcp-server';
 
 const parsed = parseToolName('vendor_onboarding__create');
 if (parsed) {
@@ -662,7 +680,7 @@ function validateSubmission(
 
 **Example:**
 ```typescript
-import { validateSubmission } from '@agentkitai/formbridge-mcp-server-sdk';
+import { validateSubmission } from '@agentkitai/formbridge-mcp-server';
 
 const result = validateSubmission(contactSchema, {
   name: 'John Doe',
@@ -695,7 +713,7 @@ function validatePartialSubmission(
 
 **Example:**
 ```typescript
-import { validatePartialSubmission } from '@agentkitai/formbridge-mcp-server-sdk';
+import { validatePartialSubmission } from '@agentkitai/formbridge-mcp-server';
 
 // Validate partial data (some fields missing)
 const result = validatePartialSubmission(contactSchema, {
@@ -736,7 +754,7 @@ function mapToIntakeError(
 
 **Example:**
 ```typescript
-import { mapToIntakeError } from '@agentkitai/formbridge-mcp-server-sdk';
+import { mapToIntakeError } from '@agentkitai/formbridge-mcp-server';
 
 const validationResult = validateSubmission(schema, data);
 if (!validationResult.success) {
@@ -779,7 +797,7 @@ function convertZodToJsonSchema(
 
 **Example:**
 ```typescript
-import { convertZodToJsonSchema } from '@agentkitai/formbridge-mcp-server-sdk';
+import { convertZodToJsonSchema } from '@agentkitai/formbridge-mcp-server';
 import { z } from 'zod';
 
 const zodSchema = z.object({
@@ -832,7 +850,7 @@ function createStdioTransport(options?: {
 
 **Example:**
 ```typescript
-import { createStdioTransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { createStdioTransport } from '@agentkitai/formbridge-mcp-server';
 
 const transport = createStdioTransport();
 await server.getServer().connect(transport);
@@ -862,7 +880,7 @@ function createConfiguredStdioTransport(options?: {
 
 **Example:**
 ```typescript
-import { createConfiguredStdioTransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { createConfiguredStdioTransport } from '@agentkitai/formbridge-mcp-server';
 
 const transport = createConfiguredStdioTransport({
   onError: (error) => console.error('Transport error:', error),
@@ -903,7 +921,7 @@ function createSSETransport(
 
 **Example:**
 ```typescript
-import { createSSETransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { createSSETransport } from '@agentkitai/formbridge-mcp-server';
 import { createServer } from 'node:http';
 
 const server = createServer((req, res) => {
@@ -939,7 +957,7 @@ function handleSSEConnection(
 
 **Example:**
 ```typescript
-import { handleSSEConnection } from '@agentkitai/formbridge-mcp-server-sdk';
+import { handleSSEConnection } from '@agentkitai/formbridge-mcp-server';
 
 const server = createServer(async (req, res) => {
   if (req.url === '/sse' && req.method === 'GET') {
@@ -972,7 +990,7 @@ function handleSSEMessage(
 
 **Example:**
 ```typescript
-import { handleSSEMessage } from '@agentkitai/formbridge-mcp-server-sdk';
+import { handleSSEMessage } from '@agentkitai/formbridge-mcp-server';
 
 // Store transports by session ID
 const transports = new Map<string, SSEServerTransport>();
@@ -1002,7 +1020,7 @@ function isIntakeDefinition(obj: unknown): obj is IntakeDefinition
 
 **Example:**
 ```typescript
-import { isIntakeDefinition } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isIntakeDefinition } from '@agentkitai/formbridge-mcp-server';
 
 if (isIntakeDefinition(maybeIntake)) {
   server.registerIntake(maybeIntake);
@@ -1019,7 +1037,7 @@ function isIntakeError(response: SubmissionResponse): response is IntakeError
 
 **Example:**
 ```typescript
-import { isIntakeError } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isIntakeError } from '@agentkitai/formbridge-mcp-server';
 
 if (isIntakeError(response)) {
   console.error('Submission failed:', response.message);
@@ -1041,7 +1059,7 @@ function isSubmissionSuccess(
 
 **Example:**
 ```typescript
-import { isSubmissionSuccess } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isSubmissionSuccess } from '@agentkitai/formbridge-mcp-server';
 
 if (isSubmissionSuccess(response)) {
   console.log('Submission successful!');
@@ -1062,7 +1080,7 @@ function isStdioTransport(
 
 **Example:**
 ```typescript
-import { isStdioTransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isStdioTransport } from '@agentkitai/formbridge-mcp-server';
 
 if (isStdioTransport(config.transport)) {
   console.log('Using stdio transport');
@@ -1081,7 +1099,7 @@ function isSSETransport(
 
 **Example:**
 ```typescript
-import { isSSETransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isSSETransport } from '@agentkitai/formbridge-mcp-server';
 
 if (isSSETransport(config.transport)) {
   console.log('Using SSE transport on port', config.transport.port);
@@ -1100,7 +1118,7 @@ function isStdioServerTransport(
 
 **Example:**
 ```typescript
-import { isStdioServerTransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isStdioServerTransport } from '@agentkitai/formbridge-mcp-server';
 
 if (isStdioServerTransport(transport)) {
   console.log('Transport is stdio');
@@ -1119,7 +1137,7 @@ function isSSEServerTransport(
 
 **Example:**
 ```typescript
-import { isSSEServerTransport } from '@agentkitai/formbridge-mcp-server-sdk';
+import { isSSEServerTransport } from '@agentkitai/formbridge-mcp-server';
 
 if (isSSEServerTransport(transport)) {
   console.log('Session ID:', transport.sessionId);
@@ -1141,7 +1159,7 @@ import {
   createStdioTransport,
   isIntakeError,
   isSubmissionSuccess
-} from '@agentkitai/formbridge-mcp-server-sdk';
+} from '@agentkitai/formbridge-mcp-server';
 
 // Define intake schema
 const contactSchema = z.object({
