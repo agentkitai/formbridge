@@ -489,8 +489,10 @@ export class JSONSchemaParser implements Parser<JSONSchema> {
       );
     }
 
-    // Recursively parse item schema
-    const items = this.parseField(schema.items, false);
+    // Recursively parse item schema. A non-optional element type is a required
+    // member, matching the ZodParser convention (`z.array(z.string())` → item
+    // required) so IR round-trips between the two parsers stay consistent.
+    const items = this.parseField(schema.items, true);
 
     // Parse array constraints
     const constraints: ArrayConstraints = {};
