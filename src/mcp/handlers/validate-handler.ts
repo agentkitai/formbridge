@@ -1,47 +1,39 @@
 /**
- * MCP Validate Handler — validates a submission without submitting.
+ * MCP Validate Handler — read-only validation via the shared SubmissionManager.
+ * Does NOT mutate state, rotate the resume token, or record an event.
  */
 
 import { z } from 'zod';
-import type { IntakeDefinition } from '../../schemas/intake-schema.js';
-import type { SubmissionResponse } from '../../types/intake-contract.js';
-import { SubmissionState } from '../../types/intake-contract.js';
-import { validateSubmission } from '../../validation/validator.js';
-import { mapToIntakeError } from '../../validation/error-mapper.js';
-import type { MCPSessionStore } from '../submission-store.js';
-import { lookupEntry, isError } from '../response-builder.js';
-import { SubmissionId } from '../../types/branded.js';
+import type { IntakeDefinition, IntakeError } from '../../types/intake-contract.js';
+import { lookupSubmission, isError, type MCPHandlerServices } from '../response-builder.js';
 
 const ValidateArgsSchema = z.object({
   resumeToken: z.string(),
+  actor: z.unknown().optional(),
 });
 
 export async function handleValidate(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
-  store: MCPSessionStore
-): Promise<SubmissionResponse> {
+  services: MCPHandlerServices
+): Promise<Record<string, unknown> | IntakeError> {
   const { resumeToken } = ValidateArgsSchema.parse(args);
 
-  const result = lookupEntry(store, resumeToken, intake);
-  if (isError(result)) return result;
-  const entry = result;
+  const submission = await lookupSubmission(services.manager, resumeToken, intake);
+  if (isError(submission)) return submission;
 
-  // Validate complete submission
-  const validationResult = validateSubmission(intake.schema, entry.data);
-  if (!validationResult.success) {
-    const error = mapToIntakeError(validationResult.error, { resumeToken, includeTimestamp: true });
-    store.update(resumeToken, { state: SubmissionState.INVALID });
-    return error;
-  }
-
-  // Update state to valid
-  store.update(resumeToken, { state: SubmissionState.VALID });
+  const result = await services.manager.validate(submission.id);
 
   return {
-    state: SubmissionState.VALID,
-    submissionId: SubmissionId(entry.submissionId),
-    message: 'Submission is valid and ready to submit',
+    ok: result.ok,
+    submissionId: submission.id,
+    // Read-only: report the CURRENT state and the SAME resume token unchanged.
+    state: submission.state,
     resumeToken,
+    missingFields: result.missingFields,
+    errors: result.errors,
+    message: result.ok
+      ? 'Submission is valid and ready to submit'
+      : 'Submission is not yet valid',
   };
 }

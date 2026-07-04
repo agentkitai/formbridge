@@ -1,49 +1,42 @@
 /**
- * MCP Submit Handler — finalizes and submits a submission.
+ * MCP Submit Handler — submits via the shared SubmissionManager.
+ *
+ * When the intake has an approval gate, the manager transitions the submission
+ * to `needs_review` and returns a `needs_approval` IntakeError. That is surfaced
+ * as an INFORMATIVE (non-error) response — the agent should wait for a reviewer,
+ * not treat it as a transport failure.
  */
 
 import { z } from 'zod';
-import type { IntakeDefinition } from '../../schemas/intake-schema.js';
-import type { SubmissionResponse } from '../../types/intake-contract.js';
-import { SubmissionState } from '../../types/intake-contract.js';
-import { validateSubmission } from '../../validation/validator.js';
-import { mapToIntakeError } from '../../validation/error-mapper.js';
-import type { MCPSessionStore } from '../submission-store.js';
-import { lookupEntry, isError } from '../response-builder.js';
-import { SubmissionId } from '../../types/branded.js';
+import type { IntakeDefinition } from '../../types/intake-contract.js';
+import type { CreateSubmissionResponse, IntakeError } from '../../types/intake-contract.js';
+import { ResumeToken } from '../../types/branded.js';
+import { lookupSubmission, isError, resolveActor, type MCPHandlerServices } from '../response-builder.js';
 
 const SubmitArgsSchema = z.object({
   resumeToken: z.string(),
+  idempotencyKey: z.string().optional(),
+  actor: z.unknown().optional(),
 });
 
 export async function handleSubmit(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
-  store: MCPSessionStore
-): Promise<SubmissionResponse> {
-  const { resumeToken } = SubmitArgsSchema.parse(args);
+  services: MCPHandlerServices
+): Promise<CreateSubmissionResponse | IntakeError> {
+  const { resumeToken, idempotencyKey } = SubmitArgsSchema.parse(args);
+  const actor = resolveActor(args);
 
-  const result = lookupEntry(store, resumeToken, intake);
-  if (isError(result)) return result;
-  const entry = result;
+  const submission = await lookupSubmission(services.manager, resumeToken, intake);
+  if (isError(submission)) return submission;
 
-  // Validate complete submission
-  const validationResult = validateSubmission<Record<string, unknown>>(intake.schema as import('zod').ZodType<Record<string, unknown>>, entry.data);
-  if (!validationResult.success) {
-    const error = mapToIntakeError(validationResult.error, { resumeToken, includeTimestamp: true });
-    store.update(resumeToken, { state: SubmissionState.INVALID });
-    return error;
-  }
-
-  // Update state to submitting, then completed
-  store.update(resumeToken, { state: SubmissionState.SUBMITTING });
-  store.update(resumeToken, { state: SubmissionState.COMPLETED });
-
-  return {
-    state: SubmissionState.COMPLETED,
-    submissionId: SubmissionId(entry.submissionId),
-    message: 'Submission completed successfully',
-    data: validationResult.data,
-    timestamp: new Date().toISOString(),
-  };
+  // The manager result is returned as-is: on success it is `submitted`; when a
+  // gate applies it is the `needs_review` / `needs_approval` envelope. Both are
+  // wrapped by successResponse (non-error) by the server.
+  return services.manager.submit({
+    submissionId: submission.id,
+    resumeToken: ResumeToken(resumeToken),
+    idempotencyKey: idempotencyKey ?? `mcp_submit_${submission.id}`,
+    actor,
+  });
 }

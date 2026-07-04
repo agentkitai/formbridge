@@ -6,14 +6,17 @@
  */
 
 import { describe, it, expect, beforeEach } from "vitest";
+import { z } from "zod";
 import { SubmissionManager } from "../../src/core/submission-manager";
-import { createMcpServer, registerTools as _registerTools } from "../../src/mcp/tool-generator";
+import { FormBridgeMCPServer } from "../../src/mcp/server";
+import { IntakeRegistry } from "../../src/core/intake-registry";
 import type {
   Actor,
   IntakeEvent,
   CreateSubmissionRequest,
   SetFieldsRequest,
 } from "../../src/types/intake-contract";
+import type { IntakeDefinition } from "../../src/schemas/intake-schema";
 import type { Submission } from "../../src/submission-types";
 
 // Mock in-memory store for integration testing
@@ -68,7 +71,6 @@ describe("Agent-to-Human Handoff Integration", () => {
   let manager: SubmissionManager;
   let store: InMemorySubmissionStore;
   let eventEmitter: InMemoryEventEmitter;
-  let mcpServer: ReturnType<typeof createMcpServer>;
 
   const agentActor: Actor = {
     kind: "agent",
@@ -86,7 +88,6 @@ describe("Agent-to-Human Handoff Integration", () => {
     store = new InMemorySubmissionStore();
     eventEmitter = new InMemoryEventEmitter();
     manager = new SubmissionManager({ store, eventEmitter, baseUrl: "http://localhost:3000" });
-    mcpServer = createMcpServer(manager);
   });
 
   describe("Complete Agent Handoff Workflow", () => {
@@ -276,36 +277,44 @@ describe("Agent-to-Human Handoff Integration", () => {
   });
 
   describe("MCP Tool Integration", () => {
-    it("should expose handoffToHuman tool via MCP server", async () => {
-      // Create submission
-      const createRequest: CreateSubmissionRequest = {
+    // The MCP server is now a transport over the SAME shared SubmissionManager
+    // (injected services). Handoff is exposed as the per-intake `_handoff` tool
+    // and resolves the submission by its (rotating) resume token.
+    const vendorIntake: IntakeDefinition = {
+      id: "intake_vendor_onboarding",
+      version: "1.0.0",
+      name: "Vendor Onboarding",
+      schema: z.object({ companyName: z.string() }),
+      destination: { type: "webhook", name: "Vendor API", config: { url: "https://example.com/vendor" } },
+    };
+
+    function buildServer() {
+      const registry = new IntakeRegistry({ validateOnRegister: false, allowOverwrite: true });
+      const mcpServer = new FormBridgeMCPServer(
+        { name: "handoff-test", version: "1.0.0", transport: { type: "stdio" } },
+        { manager, registry }
+      );
+      mcpServer.registerIntake(vendorIntake);
+      return mcpServer;
+    }
+
+    const callTool = (server: FormBridgeMCPServer, name: string, args: Record<string, unknown>) =>
+      (server as any).handleToolCall(name, args) as Promise<{ content: Array<{ type: string; text: string }>; isError?: boolean }>;
+
+    it("should expose the _handoff tool via the MCP server", async () => {
+      const mcpServer = buildServer();
+      const createResponse = await manager.createSubmission({
         intakeId: "intake_vendor_onboarding",
         actor: agentActor,
-        initialFields: {
-          companyName: "MCP Test Corp",
-        },
-      };
-
-      const createResponse = await manager.createSubmission(createRequest);
+        initialFields: { companyName: "MCP Test Corp" },
+      });
       eventEmitter.clear();
 
-      // Call handoffToHuman tool via MCP server
-      const toolHandler = async (req: { name: string; arguments: Record<string, unknown> }) => {
-        const tools = (mcpServer as any)._registeredTools || {};
-        const tool = tools[req.name];
-        if (!tool?.handler) throw new Error(`Tool '${req.name}' not found`);
-        return tool.handler(req.arguments, {} as any);
-      };
-
-      const result = await toolHandler({
-        name: "handoffToHuman",
-        arguments: {
-          submissionId: createResponse.submissionId,
-          actor: agentActor,
-        },
+      const result = await callTool(mcpServer, "intake_vendor_onboarding_handoff", {
+        resumeToken: createResponse.resumeToken,
+        actor: agentActor,
       });
 
-      // Verify tool response
       expect(result.content).toBeDefined();
       expect(result.content[0].type).toBe("text");
 
@@ -316,45 +325,28 @@ describe("Agent-to-Human Handoff Integration", () => {
       expect(responseData.resumeUrl).toContain(createResponse.resumeToken);
       expect(responseData.message).toContain("Share this URL");
 
-      // Verify HANDOFF_LINK_ISSUED event was emitted
       const handoffEvents = eventEmitter.getEventsByType("handoff.link_issued");
       expect(handoffEvents).toHaveLength(1);
       expect(handoffEvents[0].payload?.url).toBe(responseData.resumeUrl);
     });
 
-    it("should use default system actor when actor not provided to MCP tool", async () => {
-      // Create submission
-      const createRequest: CreateSubmissionRequest = {
+    it("should use the default system actor when actor is not provided", async () => {
+      const mcpServer = buildServer();
+      const createResponse = await manager.createSubmission({
         intakeId: "intake_vendor_onboarding",
         actor: agentActor,
-        initialFields: {
-          companyName: "System Actor Test Corp",
-        },
-      };
-
-      const createResponse = await manager.createSubmission(createRequest);
+        initialFields: { companyName: "System Actor Test Corp" },
+      });
       eventEmitter.clear();
 
-      // Call handoffToHuman tool without providing actor
-      const toolHandler = async (req: { name: string; arguments: Record<string, unknown> }) => {
-        const tools = (mcpServer as any)._registeredTools || {};
-        const tool = tools[req.name];
-        if (!tool?.handler) throw new Error(`Tool '${req.name}' not found`);
-        return tool.handler(req.arguments, {} as any);
-      };
-      const result = await toolHandler({
-        name: "handoffToHuman",
-        arguments: {
-          submissionId: createResponse.submissionId,
-          // No actor provided
-        },
+      const result = await callTool(mcpServer, "intake_vendor_onboarding_handoff", {
+        resumeToken: createResponse.resumeToken,
+        // No actor provided
       });
 
-      // Verify tool response
       const responseData = JSON.parse(result.content[0].text);
       expect(responseData.ok).toBe(true);
 
-      // Verify system actor was used for handoff event
       const handoffEvents = eventEmitter.getEventsByType("handoff.link_issued");
       expect(handoffEvents).toHaveLength(1);
       expect(handoffEvents[0].actor).toEqual({
@@ -364,30 +356,19 @@ describe("Agent-to-Human Handoff Integration", () => {
       });
     });
 
-    it("should return error response when submission not found via MCP tool", async () => {
-      const toolHandler = async (req: { name: string; arguments: Record<string, unknown> }) => {
-        const tools = (mcpServer as any)._registeredTools || {};
-        const tool = tools[req.name];
-        if (!tool?.handler) throw new Error(`Tool '${req.name}' not found`);
-        return tool.handler(req.arguments, {} as any);
-      };
+    it("should return an invalid-token response for an unknown resume token", async () => {
+      const mcpServer = buildServer();
 
-      const result = await toolHandler({
-        name: "handoffToHuman",
-        arguments: {
-          submissionId: "sub_nonexistent",
-          actor: agentActor,
-        },
+      const result = await callTool(mcpServer, "intake_vendor_onboarding_handoff", {
+        resumeToken: "rtok_nonexistent",
+        actor: agentActor,
       });
 
-      // Verify error response
-      expect(result.content).toBeDefined();
-      expect(result.isError).toBe(true);
-
+      // Token-based lookup: an unknown token is an invalid-token response, not a
+      // thrown error (so isError is not set).
       const responseData = JSON.parse(result.content[0].text);
-      expect(responseData.ok).toBe(false);
-      expect(responseData.error).toContain("Submission not found");
-      expect(responseData.submissionId).toBe("sub_nonexistent");
+      expect(responseData.type).toBe("invalid");
+      expect(responseData.message).toBe("Invalid resume token");
     });
   });
 

@@ -59,11 +59,11 @@ draft → in_progress → submitted → finalized
   └→ cancelled/expired
 ```
 
-Terminal states: `rejected`, `finalized`, `cancelled`, `expired`. Resume tokens rotate on every state change.
+Terminal states: `rejected`, `finalized`, `cancelled`, `expired`. Resume tokens rotate on field mutations (`set`, `requestUpload`, a successful `confirmUpload`, and `finalize`) but NOT on `submit`, `approve`, or `reject`.
 
 ### MCP Server (`src/mcp/`)
 
-`FormBridgeMCPServer` wraps `@modelcontextprotocol/sdk`. Each registered `IntakeDefinition` auto-generates MCP tools via `tool-generator.ts`: `{intakeId}__create`, `{intakeId}__set`, `{intakeId}__validate`, `{intakeId}__submit`, plus optional `requestUpload`/`confirmUpload`. Supports Stdio and SSE transports.
+`FormBridgeMCPServer` is a thin transport over the SAME shared `SubmissionManager`/`ApprovalManager` lifecycle the HTTP API uses — there is no MCP-only store. Each registered `IntakeDefinition` (Zod) is converted to the contract intake (`toContractIntake`) and registered in the shared `IntakeRegistry`; `tool-generator.ts` auto-generates the per-intake tool surface with **single-underscore** names: `{intakeId}_create`, `{intakeId}_set`, `{intakeId}_validate` (read-only), `{intakeId}_submit`, `{intakeId}_requestUpload`, `{intakeId}_confirmUpload`, `{intakeId}_get`, `{intakeId}_handoff`, `{intakeId}_finalize`. Approval (`approve`/`reject`) is deliberately NOT exposed over MCP: separation of duties can't be enforced on an unauthenticated stdio transport (the submitting agent still holds a valid resume token and could self-approve), so approval is a human action over the authenticated HTTP/dashboard path. A gated `submit` still returns `needs_review`; a reviewer approves via HTTP. Every mutating tool takes an optional `actor` (defaults to a `{kind:'system', id:'mcp-server'}` actor); an `actor.kind` outside `agent|human|system` falls back to the default. MCP `create`/`set` validate provided fields against the intake schema before persisting (parity with the HTTP route). Resume tokens rotate on field mutations (`set`/`requestUpload`/successful `confirmUpload`/`finalize`) but NOT on `submit`; responses use the CORE state vocabulary (`draft`/`in_progress`/`submitted`/`needs_review`/`finalized`). Injected services enable true cross-transport shared state (an SSE mount on the shared/durable backend is the follow-on). Supports Stdio and SSE transports.
 
 ### Route Modules (`src/routes/`)
 

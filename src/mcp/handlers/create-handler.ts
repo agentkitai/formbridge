@@ -1,55 +1,41 @@
 /**
- * MCP Create Handler — creates a new submission session.
+ * MCP Create Handler — creates a new submission via the shared SubmissionManager.
  */
 
 import { z } from 'zod';
-import type { IntakeDefinition } from '../../schemas/intake-schema.js';
-import type { SubmissionResponse } from '../../types/intake-contract.js';
-import { validatePartialSubmission } from '../../validation/validator.js';
-import { mapToIntakeError } from '../../validation/error-mapper.js';
-import type { MCPSessionStore } from '../submission-store.js';
-import { SubmissionId } from '../../types/branded.js';
+import type { IntakeDefinition } from '../../types/intake-contract.js';
+import type { CreateSubmissionResponse, IntakeError } from '../../types/intake-contract.js';
+import { resolveActor, validatePartialFields, type MCPHandlerServices } from '../response-builder.js';
 
 const CreateArgsSchema = z.object({
-  data: z.record(z.unknown()).optional().default({}),
+  // `data` is the tool-schema name for initial fields; `initialFields` is
+  // accepted as an alias for callers that use the contract vocabulary.
+  data: z.record(z.unknown()).optional(),
+  initialFields: z.record(z.unknown()).optional(),
   idempotencyKey: z.string().optional(),
+  actor: z.unknown().optional(),
 });
 
 export async function handleCreate(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
-  store: MCPSessionStore
-): Promise<SubmissionResponse> {
-  const { data, idempotencyKey } = CreateArgsSchema.parse(args);
+  services: MCPHandlerServices
+): Promise<CreateSubmissionResponse | IntakeError> {
+  const { data, initialFields, idempotencyKey } = CreateArgsSchema.parse(args);
+  const actor = resolveActor(args);
+  const fields = initialFields ?? data;
 
-  // Check for existing submission with same idempotency key
-  if (idempotencyKey) {
-    const existing = store.getByIdempotencyKey(idempotencyKey);
-    if (existing) {
-      return {
-        state: existing.state,
-        submissionId: SubmissionId(existing.submissionId),
-        message: 'Submission already exists (idempotent)',
-        resumeToken: existing.resumeToken,
-      };
-    }
+  // Validate any initial fields against the intake schema before creating,
+  // mirroring the HTTP POST route. createSubmission does not validate.
+  if (fields && Object.keys(fields).length > 0) {
+    const validationError = validatePartialFields(services.validator, intake.schema, fields);
+    if (validationError) return validationError;
   }
 
-  // Validate initial data if provided (partial validation)
-  if (Object.keys(data).length > 0) {
-    const validationResult = validatePartialSubmission(intake.schema, data);
-    if (!validationResult.success) {
-      return mapToIntakeError(validationResult.error, { includeTimestamp: true });
-    }
-  }
-
-  // Create new submission entry
-  const entry = store.create(intake.id, data, idempotencyKey);
-
-  return {
-    state: entry.state,
-    submissionId: SubmissionId(entry.submissionId),
-    message: 'Submission created successfully',
-    resumeToken: entry.resumeToken,
-  };
+  return services.manager.createSubmission({
+    intakeId: intake.id,
+    actor,
+    initialFields: fields && Object.keys(fields).length > 0 ? fields : undefined,
+    idempotencyKey,
+  });
 }
