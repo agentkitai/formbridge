@@ -37,6 +37,43 @@ function testRoundTrip(
 }
 
 /**
+ * Recursively strip enum-value `label`s from a field.
+ *
+ * JSON Schema has no representation for enum-value labels, so a serialize ->
+ * reparse round-trip necessarily loses them (e.g. Zod nativeEnum keys). This is
+ * acceptable format lossiness, exactly like the `metadata.source` stripping
+ * below, so we normalize labels away before the structural comparison.
+ */
+function stripEnumLabels(field: any): any {
+  if (!field || typeof field !== 'object') {
+    return field;
+  }
+
+  const out: any = { ...field };
+
+  if (out.type === 'enum' && Array.isArray(out.values)) {
+    out.values = out.values.map((v: any) => {
+      const { label: _label, ...rest } = v;
+      return rest;
+    });
+  }
+
+  if (out.type === 'object' && out.properties) {
+    const properties: Record<string, unknown> = {};
+    for (const key of Object.keys(out.properties)) {
+      properties[key] = stripEnumLabels(out.properties[key]);
+    }
+    out.properties = properties;
+  }
+
+  if (out.type === 'array' && out.items) {
+    out.items = stripEnumLabels(out.items);
+  }
+
+  return out;
+}
+
+/**
  * Normalize IR for comparison by removing source-specific metadata
  */
 function normalizeIR(ir: IntakeSchema): IntakeSchema {
@@ -46,6 +83,10 @@ function normalizeIR(ir: IntakeSchema): IntakeSchema {
     const { source: _source, $schema: _$schema, openapi: _openapi, operationId: _operationId, path: _path, method: _method, tags: _tags, ...rest } = normalized.metadata;
     normalized.metadata = Object.keys(rest).length > 0 ? rest : undefined;
   }
+
+  // Enum-value labels are not representable in JSON Schema, so drop them
+  // (recursively) before comparison — same rationale as metadata.source above.
+  normalized.schema = stripEnumLabels(normalized.schema);
 
   return normalized;
 }

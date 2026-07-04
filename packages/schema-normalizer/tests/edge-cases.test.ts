@@ -84,10 +84,10 @@ describe('Edge Cases - Deeply Nested Structures', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
+    expect(ir.schema.type).toBe('object');
 
     // Navigate to the deepest level
-    let current: any = ir;
+    let current: any = ir.schema;
     for (let i = 1; i <= 10; i++) {
       expect(current.properties).toBeDefined();
       current = current.properties[`level${i}`];
@@ -119,10 +119,10 @@ describe('Edge Cases - Deeply Nested Structures', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
+    expect(ir.schema.type).toBe('array');
 
     // Navigate through nested arrays
-    let current: any = ir;
+    let current: any = ir.schema;
     for (let i = 0; i < 5; i++) {
       expect(current.type).toBe('array');
       expect(current.items).toBeDefined();
@@ -170,10 +170,10 @@ describe('Edge Cases - Deeply Nested Structures', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties.departments.type).toBe('array');
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties.departments.type).toBe('array');
 
-    const deptItems: any = ir.properties.departments.items;
+    const deptItems: any = ir.schema.properties.departments.items;
     expect(deptItems.type).toBe('object');
     expect(deptItems.properties.teams.type).toBe('array');
 
@@ -213,10 +213,10 @@ describe('Edge Cases - Deeply Nested Structures', () => {
     });
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('object');
+    expect(ir.schema.type).toBe('object');
 
     // Navigate to the deepest level
-    let current: any = ir;
+    let current: any = ir.schema;
     for (let i = 1; i <= 10; i++) {
       expect(current.properties).toBeDefined();
       current = current.properties[`level${i}`];
@@ -230,9 +230,9 @@ describe('Edge Cases - Deeply Nested Structures', () => {
     const schema = z.array(z.array(z.array(z.array(z.string()))));
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('array');
+    expect(ir.schema.type).toBe('array');
 
-    let current: any = ir;
+    let current: any = ir.schema;
     for (let i = 0; i < 4; i++) {
       expect(current.type).toBe('array');
       current = current.items;
@@ -254,9 +254,9 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('string');
-    expect(ir.constraints?.minLength).toBe(0);
-    expect(ir.constraints?.maxLength).toBe(100);
+    expect(ir.schema.type).toBe('string');
+    expect(ir.schema.constraints?.minLength).toBe(0);
+    expect(ir.schema.constraints?.maxLength).toBe(100);
   });
 
   it('should handle zero values for number constraints', () => {
@@ -267,9 +267,9 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
-    expect(ir.constraints?.minimum).toBe(0);
-    expect(ir.constraints?.maximum).toBe(0);
+    expect(ir.schema.type).toBe('number');
+    expect(ir.schema.constraints?.minimum).toBe(0);
+    expect(ir.schema.constraints?.maximum).toBe(0);
   });
 
   it('should handle negative number boundaries', () => {
@@ -280,9 +280,9 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('integer');
-    expect(ir.constraints?.minimum).toBe(-2147483648);
-    expect(ir.constraints?.maximum).toBe(-1);
+    expect(ir.schema.type).toBe('integer');
+    expect(ir.schema.constraints?.minimum).toBe(-2147483648);
+    expect(ir.schema.constraints?.maximum).toBe(-1);
   });
 
   it('should handle very large numbers', () => {
@@ -293,8 +293,8 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
-    expect(ir.constraints?.maximum).toBe(Number.MAX_SAFE_INTEGER);
+    expect(ir.schema.type).toBe('number');
+    expect(ir.schema.constraints?.maximum).toBe(Number.MAX_SAFE_INTEGER);
   });
 
   it('should handle fractional multipleOf values', () => {
@@ -304,8 +304,8 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
-    expect(ir.constraints?.multipleOf).toBe(0.01);
+    expect(ir.schema.type).toBe('number');
+    expect(ir.schema.constraints?.multipleOf).toBe(0.01);
   });
 
   it('should handle exclusive boundaries (draft-2020-12)', () => {
@@ -316,9 +316,9 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
-    expect(ir.constraints?.exclusiveMinimum).toBe(0);
-    expect(ir.constraints?.exclusiveMaximum).toBe(100);
+    expect(ir.schema.type).toBe('number');
+    expect(ir.schema.constraints?.exclusiveMinimum).toBe(0);
+    expect(ir.schema.constraints?.exclusiveMaximum).toBe(100);
   });
 
   it('should handle exclusive boundaries (draft-07 boolean style)', () => {
@@ -331,10 +331,10 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
+    expect(ir.schema.type).toBe('number');
     // In draft-07 boolean style, the parser should convert to exclusiveMinimum/Maximum
-    expect(ir.constraints?.exclusiveMinimum).toBe(0);
-    expect(ir.constraints?.exclusiveMaximum).toBe(100);
+    expect(ir.schema.constraints?.exclusiveMinimum).toBe(0);
+    expect(ir.schema.constraints?.exclusiveMaximum).toBe(100);
   });
 
   it('should handle array with zero minItems', () => {
@@ -346,9 +346,9 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.constraints?.minItems).toBe(0);
-    expect(ir.constraints?.maxItems).toBe(0);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.constraints?.minItems).toBe(0);
+    expect(ir.schema.constraints?.maxItems).toBe(0);
   });
 
   it('should handle very large array bounds', () => {
@@ -360,8 +360,8 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.constraints?.maxItems).toBe(10000);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.constraints?.maxItems).toBe(10000);
   });
 
   it('should handle regex pattern with special characters', () => {
@@ -371,8 +371,8 @@ describe('Edge Cases - Boundary Values', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('string');
-    expect(ir.constraints?.pattern).toBe('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
+    expect(ir.schema.type).toBe('string');
+    expect(ir.schema.constraints?.pattern).toBe('^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$');
   });
 });
 
@@ -393,14 +393,14 @@ describe('Edge Cases - Constraint Combinations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('string');
-    expect(ir.constraints?.minLength).toBe(5);
-    expect(ir.constraints?.maxLength).toBe(50);
-    expect(ir.constraints?.pattern).toBe('^[a-z]+$');
-    expect(ir.constraints?.format).toBe('email');
-    expect(ir.description).toBe('Email with constraints');
-    expect(ir.default).toBe('test@example.com');
-    expect(ir.examples).toEqual(['user@example.com', 'admin@example.com']);
+    expect(ir.schema.type).toBe('string');
+    expect(ir.schema.constraints?.minLength).toBe(5);
+    expect(ir.schema.constraints?.maxLength).toBe(50);
+    expect(ir.schema.constraints?.pattern).toBe('^[a-z]+$');
+    expect(ir.schema.constraints?.format).toBe('email');
+    expect(ir.schema.description).toBe('Email with constraints');
+    expect(ir.schema.default).toBe('test@example.com');
+    expect(ir.schema.examples).toEqual(['user@example.com', 'admin@example.com']);
   });
 
   it('should handle all number constraints together', () => {
@@ -417,12 +417,12 @@ describe('Edge Cases - Constraint Combinations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
+    expect(ir.schema.type).toBe('number');
     // Note: when both minimum and exclusiveMinimum are present, exclusiveMinimum takes precedence
-    expect(ir.constraints?.exclusiveMinimum).toBeDefined();
-    expect(ir.constraints?.exclusiveMaximum).toBeDefined();
-    expect(ir.constraints?.multipleOf).toBe(0.5);
-    expect(ir.description).toBe('Percentage value');
+    expect(ir.schema.constraints?.exclusiveMinimum).toBeDefined();
+    expect(ir.schema.constraints?.exclusiveMaximum).toBeDefined();
+    expect(ir.schema.constraints?.multipleOf).toBe(0.5);
+    expect(ir.schema.description).toBe('Percentage value');
   });
 
   it('should handle all array constraints together', () => {
@@ -442,14 +442,14 @@ describe('Edge Cases - Constraint Combinations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.constraints?.minItems).toBe(1);
-    expect(ir.constraints?.maxItems).toBe(10);
-    expect(ir.constraints?.uniqueItems).toBe(true);
-    expect(ir.description).toBe('List of unique tags');
-    expect(ir.items.type).toBe('string');
-    expect(ir.items.constraints?.minLength).toBe(1);
-    expect(ir.items.constraints?.maxLength).toBe(20);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.constraints?.minItems).toBe(1);
+    expect(ir.schema.constraints?.maxItems).toBe(10);
+    expect(ir.schema.constraints?.uniqueItems).toBe(true);
+    expect(ir.schema.description).toBe('List of unique tags');
+    expect(ir.schema.items.type).toBe('string');
+    expect(ir.schema.items.constraints?.minLength).toBe(1);
+    expect(ir.schema.items.constraints?.maxLength).toBe(20);
   });
 
   it('should handle nested constraints at multiple levels', () => {
@@ -492,9 +492,9 @@ describe('Edge Cases - Constraint Combinations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
+    expect(ir.schema.type).toBe('object');
 
-    const users: any = ir.properties.users;
+    const users: any = ir.schema.properties.users;
     expect(users.type).toBe('array');
     expect(users.constraints?.minItems).toBe(1);
     expect(users.constraints?.maxItems).toBe(100);
@@ -521,13 +521,13 @@ describe('Edge Cases - Constraint Combinations', () => {
       .default('test@example.com');
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('string');
-    expect(ir.constraints?.minLength).toBe(5);
-    expect(ir.constraints?.maxLength).toBe(50);
-    expect(ir.constraints?.pattern).toBeDefined();
-    expect(ir.constraints?.format).toBe('email');
-    expect(ir.description).toBe('Email with constraints');
-    expect(ir.default).toBe('test@example.com');
+    expect(ir.schema.type).toBe('string');
+    expect(ir.schema.constraints?.minLength).toBe(5);
+    expect(ir.schema.constraints?.maxLength).toBe(50);
+    expect(ir.schema.constraints?.pattern).toBeDefined();
+    expect(ir.schema.constraints?.format).toBe('email');
+    expect(ir.schema.description).toBe('Email with constraints');
+    expect(ir.schema.default).toBe('test@example.com');
   });
 
   it('should handle all Zod number constraints together', () => {
@@ -539,12 +539,12 @@ describe('Edge Cases - Constraint Combinations', () => {
       .default(50);
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('number');
-    expect(ir.constraints?.minimum).toBe(0);
-    expect(ir.constraints?.maximum).toBe(100);
-    expect(ir.constraints?.multipleOf).toBe(0.5);
-    expect(ir.description).toBe('Percentage');
-    expect(ir.default).toBe(50);
+    expect(ir.schema.type).toBe('number');
+    expect(ir.schema.constraints?.minimum).toBe(0);
+    expect(ir.schema.constraints?.maximum).toBe(100);
+    expect(ir.schema.constraints?.multipleOf).toBe(0.5);
+    expect(ir.schema.description).toBe('Percentage');
+    expect(ir.schema.default).toBe(50);
   });
 });
 
@@ -559,8 +559,8 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties).toEqual({});
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties).toEqual({});
   });
 
   it('should handle object with no properties defined', () => {
@@ -570,9 +570,9 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties).toEqual({});
-    expect(ir.additionalProperties).toBe(true);
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties).toEqual({});
+    expect(ir.schema.additionalProperties).toBe(true);
   });
 
   it('should handle minimal string schema', () => {
@@ -581,9 +581,9 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('string');
-    expect(ir.required).toBe(true);
-    expect(ir.constraints).toBeUndefined();
+    expect(ir.schema.type).toBe('string');
+    expect(ir.schema.required).toBe(true);
+    expect(ir.schema.constraints).toBeUndefined();
   });
 
   it('should handle minimal number schema', () => {
@@ -592,9 +592,9 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('number');
-    expect(ir.required).toBe(true);
-    expect(ir.constraints).toBeUndefined();
+    expect(ir.schema.type).toBe('number');
+    expect(ir.schema.required).toBe(true);
+    expect(ir.schema.constraints).toBeUndefined();
   });
 
   it('should handle minimal array schema', () => {
@@ -604,9 +604,9 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.items.type).toBe('string');
-    expect(ir.constraints).toBeUndefined();
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.items.type).toBe('string');
+    expect(ir.schema.constraints).toBeUndefined();
   });
 
   it('should handle empty enum array (edge case that might error)', () => {
@@ -621,8 +621,8 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     const schema = z.object({});
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties).toEqual({});
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties).toEqual({});
   });
 
   it('should handle object with single null field', () => {
@@ -634,8 +634,8 @@ describe('Edge Cases - Empty and Minimal Schemas', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties.nullField.type).toBe('null');
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties.nullField.type).toBe('null');
   });
 });
 
@@ -661,11 +661,11 @@ describe('Edge Cases - Optional/Required Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties.field1.required).toBe(false);
-    expect(ir.properties.field2.required).toBe(false);
-    expect(ir.properties.field3.required).toBe(false);
-    expect(ir.properties.field4.required).toBe(false);
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties.field1.required).toBe(false);
+    expect(ir.schema.properties.field2.required).toBe(false);
+    expect(ir.schema.properties.field3.required).toBe(false);
+    expect(ir.schema.properties.field4.required).toBe(false);
   });
 
   it('should handle all fields required', () => {
@@ -680,10 +680,10 @@ describe('Edge Cases - Optional/Required Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties.field1.required).toBe(true);
-    expect(ir.properties.field2.required).toBe(true);
-    expect(ir.properties.field3.required).toBe(true);
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties.field1.required).toBe(true);
+    expect(ir.schema.properties.field2.required).toBe(true);
+    expect(ir.schema.properties.field3.required).toBe(true);
   });
 
   it('should handle mixed required/optional at different nesting levels', () => {
@@ -713,10 +713,10 @@ describe('Edge Cases - Optional/Required Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.properties.required1.required).toBe(true);
-    expect(ir.properties.optional1.required).toBe(false);
+    expect(ir.schema.properties.required1.required).toBe(true);
+    expect(ir.schema.properties.optional1.required).toBe(false);
 
-    const nested: any = ir.properties.nested;
+    const nested: any = ir.schema.properties.nested;
     expect(nested.properties.required2.required).toBe(true);
     expect(nested.properties.optional2.required).toBe(false);
 
@@ -738,8 +738,8 @@ describe('Edge Cases - Optional/Required Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.properties.optionalArray.required).toBe(false);
-    expect(ir.properties.optionalArray.type).toBe('array');
+    expect(ir.schema.properties.optionalArray.required).toBe(false);
+    expect(ir.schema.properties.optionalArray.type).toBe('array');
   });
 
   it('should handle optional nested objects', () => {
@@ -758,8 +758,8 @@ describe('Edge Cases - Optional/Required Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.properties.optionalNested.required).toBe(false);
-    const nested: any = ir.properties.optionalNested;
+    expect(ir.schema.properties.optionalNested.required).toBe(false);
+    const nested: any = ir.schema.properties.optionalNested;
     expect(nested.properties.field.required).toBe(true);
   });
 
@@ -771,9 +771,9 @@ describe('Edge Cases - Optional/Required Variations', () => {
     });
 
     const ir = zodParser.parse(schema);
-    expect(ir.properties.field1.required).toBe(false);
-    expect(ir.properties.field2.required).toBe(false);
-    expect(ir.properties.field3.required).toBe(false);
+    expect(ir.schema.properties.field1.required).toBe(false);
+    expect(ir.schema.properties.field2.required).toBe(false);
+    expect(ir.schema.properties.field3.required).toBe(false);
   });
 
   it('should handle Zod mixed required/optional', () => {
@@ -785,10 +785,10 @@ describe('Edge Cases - Optional/Required Variations', () => {
     });
 
     const ir = zodParser.parse(schema);
-    expect(ir.properties.required1.required).toBe(true);
-    expect(ir.properties.optional1.required).toBe(false);
-    expect(ir.properties.required2.required).toBe(true);
-    expect(ir.properties.optional2.required).toBe(false);
+    expect(ir.schema.properties.required1.required).toBe(true);
+    expect(ir.schema.properties.optional1.required).toBe(false);
+    expect(ir.schema.properties.required2.required).toBe(true);
+    expect(ir.schema.properties.optional2.required).toBe(false);
   });
 
   it('should handle Zod nullable fields', () => {
@@ -798,9 +798,9 @@ describe('Edge Cases - Optional/Required Variations', () => {
     });
 
     const ir = zodParser.parse(schema);
-    expect(ir.properties.nullable1.nullable).toBe(true);
-    expect(ir.properties.nullableOptional.nullable).toBe(true);
-    expect(ir.properties.nullableOptional.required).toBe(false);
+    expect(ir.schema.properties.nullable1.nullable).toBe(true);
+    expect(ir.schema.properties.nullableOptional.nullable).toBe(true);
+    expect(ir.schema.properties.nullableOptional.required).toBe(false);
   });
 });
 
@@ -815,8 +815,8 @@ describe('Edge Cases - Unicode and Special Characters', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('string');
-    expect(ir.description).toBe('Field with Unicode: 你好世界 🌍 Привет мир');
+    expect(ir.schema.type).toBe('string');
+    expect(ir.schema.description).toBe('Field with Unicode: 你好世界 🌍 Привет мир');
   });
 
   it('should handle emoji in default values', () => {
@@ -827,8 +827,8 @@ describe('Edge Cases - Unicode and Special Characters', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.default).toBe('👍 Great!');
-    expect(ir.examples).toContain('😀 Happy');
+    expect(ir.schema.default).toBe('👍 Great!');
+    expect(ir.schema.examples).toContain('😀 Happy');
   });
 
   it('should handle international characters in enum values', () => {
@@ -838,10 +838,10 @@ describe('Edge Cases - Unicode and Special Characters', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('enum');
-    expect(ir.values).toHaveLength(6);
-    expect(ir.values.map(v => v.value)).toContain('中文');
-    expect(ir.values.map(v => v.value)).toContain('Русский');
+    expect(ir.schema.type).toBe('enum');
+    expect(ir.schema.values).toHaveLength(6);
+    expect(ir.schema.values.map(v => v.value)).toContain('中文');
+    expect(ir.schema.values.map(v => v.value)).toContain('Русский');
   });
 
   it('should handle special regex characters in patterns', () => {
@@ -852,7 +852,7 @@ describe('Edge Cases - Unicode and Special Characters', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.constraints?.pattern).toBe('^\\$[0-9]+\\.[0-9]{2}$');
+    expect(ir.schema.constraints?.pattern).toBe('^\\$[0-9]+\\.[0-9]{2}$');
   });
 
   it('should handle newlines and tabs in descriptions', () => {
@@ -862,7 +862,7 @@ describe('Edge Cases - Unicode and Special Characters', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.description).toBe('Line 1\nLine 2\n\tTabbed line');
+    expect(ir.schema.description).toBe('Line 1\nLine 2\n\tTabbed line');
   });
 
   it('should handle quotes in descriptions', () => {
@@ -872,14 +872,14 @@ describe('Edge Cases - Unicode and Special Characters', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.description).toBe('Field with "double quotes" and \'single quotes\'');
+    expect(ir.schema.description).toBe('Field with "double quotes" and \'single quotes\'');
   });
 
   it('should handle Zod with Unicode descriptions', () => {
     const schema = z.string().describe('Unicode: 日本語 🎌');
 
     const ir = zodParser.parse(schema);
-    expect(ir.description).toBe('Unicode: 日本語 🎌');
+    expect(ir.schema.description).toBe('Unicode: 日本語 🎌');
   });
 });
 
@@ -897,8 +897,8 @@ describe('Edge Cases - Format Variations', () => {
       };
 
       const ir = jsonSchemaParser.parse(schema);
-      expect(ir.type).toBe('string');
-      expect(ir.constraints?.format).toBe(format);
+      expect(ir.schema.type).toBe('string');
+      expect(ir.schema.constraints?.format).toBe(format);
     });
   });
 
@@ -912,10 +912,10 @@ describe('Edge Cases - Format Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.constraints?.format).toBe('email');
-    expect(ir.constraints?.minLength).toBe(5);
-    expect(ir.constraints?.maxLength).toBe(100);
-    expect(ir.constraints?.pattern).toBe('^[a-z]+@');
+    expect(ir.schema.constraints?.format).toBe('email');
+    expect(ir.schema.constraints?.minLength).toBe(5);
+    expect(ir.schema.constraints?.maxLength).toBe(100);
+    expect(ir.schema.constraints?.pattern).toBe('^[a-z]+@');
   });
 
   it('should handle custom/unknown formats', () => {
@@ -924,37 +924,37 @@ describe('Edge Cases - Format Variations', () => {
       format: 'custom-format',
     };
 
-    const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('string');
-    // Custom formats should be ignored or passed through
+    // 'custom-format' is not a member of the closed StringFormat union, so the
+    // (already-correct) parser rejects it rather than silently passing it through.
+    expect(() => jsonSchemaParser.parse(schema)).toThrow();
   });
 
   it('should handle Zod email format', () => {
     const schema = z.string().email();
 
     const ir = zodParser.parse(schema);
-    expect(ir.constraints?.format).toBe('email');
+    expect(ir.schema.constraints?.format).toBe('email');
   });
 
   it('should handle Zod url format', () => {
     const schema = z.string().url();
 
     const ir = zodParser.parse(schema);
-    expect(ir.constraints?.format).toBe('url');
+    expect(ir.schema.constraints?.format).toBe('url');
   });
 
   it('should handle Zod uuid format', () => {
     const schema = z.string().uuid();
 
     const ir = zodParser.parse(schema);
-    expect(ir.constraints?.format).toBe('uuid');
+    expect(ir.schema.constraints?.format).toBe('uuid');
   });
 
   it('should handle Zod datetime format', () => {
     const schema = z.string().datetime();
 
     const ir = zodParser.parse(schema);
-    expect(ir.constraints?.format).toBe('date-time');
+    expect(ir.schema.constraints?.format).toBe('date-time');
   });
 });
 
@@ -972,9 +972,9 @@ describe('Edge Cases - Array Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.items.type).toBe('enum');
-    expect(ir.constraints?.uniqueItems).toBe(true);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.items.type).toBe('enum');
+    expect(ir.schema.constraints?.uniqueItems).toBe(true);
   });
 
   it('should handle array of objects with constraints', () => {
@@ -994,12 +994,12 @@ describe('Edge Cases - Array Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.constraints?.minItems).toBe(1);
-    expect(ir.constraints?.maxItems).toBe(100);
-    expect(ir.constraints?.uniqueItems).toBe(false);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.constraints?.minItems).toBe(1);
+    expect(ir.schema.constraints?.maxItems).toBe(100);
+    expect(ir.schema.constraints?.uniqueItems).toBe(false);
 
-    const items: any = ir.items;
+    const items: any = ir.schema.items;
     expect(items.type).toBe('object');
     expect(items.properties.id.required).toBe(true);
   });
@@ -1022,8 +1022,8 @@ describe('Edge Cases - Array Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.constraints?.uniqueItems).toBe(true);
-    const items: any = ir.items;
+    expect(ir.schema.constraints?.uniqueItems).toBe(true);
+    const items: any = ir.schema.items;
     expect(items.type).toBe('object');
   });
 
@@ -1036,17 +1036,17 @@ describe('Edge Cases - Array Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.constraints?.minItems).toBe(5);
-    expect(ir.constraints?.maxItems).toBe(5);
+    expect(ir.schema.constraints?.minItems).toBe(5);
+    expect(ir.schema.constraints?.maxItems).toBe(5);
   });
 
   it('should handle Zod array with length constraint', () => {
     const schema = z.array(z.string()).min(1).max(10);
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('array');
-    expect(ir.constraints?.minItems).toBe(1);
-    expect(ir.constraints?.maxItems).toBe(10);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.constraints?.minItems).toBe(1);
+    expect(ir.schema.constraints?.maxItems).toBe(10);
   });
 
   it('should handle nested array of arrays', () => {
@@ -1062,9 +1062,9 @@ describe('Edge Cases - Array Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('array');
+    expect(ir.schema.type).toBe('array');
 
-    let current: any = ir.items;
+    let current: any = ir.schema.items;
     expect(current.type).toBe('array');
 
     current = current.items;
@@ -1083,9 +1083,9 @@ describe('Edge Cases - Enum Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('enum');
-    expect(ir.values).toHaveLength(1);
-    expect(ir.values[0].value).toBe('only-option');
+    expect(ir.schema.type).toBe('enum');
+    expect(ir.schema.values).toHaveLength(1);
+    expect(ir.schema.values[0].value).toBe('only-option');
   });
 
   it('should handle enum with mixed types', () => {
@@ -1094,12 +1094,14 @@ describe('Edge Cases - Enum Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('enum');
-    expect(ir.values).toHaveLength(4);
-    expect(ir.values.map(v => v.value)).toContain('string');
-    expect(ir.values.map(v => v.value)).toContain(123);
-    expect(ir.values.map(v => v.value)).toContain(true);
-    expect(ir.values.map(v => v.value)).toContain(null);
+    expect(ir.schema.type).toBe('enum');
+    expect(ir.schema.values).toHaveLength(4);
+    expect(ir.schema.values.map(v => v.value)).toContain('string');
+    expect(ir.schema.values.map(v => v.value)).toContain(123);
+    // EnumValue.value is typed `string | number`, so the parser stringifies
+    // boolean/null members (true -> 'true', null -> 'null').
+    expect(ir.schema.values.map(v => v.value)).toContain('true');
+    expect(ir.schema.values.map(v => v.value)).toContain('null');
   });
 
   it('should handle enum with very long list', () => {
@@ -1109,8 +1111,8 @@ describe('Edge Cases - Enum Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('enum');
-    expect(ir.values).toHaveLength(100);
+    expect(ir.schema.type).toBe('enum');
+    expect(ir.schema.values).toHaveLength(100);
   });
 
   it('should handle enum with duplicate values (should preserve all)', () => {
@@ -1119,9 +1121,9 @@ describe('Edge Cases - Enum Variations', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('enum');
+    expect(ir.schema.type).toBe('enum');
     // Duplicates might be preserved or deduplicated depending on implementation
-    expect(ir.values.length).toBeGreaterThanOrEqual(3);
+    expect(ir.schema.values.length).toBeGreaterThanOrEqual(3);
   });
 
   it('should handle Zod enum with numbers', () => {
@@ -1134,18 +1136,18 @@ describe('Edge Cases - Enum Variations', () => {
     const schema = z.nativeEnum(NumericEnum);
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('enum');
-    expect(ir.values.length).toBeGreaterThan(0);
+    expect(ir.schema.type).toBe('enum');
+    expect(ir.schema.values.length).toBeGreaterThan(0);
   });
 
   it('should handle Zod enum with strings', () => {
     const schema = z.enum(['small', 'medium', 'large', 'x-large']);
 
     const ir = zodParser.parse(schema);
-    expect(ir.type).toBe('enum');
-    expect(ir.values).toHaveLength(4);
-    expect(ir.values.map(v => v.value)).toContain('small');
-    expect(ir.values.map(v => v.value)).toContain('x-large');
+    expect(ir.schema.type).toBe('enum');
+    expect(ir.schema.values).toHaveLength(4);
+    expect(ir.schema.values.map(v => v.value)).toContain('small');
+    expect(ir.schema.values.map(v => v.value)).toContain('x-large');
   });
 });
 
@@ -1193,9 +1195,9 @@ describe('Edge Cases - OpenAPI Specific', () => {
     };
 
     const ir = openAPIParser.parse(doc, { operationId: 'deepNest' });
-    expect(ir.type).toBe('object');
+    expect(ir.schema.type).toBe('object');
 
-    const level1: any = ir.properties.level1;
+    const level1: any = ir.schema.properties.level1;
     expect(level1.type).toBe('object');
 
     const level2: any = level1.properties.level2;
@@ -1243,11 +1245,11 @@ describe('Edge Cases - OpenAPI Specific', () => {
     };
 
     const ir = openAPIParser.parse(doc, { operationId: 'createItems' });
-    expect(ir.type).toBe('array');
-    expect(ir.constraints?.minItems).toBe(1);
-    expect(ir.constraints?.maxItems).toBe(100);
+    expect(ir.schema.type).toBe('array');
+    expect(ir.schema.constraints?.minItems).toBe(1);
+    expect(ir.schema.constraints?.maxItems).toBe(100);
 
-    const items: any = ir.items;
+    const items: any = ir.schema.items;
     expect(items.type).toBe('object');
     expect(items.properties.tags.type).toBe('array');
   });
@@ -1282,7 +1284,7 @@ describe('Edge Cases - OpenAPI Specific', () => {
     };
 
     const ir = openAPIParser.parse(doc, { operationId: 'createUser' });
-    expect(ir.type).toBe('object');
+    expect(ir.schema.type).toBe('object');
     expect(ir.title).toBe('Create a new user');
     expect(ir.description).toBe('Creates a new user with the provided information');
     expect(ir.metadata?.operationId).toBe('createUser');
@@ -1343,11 +1345,11 @@ describe('Edge Cases - Complex Real-World Scenarios', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
-    expect(ir.properties.orderId.required).toBe(true);
-    expect(ir.properties.customer.type).toBe('object');
-    expect(ir.properties.items.type).toBe('array');
-    expect(ir.properties.status.type).toBe('enum');
+    expect(ir.schema.type).toBe('object');
+    expect(ir.schema.properties.orderId.required).toBe(true);
+    expect(ir.schema.properties.customer.type).toBe('object');
+    expect(ir.schema.properties.items.type).toBe('array');
+    expect(ir.schema.properties.status.type).toBe('enum');
   });
 
   it('should handle survey/form schema with conditional logic metadata', () => {
@@ -1388,9 +1390,9 @@ describe('Edge Cases - Complex Real-World Scenarios', () => {
     };
 
     const ir = jsonSchemaParser.parse(schema);
-    expect(ir.type).toBe('object');
+    expect(ir.schema.type).toBe('object');
 
-    const answers: any = ir.properties.answers;
+    const answers: any = ir.schema.properties.answers;
     expect(answers.type).toBe('array');
 
     const answerItem: any = answers.items;
