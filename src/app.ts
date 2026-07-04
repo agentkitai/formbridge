@@ -11,6 +11,7 @@ import { bodyLimit } from 'hono/body-limit';
 import { createHealthRouter } from './routes/health.js';
 import { createProbeRouter } from './routes/probes.js';
 import { createIntakeRouter } from './routes/intake.js';
+import { createIntakeRegistrationRouter } from './routes/intake-registration.js';
 import { createUploadRouter } from './routes/uploads.js';
 import { createHonoSubmissionRouter } from './routes/hono-submissions.js';
 import { createHonoEventRouter } from './routes/hono-events.js';
@@ -531,6 +532,18 @@ export function createFormBridgeAppWithIntakes(
   // Intake read permission for GET /intake/:id
   app.get('/intake/:id', requirePermission('intake:read'));
   app.get('/intake/:id/schema', requirePermission('intake:read'));
+
+  // Runtime intake registration (/intakes — plural, distinct from the singular
+  // /intake/* schema+submission routes). Auth first, then per-method permission:
+  // writes require intake:write (admin only), reads require intake:read. These
+  // register into the SAME `registry` the submission routes use, so a
+  // runtime-registered intake is immediately usable for POST /intake/:id/submissions.
+  app.use('/intakes', authMiddleware);
+  app.use('/intakes/*', authMiddleware);
+  app.post('/intakes', requirePermission('intake:write'));
+  app.put('/intakes/:id', requirePermission('intake:write'));
+  app.get('/intakes/:id', requirePermission('intake:read'));
+  app.route('/intakes', createIntakeRegistrationRouter(registry));
 
   // Submit route permission (inside submission router, under /intake/*)
   app.post('/intake/:intakeId/submissions/:submissionId/submit', requirePermission('submission:write'));

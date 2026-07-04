@@ -120,6 +120,7 @@ export { startMetricsServer } from './metrics.js';
 // =============================================================================
 
 export { createIntakeRouter } from './routes/intake.js';
+export { createIntakeRegistrationRouter } from './routes/intake-registration.js';
 export { createHonoSubmissionRouter } from './routes/hono-submissions.js';
 export { createHonoEventRouter } from './routes/hono-events.js';
 export { createHonoApprovalRouter } from './routes/hono-approvals.js';
