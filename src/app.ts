@@ -28,6 +28,7 @@ import { requestIdMiddleware } from './middleware/request-id.js';
 import { requestLoggerMiddleware } from './middleware/request-logger.js';
 import { getLogger } from './logging.js';
 import type { FormBridgeStorage, SubmissionStorage } from './storage/storage-interface.js';
+import type { StorageBackend } from './storage/storage-backend.js';
 import { MemoryStorage } from './storage/memory-storage.js';
 import { createStorageFromEnv } from './storage/storage-factory.js';
 import { IntakeRegistry } from './core/intake-registry.js';
@@ -133,6 +134,12 @@ interface WireSubmissionServicesOptions {
   storage: FormBridgeStorage;
   baseUrl?: string;
   logger?: ReturnType<typeof getLogger>;
+  /**
+   * Optional file-upload storage backend (signed URLs). Threaded into the
+   * SubmissionManager so requestUpload/confirmUpload work. Unused by the HTTP
+   * app factory (which never passes it) — only the MCP transport supplies one.
+   */
+  storageBackend?: StorageBackend;
 }
 
 /** Optional analytics-only methods present on the in-memory event store. */
@@ -187,6 +194,7 @@ export function wireSubmissionServices(
     storage,
     piiRedactor: createPiiRedactor(),
     receiptManager,
+    storageBackend: opts.storageBackend,
   });
 
   // Webhook manager — durable outbox from the storage backend is injected.
@@ -294,6 +302,8 @@ export async function createSubmissionServices(opts?: {
   registry?: IntakeRegistry;
   storage?: FormBridgeStorage;
   baseUrl?: string;
+  /** Optional file-upload storage backend threaded into the SubmissionManager. */
+  storageBackend?: StorageBackend;
 }): Promise<SubmissionServices> {
   let registry = opts?.registry;
   if (!registry) {
@@ -303,7 +313,12 @@ export async function createSubmissionServices(opts?: {
     }
   }
   const storage = opts?.storage ?? (await createStorageFromEnv());
-  return wireSubmissionServices({ registry, storage, baseUrl: opts?.baseUrl });
+  return wireSubmissionServices({
+    registry,
+    storage,
+    baseUrl: opts?.baseUrl,
+    storageBackend: opts?.storageBackend,
+  });
 }
 
 /**

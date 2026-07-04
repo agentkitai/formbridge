@@ -1,14 +1,17 @@
 /**
- * MCP Upload Handlers — requestUpload and confirmUpload operations.
+ * MCP Upload Handlers — requestUpload and confirmUpload via the shared
+ * SubmissionManager (which owns the file-upload negotiation lifecycle).
  */
 
 import { z } from 'zod';
-import type { IntakeDefinition } from '../../schemas/intake-schema.js';
-import type { IntakeError } from '../../types/intake-contract.js';
-import type { MCPServerConfig } from '../../types/mcp-tool-definitions.js';
-import { convertZodToJsonSchema } from '../../schemas/json-schema-converter.js';
-import type { MCPSessionStore } from '../submission-store.js';
-import { lookupEntry, isError, toRecord } from '../response-builder.js';
+import type { IntakeDefinition, IntakeErrorFlat } from '../../types/intake-contract.js';
+import {
+  lookupSubmission,
+  isError,
+  toRecord,
+  resolveActor,
+  type MCPHandlerServices,
+} from '../response-builder.js';
 
 const RequestUploadArgsSchema = z.object({
   resumeToken: z.string(),
@@ -16,162 +19,110 @@ const RequestUploadArgsSchema = z.object({
   filename: z.string(),
   mimeType: z.string(),
   sizeBytes: z.number(),
+  actor: z.unknown().optional(),
 });
 
 const ConfirmUploadArgsSchema = z.object({
   resumeToken: z.string(),
   uploadId: z.string(),
+  actor: z.unknown().optional(),
 });
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function fieldNotFoundError(field: string): IntakeErrorFlat {
+  return {
+    type: 'invalid',
+    message: `Field '${field}' not found in intake schema`,
+    fields: [{ field, message: `Field '${field}' does not exist in the intake definition`, type: 'invalid' }],
+    nextActions: [{ type: 'validate', description: 'Use a valid field name from the intake schema' }],
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function storageNotConfiguredError(field: string): IntakeErrorFlat {
+  return {
+    type: 'invalid',
+    message: 'File upload not supported - storage backend not configured',
+    fields: [{ field, message: 'Storage backend not configured for MCP server', type: 'invalid' }],
+    nextActions: [{ type: 'validate', description: 'Configure a storage backend for the MCP server' }],
+    timestamp: new Date().toISOString(),
+  };
+}
+
+function operationFailedError(field: string, fallback: string, error: unknown): IntakeErrorFlat {
+  const message = error instanceof Error ? error.message : fallback;
+  return {
+    type: 'invalid',
+    message,
+    fields: [{ field, message, type: 'invalid' }],
+    nextActions: [{ type: 'validate', description: 'Try again or request a new upload' }],
+    timestamp: new Date().toISOString(),
+  };
+}
 
 export async function handleRequestUpload(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
-  store: MCPSessionStore,
-  storageBackend?: MCPServerConfig['storageBackend']
+  services: MCPHandlerServices
 ): Promise<Record<string, unknown>> {
   const { resumeToken, field, filename, mimeType, sizeBytes } = RequestUploadArgsSchema.parse(args);
+  const actor = resolveActor(args);
 
-  const result = lookupEntry(store, resumeToken, intake);
-  if (isError(result)) return toRecord(result);
-  const entry = result;
+  const submission = await lookupSubmission(services.manager, resumeToken, intake);
+  if (isError(submission)) return toRecord(submission);
 
-  // Validate field exists in intake schema
-  const jsonSchema = convertZodToJsonSchema(intake.schema, {
-    name: intake.name,
-    includeSchemaProperty: false,
-  });
-  if (!jsonSchema.properties || !(field in jsonSchema.properties)) {
-    const error: IntakeError = {
-      type: 'invalid',
-      message: `Field '${field}' not found in intake schema`,
-      fields: [{ field, message: `Field '${field}' does not exist in the intake definition`, type: 'invalid' }],
-      nextActions: [{ type: 'validate', description: 'Use a valid field name from the intake schema' }],
-      timestamp: new Date().toISOString(),
-    };
-    return toRecord(error);
+  // Validate the field exists in the intake's (JSON) schema.
+  const schema = intake.schema;
+  const properties = isRecord(schema) && isRecord(schema['properties']) ? schema['properties'] : undefined;
+  if (!properties || !(field in properties)) {
+    return toRecord(fieldNotFoundError(field));
   }
 
-  if (!storageBackend) {
-    const error: IntakeError = {
-      type: 'invalid',
-      message: 'File upload not supported - storage backend not configured',
-      fields: [{ field, message: 'Storage backend not configured for MCP server', type: 'invalid' }],
-      nextActions: [{ type: 'validate', description: 'Configure storage backend in MCPServerConfig' }],
-      timestamp: new Date().toISOString(),
-    };
-    return toRecord(error);
+  if (!services.storageBackend) {
+    return toRecord(storageNotConfiguredError(field));
   }
 
   try {
-    const signedUrl = await storageBackend.generateUploadUrl({
-      intakeId: intake.id,
-      submissionId: entry.submissionId,
-      fieldPath: field,
-      filename,
-      mimeType,
-      constraints: { maxSize: sizeBytes, allowedTypes: [mimeType], maxCount: 1 },
-    });
-
-    if (!entry.uploads) entry.uploads = {};
-    entry.uploads[signedUrl.uploadId] = {
-      uploadId: signedUrl.uploadId,
-      field,
-      filename,
-      mimeType,
-      sizeBytes,
-      status: 'pending',
-      url: signedUrl.url,
-    };
-    store.update(resumeToken, { uploads: entry.uploads });
-
-    const expiresInMs = new Date(signedUrl.expiresAt).getTime() - Date.now();
-    return {
-      ok: true,
-      uploadId: signedUrl.uploadId,
-      method: signedUrl.method,
-      url: signedUrl.url,
-      expiresInMs: Math.max(0, expiresInMs),
-      constraints: { maxBytes: sizeBytes, accept: [mimeType] },
-    };
+    const result = await services.manager.requestUpload(
+      { submissionId: submission.id, resumeToken, field, filename, mimeType, sizeBytes, actor },
+      intake
+    );
+    // requestUpload rotates the resume token — surface the new one so the caller
+    // can chain confirmUpload.
+    const updated = await services.manager.getSubmission(submission.id);
+    return { ...result, resumeToken: updated?.resumeToken };
   } catch (error) {
-    const err: IntakeError = {
-      type: 'invalid',
-      message: 'Failed to generate upload URL',
-      fields: [{ field, message: error instanceof Error ? error.message : 'Unknown error', type: 'invalid' }],
-      nextActions: [{ type: 'validate', description: 'Try again or contact support' }],
-      timestamp: new Date().toISOString(),
-    };
-    return toRecord(err);
+    return toRecord(operationFailedError(field, 'Failed to generate upload URL', error));
   }
 }
 
 export async function handleConfirmUpload(
   intake: IntakeDefinition,
   args: Record<string, unknown>,
-  store: MCPSessionStore,
-  storageBackend?: MCPServerConfig['storageBackend']
+  services: MCPHandlerServices
 ): Promise<Record<string, unknown>> {
   const { resumeToken, uploadId } = ConfirmUploadArgsSchema.parse(args);
+  const actor = resolveActor(args);
 
-  const result = lookupEntry(store, resumeToken, intake);
-  if (isError(result)) return toRecord(result);
-  const entry = result;
+  const submission = await lookupSubmission(services.manager, resumeToken, intake);
+  if (isError(submission)) return toRecord(submission);
 
-  if (!storageBackend) {
-    const error: IntakeError = {
-      type: 'invalid',
-      message: 'File upload not supported - storage backend not configured',
-      fields: [{ field: 'uploadId', message: 'Storage backend not configured for MCP server', type: 'invalid' }],
-      nextActions: [{ type: 'validate', description: 'Configure storage backend in MCPServerConfig' }],
-      timestamp: new Date().toISOString(),
-    };
-    return toRecord(error);
-  }
-
-  if (!entry.uploads || !entry.uploads[uploadId]) {
-    const error: IntakeError = {
-      type: 'invalid',
-      message: 'Upload not found',
-      fields: [{ field: 'uploadId', message: `Upload ${uploadId} not found for this submission`, type: 'invalid' }],
-      nextActions: [{ type: 'validate', description: 'Request a new upload' }],
-      timestamp: new Date().toISOString(),
-    };
-    return toRecord(error);
+  if (!services.storageBackend) {
+    return toRecord(storageNotConfiguredError('uploadId'));
   }
 
   try {
-    const uploadStatus = await storageBackend.verifyUpload(uploadId);
-    const upload = entry.uploads[uploadId];
-
-    if (uploadStatus.status === 'completed' && uploadStatus.file) {
-      upload.status = 'completed';
-      upload.uploadedAt = new Date();
-      const downloadUrl = await storageBackend.generateDownloadUrl(uploadId);
-      if (downloadUrl) upload.downloadUrl = downloadUrl;
-    } else if (uploadStatus.status === 'failed') {
-      upload.status = 'failed';
-      upload.error = uploadStatus.error;
-    }
-
-    store.update(resumeToken, { uploads: entry.uploads });
-
-    return {
-      ok: true,
-      submissionId: entry.submissionId,
+    const result = await services.manager.confirmUpload({
+      submissionId: submission.id,
+      resumeToken,
       uploadId,
-      field: upload.field,
-      status: upload.status,
-      uploadedAt: upload.uploadedAt?.toISOString(),
-      downloadUrl: upload.downloadUrl,
-    };
+      actor,
+    });
+    return { ...result, uploadId };
   } catch (error) {
-    const err: IntakeError = {
-      type: 'invalid',
-      message: 'Failed to verify upload',
-      fields: [{ field: 'uploadId', message: error instanceof Error ? error.message : 'Unknown error', type: 'invalid' }],
-      nextActions: [{ type: 'validate', description: 'Try again or request a new upload' }],
-      timestamp: new Date().toISOString(),
-    };
-    return toRecord(err);
+    return toRecord(operationFailedError('uploadId', 'Failed to verify upload', error));
   }
 }

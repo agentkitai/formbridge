@@ -1,826 +1,376 @@
 /**
- * Tests for MCP Handlers - Set and Submit Operations
- *
- * Comprehensive tests for set-handler.ts and submit-handler.ts, including:
- * - Success scenarios for both handlers
- * - Validation failures
- * - Resume token handling
- * - State transitions
- * - Error responses
- * - Data merging behavior
+ * MCP Handler tests — driven against the REAL shared SubmissionManager /
+ * ApprovalManager (no MCP-only store). Asserts the NEW unified behavior:
+ * core lifecycle states, resume-token rotation across set→submit, recorded
+ * field attribution, gated submit → needs_review, finalize → receipt,
+ * idempotency, intake mismatch, and terminal/expired guards.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { z } from 'zod';
+import { SubmissionManager } from '../../src/core/submission-manager.js';
+import { Validator } from '../../src/core/validator.js';
+import { InMemorySubmissionStore } from '../../src/mcp/submission-store.js';
+import { IntakeRegistry } from '../../src/core/intake-registry.js';
+import { toContractIntake } from '../../src/mcp/intake-adapter.js';
+import { handleCreate } from '../../src/mcp/handlers/create-handler.js';
 import { handleSet } from '../../src/mcp/handlers/set-handler.js';
+import { handleValidate } from '../../src/mcp/handlers/validate-handler.js';
 import { handleSubmit } from '../../src/mcp/handlers/submit-handler.js';
+import {
+  handleGet,
+  handleHandoff,
+  handleFinalize,
+} from '../../src/mcp/handlers/lifecycle-handlers.js';
 import type { IntakeDefinition } from '../../src/schemas/intake-schema.js';
-import type { SubmissionStore, MCPSubmissionEntry } from '../../src/mcp/submission-store.js';
-import { SubmissionState } from '../../src/types/intake-contract.js';
-import { SubmissionId } from '../../src/types/branded.js';
+import type { IntakeEvent } from '../../src/types/intake-contract.js';
 
-// Mock submission store implementation for testing
-class MockSubmissionStore implements SubmissionStore {
-  private entries = new Map<string, MCPSubmissionEntry>();
-  private idempotencyIndex = new Map<string, string>();
+const agentActor = { kind: 'agent' as const, id: 'agent-1', name: 'Agent One' };
 
-  create(intakeId: string, data: Record<string, unknown> = {}, idempotencyKey?: string): MCPSubmissionEntry {
-    const submissionId = `sub_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
-    const resumeToken = `tok_${Math.random().toString(36).substr(2, 16)}`;
-    
-    const entry: MCPSubmissionEntry = {
-      submissionId,
-      resumeToken,
-      intakeId,
-      data,
-      state: SubmissionState.CREATED,
-      idempotencyKey,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    this.entries.set(resumeToken, entry);
-    
-    if (idempotencyKey) {
-      this.idempotencyIndex.set(idempotencyKey, resumeToken);
-    }
-
-    return entry;
-  }
-
-  get(resumeToken: string): MCPSubmissionEntry | undefined {
-    return this.entries.get(resumeToken);
-  }
-
-  getByIdempotencyKey(idempotencyKey: string): MCPSubmissionEntry | undefined {
-    const resumeToken = this.idempotencyIndex.get(idempotencyKey);
-    return resumeToken ? this.entries.get(resumeToken) : undefined;
-  }
-
-  update(resumeToken: string, updates: Partial<MCPSubmissionEntry>): MCPSubmissionEntry | undefined {
-    const entry = this.entries.get(resumeToken);
-    if (!entry) {
-      return undefined;
-    }
-
-    const updated = {
-      ...entry,
-      ...updates,
-      updatedAt: new Date(),
-    };
-
-    this.entries.set(resumeToken, updated);
-    return updated;
-  }
-
-  delete(resumeToken: string): boolean {
-    const entry = this.entries.get(resumeToken);
-    if (entry?.idempotencyKey) {
-      this.idempotencyIndex.delete(entry.idempotencyKey);
-    }
-    return this.entries.delete(resumeToken);
-  }
-
-  // Test helper methods
-  clear() {
-    this.entries.clear();
-    this.idempotencyIndex.clear();
-  }
-
-  setEntry(resumeToken: string, entry: MCPSubmissionEntry) {
-    this.entries.set(resumeToken, entry);
-  }
-}
-
-// Sample intake definitions for testing
 const simpleIntake: IntakeDefinition = {
   id: 'simple_form',
   version: '1.0.0',
   name: 'Simple Form',
   schema: z.object({
-    name: z.string().min(1, 'Name is required'),
-    email: z.string().email('Invalid email format'),
-    age: z.number().min(18, 'Must be at least 18 years old'),
+    name: z.string().min(1),
+    email: z.string().email(),
+    age: z.number().min(18),
   }),
-  destination: {
-    type: 'webhook',
-    name: 'Test Webhook',
-    config: { url: 'https://example.com/webhook' },
-  },
+  destination: { type: 'webhook', name: 'Test Webhook', config: { url: 'https://example.com/webhook' } },
 };
 
-const complexIntake: IntakeDefinition = {
-  id: 'complex_form',
+const otherIntake: IntakeDefinition = {
+  id: 'other_form',
   version: '1.0.0',
-  name: 'Complex Form',
-  schema: z.object({
-    personalInfo: z.object({
-      firstName: z.string().min(1, 'First name is required'),
-      lastName: z.string().min(1, 'Last name is required'),
-    }),
-    contact: z.object({
-      email: z.string().email('Invalid email'),
-      phone: z.string().optional(),
-    }),
-    preferences: z.object({
-      newsletter: z.boolean().optional(),
-      notifications: z.boolean().default(true),
-    }).optional(),
-  }),
-  destination: {
-    type: 'webhook',
-    name: 'Complex Webhook',
-    config: { url: 'https://example.com/complex' },
-  },
+  name: 'Other Form',
+  schema: z.object({ note: z.string() }),
+  destination: { type: 'webhook', name: 'Other', config: { url: 'https://example.com/other' } },
 };
+
+const gatedIntake: IntakeDefinition = {
+  id: 'gated_form',
+  version: '1.0.0',
+  name: 'Gated Form',
+  schema: z.object({ amount: z.number() }),
+  destination: { type: 'webhook', name: 'Gated', config: { url: 'https://example.com/gated' } },
+  approvalGates: [{ id: 'g1', name: 'High value', reviewers: ['rev-1'] }],
+};
+
+function makeCtx(intakes: IntakeDefinition[], opts?: { receiptManager?: unknown }) {
+  const store = new InMemorySubmissionStore();
+  const events: IntakeEvent[] = [];
+  const eventEmitter = { emit: async (e: IntakeEvent) => { events.push(e); } };
+  const registry = new IntakeRegistry({ validateOnRegister: false, allowOverwrite: true });
+  const contracts = new Map<string, ReturnType<typeof toContractIntake>>();
+  for (const intake of intakes) {
+    const contract = toContractIntake(intake);
+    registry.registerIntake(contract);
+    contracts.set(intake.id, contract);
+  }
+  const manager = new SubmissionManager({
+    store,
+    eventEmitter,
+    intakeRegistry: registry,
+    baseUrl: 'http://localhost:3000',
+    receiptManager: opts?.receiptManager as never,
+  });
+  // Same validator config the HTTP route uses, so MCP set/create validate
+  // fields identically.
+  const validator = new Validator({ strict: false, allowAdditionalProperties: true });
+  const services = { manager, validator };
+  return {
+    store,
+    events,
+    registry,
+    manager,
+    services,
+    contract: (id: string) => contracts.get(id)!,
+  };
+}
+
+/** Narrow a success response (has ok: true). */
+function expectOk<T extends { ok?: unknown }>(res: T): T & { ok: true } {
+  expect(res).toHaveProperty('ok', true);
+  return res as T & { ok: true };
+}
+
+describe('handleCreate', () => {
+  it('creates a submission in the core draft state with sub_/rtok_ ids', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const res: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'John' }, actor: agentActor }, ctx.services);
+
+    expect(res.ok).toBe(true);
+    expect(res.state).toBe('draft');
+    expect(res.submissionId).toMatch(/^sub_/);
+    expect(res.resumeToken).toMatch(/^rtok_/);
+  });
+
+  it('records field attribution for initial fields', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const res: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'John' }, actor: agentActor }, ctx.services);
+
+    const submission = await ctx.store.get(res.submissionId);
+    expect(submission!.fields.name).toBe('John');
+    expect(submission!.fieldAttribution.name).toEqual(agentActor);
+  });
+
+  it('is idempotent on repeated idempotencyKey', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const r1: any = await handleCreate(ctx.contract('simple_form'), { idempotencyKey: 'k1', actor: agentActor }, ctx.services);
+    const r2: any = await handleCreate(ctx.contract('simple_form'), { idempotencyKey: 'k1', actor: agentActor }, ctx.services);
+    expect(r2.submissionId).toBe(r1.submissionId);
+  });
+
+  it('defaults to the system actor when none supplied', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const res: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'A' } }, ctx.services);
+    const submission = await ctx.store.get(res.submissionId);
+    expect(submission!.fieldAttribution.name).toEqual({ kind: 'system', id: 'mcp-server', name: 'MCP Server' });
+  });
+});
 
 describe('handleSet', () => {
-  let store: MockSubmissionStore;
+  it('rotates the resume token and moves draft → in_progress', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { actor: agentActor }, ctx.services);
 
-  beforeEach(() => {
-    store = new MockSubmissionStore();
+    const setRes: any = expectOk(await handleSet(
+      ctx.contract('simple_form'),
+      { resumeToken: created.resumeToken, data: { name: 'John' }, actor: agentActor },
+      ctx.services
+    ));
+
+    expect(setRes.state).toBe('in_progress');
+    expect(setRes.resumeToken).not.toBe(created.resumeToken); // rotated
+    const submission = await ctx.store.get(created.submissionId);
+    expect(submission!.fieldAttribution.name).toEqual(agentActor);
   });
 
-  describe('successful operations', () => {
-    it('should successfully set fields on a valid submission', async () => {
-      // Create a submission
-      const entry = store.create('simple_form', { name: 'John' });
-
-      // Set additional fields
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: { email: 'john@example.com', age: 25 }
-        },
-        store
-      );
-
-      expect(response).toEqual({
-        state: SubmissionState.VALIDATING,
-        submissionId: SubmissionId(entry.submissionId),
-        message: 'Submission updated successfully',
-        resumeToken: entry.resumeToken,
-      });
-
-      // Verify data was merged correctly
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.data).toEqual({
-        name: 'John',
-        email: 'john@example.com',
-        age: 25,
-      });
-      expect(updated?.state).toBe(SubmissionState.VALIDATING);
-    });
-
-    it('should merge new data with existing data', async () => {
-      // Create submission with initial data
-      const entry = store.create('simple_form', { 
-        name: 'John', 
-        email: 'old@example.com' 
-      });
-
-      // Update with new data (should merge, not replace)
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: { email: 'new@example.com', age: 30 }
-        },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.VALIDATING);
-
-      // Check merged data
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.data).toEqual({
-        name: 'John',           // preserved
-        email: 'new@example.com',  // updated
-        age: 30,                // added
-      });
-    });
-
-    it('should handle empty data objects', async () => {
-      const entry = store.create('simple_form', { name: 'John' });
-
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: {}
-        },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.VALIDATING);
-      
-      // Data should remain unchanged
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.data).toEqual({ name: 'John' });
-    });
-
-    it('should handle nested object updates', async () => {
-      const entry = store.create('complex_form', {
-        personalInfo: { firstName: 'John', lastName: 'Doe' },
-        contact: { email: 'john@example.com' }
-      });
-
-      const response = await handleSet(
-        complexIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: {
-            contact: { email: 'john.doe@example.com', phone: '555-0123' },
-            preferences: { newsletter: true }
-          }
-        },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.VALIDATING);
-
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.data).toEqual({
-        personalInfo: { firstName: 'John', lastName: 'Doe' },
-        contact: { email: 'john.doe@example.com', phone: '555-0123' },
-        preferences: { newsletter: true },
-      });
-    });
+  it('returns an invalid-token error for an unknown resume token', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const res: any = await handleSet(ctx.contract('simple_form'), { resumeToken: 'rtok_nope', data: { name: 'x' } }, ctx.services);
+    expect(res.type).toBe('invalid');
+    expect(res.message).toBe('Invalid resume token');
   });
 
-  describe('validation failures', () => {
-    it('should return validation error for invalid field data', async () => {
-      const entry = store.create('simple_form', { name: 'John' });
-
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: {
-            email: 'invalid-email',  // Invalid email format
-            age: 15,                 // Below minimum age
-          }
-        },
-        store
-      );
-
-      // Should return an IntakeError
-      expect(response).toHaveProperty('type');
-      expect(response).toHaveProperty('fields');
-      expect(response).toHaveProperty('timestamp');
-      
-      const errorResponse = response as any;
-      expect(errorResponse.type).toBe('invalid'); // Error mapper returns 'invalid' for validation errors
-      expect(errorResponse.fields).toHaveLength(2);
-      
-      // Check field-specific errors
-      const emailError = errorResponse.fields.find((f: any) => f.field === 'email');
-      const ageError = errorResponse.fields.find((f: any) => f.field === 'age');
-      
-      expect(emailError).toBeDefined();
-      expect(emailError.message).toContain('email');
-      expect(ageError).toBeDefined();
-      expect(ageError.message).toContain('18');
-
-      // Verify submission was not updated
-      const unchanged = store.get(entry.resumeToken);
-      expect(unchanged?.data).toEqual({ name: 'John' });
-      expect(unchanged?.state).toBe(SubmissionState.CREATED);
-    });
-
-    it('should validate partial data correctly', async () => {
-      const entry = store.create('simple_form', {});
-
-      // Partial valid data should pass
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: { name: 'John' }  // Only name, missing required email and age
-        },
-        store
-      );
-
-      // Partial validation should succeed (missing fields are OK for set operation)
-      expect(response).toEqual({
-        state: SubmissionState.VALIDATING,
-        submissionId: SubmissionId(entry.submissionId),
-        message: 'Submission updated successfully',
-        resumeToken: entry.resumeToken,
-      });
-    });
-
-    it('should reject invalid data types', async () => {
-      const entry = store.create('simple_form', {});
-
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: entry.resumeToken,
-          data: {
-            name: 123,        // Should be string
-            age: 'twenty',    // Should be number
-          }
-        },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'invalid');
-      expect(response).toHaveProperty('fields');
-      
-      const errorResponse = response as any;
-      expect(errorResponse.fields).toHaveLength(2);
-    });
+  it('returns a conflict error on intake mismatch', async () => {
+    const ctx = makeCtx([simpleIntake, otherIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { actor: agentActor }, ctx.services);
+    const res: any = await handleSet(ctx.contract('other_form'), { resumeToken: created.resumeToken, data: { note: 'hi' } }, ctx.services);
+    expect(res.type).toBe('conflict');
+    expect(res.message).toContain('different intake');
   });
 
-  describe('resume token handling', () => {
-    it('should return error for non-existent resume token', async () => {
-      const response = await handleSet(
-        simpleIntake,
-        {
-          resumeToken: 'nonexistent_token',
-          data: { name: 'John' }
-        },
-        store
-      );
+  it('guards against mutating a terminal (submitted) submission', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'A', email: 'a@b.com', age: 20 }, actor: agentActor }, ctx.services);
+    const submitRes: any = expectOk(await handleSubmit(ctx.contract('simple_form'), { resumeToken: created.resumeToken, actor: agentActor }, ctx.services));
+    expect(submitRes.state).toBe('submitted');
 
-      expect(response).toHaveProperty('type', 'invalid');
-      expect(response).toHaveProperty('message', 'Invalid resume token');
-      expect(response).toHaveProperty('fields');
-      
-      const errorResponse = response as any;
-      const tokenError = errorResponse.fields.find((f: any) => f.field === 'resumeToken');
-      expect(tokenError).toBeDefined();
-      expect(tokenError.message).toContain('not found');
-    });
-
-    it('should return error for intake ID mismatch', async () => {
-      // Create submission for simple_form
-      const entry = store.create('simple_form', {});
-
-      // Try to update with complex_form intake
-      const response = await handleSet(
-        complexIntake,  // Different intake
-        {
-          resumeToken: entry.resumeToken,
-          data: { name: 'John' }
-        },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'conflict');
-      expect(response).toHaveProperty('message');
-      
-      const errorResponse = response as any;
-      expect(errorResponse.message).toContain('different intake form');
-      
-      // Check that the field error contains the specific intake IDs
-      const tokenError = errorResponse.fields.find((f: any) => f.field === 'resumeToken');
-      expect(tokenError.message).toContain('simple_form');
-      expect(tokenError.message).toContain('complex_form');
-    });
+    const res: any = await handleSet(ctx.contract('simple_form'), { resumeToken: submitRes.resumeToken, data: { name: 'B' } }, ctx.services);
+    expect(res.ok).toBe(false);
+    expect(res.error.type).toBe('conflict');
+    expect(res.error.message).toContain('Cannot modify');
   });
 
-  describe('argument parsing', () => {
-    it('should reject missing resumeToken', async () => {
-      await expect(
-        handleSet(simpleIntake, { data: { name: 'John' } }, store)
-      ).rejects.toThrow();
-    });
+  it('guards against an expired submission', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'A' }, actor: agentActor }, ctx.services);
+    const stored = await ctx.store.get(created.submissionId);
+    stored!.expiresAt = new Date(Date.now() - 1000).toISOString();
 
-    it('should reject missing data', async () => {
-      await expect(
-        handleSet(simpleIntake, { resumeToken: 'token123' }, store)
-      ).rejects.toThrow();
-    });
+    const res: any = await handleSet(ctx.contract('simple_form'), { resumeToken: created.resumeToken, data: { name: 'B' } }, ctx.services);
+    expect(res.ok).toBe(false);
+    expect(res.state).toBe('expired');
+  });
+});
 
-    it('should reject invalid argument types', async () => {
-      await expect(
-        handleSet(simpleIntake, { resumeToken: 123, data: { name: 'John' } }, store)
-      ).rejects.toThrow();
+describe('handleValidate', () => {
+  it('is read-only: no event, no state change, no token rotation', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { actor: agentActor }, ctx.services);
+    const setRes: any = expectOk(await handleSet(
+      ctx.contract('simple_form'),
+      { resumeToken: created.resumeToken, data: { name: 'John', email: 'john@example.com', age: 30 }, actor: agentActor },
+      ctx.services
+    ));
 
-      await expect(
-        handleSet(simpleIntake, { resumeToken: 'token123', data: 'not-an-object' }, store)
-      ).rejects.toThrow();
-    });
+    const eventsBefore = ctx.events.length;
+    const stateBefore = (await ctx.store.get(created.submissionId))!.state;
+
+    const valRes: any = await handleValidate(ctx.contract('simple_form'), { resumeToken: setRes.resumeToken }, ctx.services);
+
+    expect(valRes.ok).toBe(true);
+    expect(valRes.missingFields).toEqual([]);
+    expect(valRes.resumeToken).toBe(setRes.resumeToken); // unchanged
+    expect(valRes.state).toBe(stateBefore);
+
+    // No new event emitted and the stored submission is untouched.
+    expect(ctx.events.length).toBe(eventsBefore);
+    const after = await ctx.store.get(created.submissionId);
+    expect(after!.state).toBe(stateBefore);
+    expect(after!.resumeToken).toBe(setRes.resumeToken);
+  });
+
+  it('reports missing required fields without mutating state', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'John' }, actor: agentActor }, ctx.services);
+
+    const valRes: any = await handleValidate(ctx.contract('simple_form'), { resumeToken: created.resumeToken }, ctx.services);
+    expect(valRes.ok).toBe(false);
+    expect(valRes.missingFields).toEqual(expect.arrayContaining(['email', 'age']));
+
+    const after = await ctx.store.get(created.submissionId);
+    expect(after!.state).toBe('draft'); // still draft — validate did not transition
   });
 });
 
 describe('handleSubmit', () => {
-  let store: MockSubmissionStore;
-
-  beforeEach(() => {
-    store = new MockSubmissionStore();
+  it('submits an ungated intake to the core submitted state', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'A', email: 'a@b.com', age: 20 }, actor: agentActor }, ctx.services);
+    const submitRes: any = expectOk(await handleSubmit(ctx.contract('simple_form'), { resumeToken: created.resumeToken, actor: agentActor }, ctx.services));
+    expect(submitRes.state).toBe('submitted');
   });
 
-  describe('successful submissions', () => {
-    it('should successfully submit a complete submission', async () => {
-      // Create submission with complete valid data
-      const entry = store.create('simple_form', {
-        name: 'John Doe',
-        email: 'john@example.com',
-        age: 25,
-      });
+  it('accepts the rotated token from set (create → set → submit)', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { actor: agentActor }, ctx.services);
+    const setRes: any = expectOk(await handleSet(
+      ctx.contract('simple_form'),
+      { resumeToken: created.resumeToken, data: { name: 'A', email: 'a@b.com', age: 20 }, actor: agentActor },
+      ctx.services
+    ));
+    // The original create token is now stale.
+    const staleAttempt: any = await handleSubmit(ctx.contract('simple_form'), { resumeToken: created.resumeToken, actor: agentActor }, ctx.services);
+    expect(staleAttempt.type).toBe('invalid');
 
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response).toEqual({
-        state: SubmissionState.COMPLETED,
-        submissionId: SubmissionId(entry.submissionId),
-        message: 'Submission completed successfully',
-        data: {
-          name: 'John Doe',
-          email: 'john@example.com',
-          age: 25,
-        },
-        timestamp: expect.any(String),
-      });
-
-      // Verify state progression
-      const final = store.get(entry.resumeToken);
-      expect(final?.state).toBe(SubmissionState.COMPLETED);
-    });
-
-    it('should handle complex schema submissions', async () => {
-      const entry = store.create('complex_form', {
-        personalInfo: {
-          firstName: 'John',
-          lastName: 'Doe',
-        },
-        contact: {
-          email: 'john@example.com',
-          phone: '555-0123',
-        },
-        preferences: {
-          newsletter: true,
-          notifications: false,
-        },
-      });
-
-      const response = await handleSubmit(
-        complexIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.COMPLETED);
-      expect(response.data).toEqual(entry.data);
-      expect(response).toHaveProperty('timestamp');
-    });
-
-    it('should handle submissions with optional fields', async () => {
-      const entry = store.create('complex_form', {
-        personalInfo: {
-          firstName: 'John',
-          lastName: 'Doe',
-        },
-        contact: {
-          email: 'john@example.com',
-          // phone is optional and not provided
-        },
-        // preferences is optional and not provided
-      });
-
-      const response = await handleSubmit(
-        complexIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.COMPLETED);
-      expect(response.data).toBeDefined();
-    });
+    const submitRes: any = expectOk(await handleSubmit(ctx.contract('simple_form'), { resumeToken: setRes.resumeToken, actor: agentActor }, ctx.services));
+    expect(submitRes.state).toBe('submitted');
   });
 
-  describe('validation failures', () => {
-    it('should return validation error for incomplete data', async () => {
-      // Create submission with missing required fields
-      const entry = store.create('simple_form', {
-        name: 'John',
-        // missing email and age
-      });
+  it('surfaces needs_review as an informative response under a gated intake', async () => {
+    const ctx = makeCtx([gatedIntake]);
+    const created: any = await handleCreate(ctx.contract('gated_form'), { data: { amount: 5000 }, actor: agentActor }, ctx.services);
+    const submitRes: any = await handleSubmit(ctx.contract('gated_form'), { resumeToken: created.resumeToken, actor: agentActor }, ctx.services);
 
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'missing'); // Missing required fields
-      expect(response).toHaveProperty('fields');
-      
-      const errorResponse = response as any;
-      expect(errorResponse.fields).toHaveLength(2); // email and age missing
-
-      // Verify submission state was updated to invalid
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.state).toBe(SubmissionState.INVALID);
-    });
-
-    it('should return validation error for invalid field data', async () => {
-      const entry = store.create('simple_form', {
-        name: 'John',
-        email: 'invalid-email',
-        age: 15, // below minimum
-      });
-
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'invalid'); // Invalid field data
-      
-      const errorResponse = response as any;
-      expect(errorResponse.fields).toHaveLength(2); // email format and age minimum
-
-      // Verify submission state was updated to invalid
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.state).toBe(SubmissionState.INVALID);
-    });
-
-    it('should handle complex validation errors', async () => {
-      const entry = store.create('complex_form', {
-        personalInfo: {
-          firstName: '', // empty, should be min 1
-          lastName: 'Doe',
-        },
-        contact: {
-          email: 'invalid',
-          // phone is optional, not provided
-        },
-        // missing personalInfo.lastName in some scenarios
-      });
-
-      const response = await handleSubmit(
-        complexIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'invalid'); // Invalid field data
-      
-      const errorResponse = response as any;
-      expect(errorResponse.fields.length).toBeGreaterThan(0);
-      
-      // Should have errors for firstName and email
-      const firstNameError = errorResponse.fields.find((f: any) => f.field.includes('firstName'));
-      const emailError = errorResponse.fields.find((f: any) => f.field.includes('email'));
-      
-      expect(firstNameError).toBeDefined();
-      expect(emailError).toBeDefined();
-    });
-  });
-
-  describe('state transitions', () => {
-    it('should transition through SUBMITTING to COMPLETED states', async () => {
-      const entry = store.create('simple_form', {
-        name: 'John Doe',
-        email: 'john@example.com',
-        age: 25,
-      });
-
-      // Initial state should be CREATED
-      expect(entry.state).toBe(SubmissionState.CREATED);
-
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.COMPLETED);
-
-      // Final state should be COMPLETED
-      const final = store.get(entry.resumeToken);
-      expect(final?.state).toBe(SubmissionState.COMPLETED);
-    });
-
-    it('should set state to INVALID on validation failure', async () => {
-      const entry = store.create('simple_form', {
-        name: 'John',
-        // incomplete data
-      });
-
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'missing'); // Missing required fields
-
-      // State should be set to INVALID
-      const updated = store.get(entry.resumeToken);
-      expect(updated?.state).toBe(SubmissionState.INVALID);
-    });
-
-    it('should handle already completed submissions', async () => {
-      const entry = store.create('simple_form', {
-        name: 'John Doe',
-        email: 'john@example.com',
-        age: 25,
-      });
-
-      // First submission
-      await handleSubmit(simpleIntake, { resumeToken: entry.resumeToken }, store);
-
-      // Second submission attempt
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      // Should still succeed (idempotent)
-      expect(response.state).toBe(SubmissionState.COMPLETED);
-    });
-  });
-
-  describe('resume token handling', () => {
-    it('should return error for non-existent resume token', async () => {
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: 'nonexistent_token' },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'invalid');
-      expect(response).toHaveProperty('message', 'Invalid resume token');
-    });
-
-    it('should return error for intake ID mismatch', async () => {
-      const entry = store.create('simple_form', {
-        name: 'John',
-        email: 'john@example.com',
-        age: 25,
-      });
-
-      const response = await handleSubmit(
-        complexIntake, // Wrong intake
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response).toHaveProperty('type', 'conflict');
-      expect(response).toHaveProperty('message');
-      
-      const errorResponse = response as any;
-      expect(errorResponse.message).toContain('different intake form');
-    });
-  });
-
-  describe('argument parsing', () => {
-    it('should reject missing resumeToken', async () => {
-      await expect(
-        handleSubmit(simpleIntake, {}, store)
-      ).rejects.toThrow();
-    });
-
-    it('should reject invalid resumeToken type', async () => {
-      await expect(
-        handleSubmit(simpleIntake, { resumeToken: 123 }, store)
-      ).rejects.toThrow();
-    });
-
-    it('should accept only resumeToken (no extra fields needed)', async () => {
-      const entry = store.create('simple_form', {
-        name: 'John Doe',
-        email: 'john@example.com',
-        age: 25,
-      });
-
-      // Should work with only resumeToken
-      const response = await handleSubmit(
-        simpleIntake,
-        { resumeToken: entry.resumeToken },
-        store
-      );
-
-      expect(response.state).toBe(SubmissionState.COMPLETED);
-    });
+    expect(submitRes.ok).toBe(false);
+    expect(submitRes.state).toBe('needs_review');
+    expect(submitRes.error.type).toBe('needs_approval');
   });
 });
 
-describe('integration tests', () => {
-  let store: MockSubmissionStore;
+describe('handleGet', () => {
+  it('returns state, fields, attribution, and missing fields', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'John' }, actor: agentActor }, ctx.services);
 
-  beforeEach(() => {
-    store = new MockSubmissionStore();
+    const res: any = await handleGet(ctx.contract('simple_form'), { resumeToken: created.resumeToken }, ctx.services);
+    expect(res.ok).toBe(true);
+    expect(res.state).toBe('draft');
+    expect(res.fields).toEqual({ name: 'John' });
+    expect(res.fieldAttribution.name).toEqual(agentActor);
+    expect(res.missingFields).toEqual(expect.arrayContaining(['email', 'age']));
+  });
+});
+
+describe('handleHandoff', () => {
+  it('generates a resume URL embedding the current token', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'John' }, actor: agentActor }, ctx.services);
+
+    const res: any = await handleHandoff(ctx.contract('simple_form'), { resumeToken: created.resumeToken, actor: agentActor }, ctx.services);
+    expect(res.ok).toBe(true);
+    expect(res.resumeUrl).toContain('/resume?token=');
+    expect(res.resumeUrl).toContain(created.resumeToken);
+  });
+});
+
+describe('handleFinalize', () => {
+  it('finalizes a submitted submission and returns a receipt', async () => {
+    const receiptManager = { signReceipt: vi.fn(async () => ({ id: 'rcpt_1', type: 'test-receipt' })) };
+    const ctx = makeCtx([simpleIntake], { receiptManager });
+    const created: any = await handleCreate(ctx.contract('simple_form'), { data: { name: 'A', email: 'a@b.com', age: 20 }, actor: agentActor }, ctx.services);
+    const submitRes: any = expectOk(await handleSubmit(ctx.contract('simple_form'), { resumeToken: created.resumeToken, actor: agentActor }, ctx.services));
+
+    const finRes: any = await handleFinalize(ctx.contract('simple_form'), { resumeToken: submitRes.resumeToken, actor: agentActor }, ctx.services);
+    expect(finRes.ok).toBe(true);
+    expect(finRes.state).toBe('finalized');
+    expect(finRes.receipt).toBeDefined();
+    expect(finRes.receipt.id).toBe('rcpt_1');
+  });
+});
+
+// NOTE: There are deliberately NO handleApprove/handleReject tests. Approval is
+// not exposed over the (unauthenticated) MCP transport — it is an HTTP/human
+// action. See tests/mcp/server.test.ts for the assertion that a gated intake
+// generates no _approve/_reject tool and that no dispatch path handles them.
+
+describe('schema validation on set/create (parity with HTTP)', () => {
+  it('rejects a set whose values violate the schema and does NOT persist', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(
+      ctx.contract('simple_form'),
+      { data: { name: 'John' }, actor: agentActor },
+      ctx.services
+    );
+    const before = await ctx.store.get(created.submissionId);
+
+    const res: any = await handleSet(
+      ctx.contract('simple_form'),
+      { resumeToken: created.resumeToken, data: { email: 'not-an-email', age: 'twenty' }, actor: agentActor },
+      ctx.services
+    );
+
+    // Structured field-errors, no success.
+    expect(res.type).toBe('invalid');
+    expect(res.ok).toBeUndefined();
+    expect(res.fields.map((f: any) => f.field)).toEqual(expect.arrayContaining(['email', 'age']));
+
+    // Nothing persisted: fields, state, and token are all unchanged.
+    const after = await ctx.store.get(created.submissionId);
+    expect(after!.fields).toEqual(before!.fields);
+    expect(after!.state).toBe(before!.state);
+    expect(after!.resumeToken).toBe(created.resumeToken);
   });
 
-  it('should support full workflow: create, set multiple times, then submit', async () => {
-    // Start with empty submission
-    const entry = store.create('simple_form', {});
-
-    // Set name
-    const setResponse1 = await handleSet(
-      simpleIntake,
-      {
-        resumeToken: entry.resumeToken,
-        data: { name: 'John Doe' }
-      },
-      store
+  it('rejects create with invalid initialFields (nothing created)', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const res: any = await handleCreate(
+      ctx.contract('simple_form'),
+      { data: { email: 'nope', age: 'twelve' }, actor: agentActor },
+      ctx.services
     );
-    expect(setResponse1.state).toBe(SubmissionState.VALIDATING);
-
-    // Set email
-    const setResponse2 = await handleSet(
-      simpleIntake,
-      {
-        resumeToken: entry.resumeToken,
-        data: { email: 'john@example.com' }
-      },
-      store
-    );
-    expect(setResponse2.state).toBe(SubmissionState.VALIDATING);
-
-    // Set age
-    const setResponse3 = await handleSet(
-      simpleIntake,
-      {
-        resumeToken: entry.resumeToken,
-        data: { age: 25 }
-      },
-      store
-    );
-    expect(setResponse3.state).toBe(SubmissionState.VALIDATING);
-
-    // Verify all data is present
-    const beforeSubmit = store.get(entry.resumeToken);
-    expect(beforeSubmit?.data).toEqual({
-      name: 'John Doe',
-      email: 'john@example.com',
-      age: 25,
-    });
-
-    // Submit
-    const submitResponse = await handleSubmit(
-      simpleIntake,
-      { resumeToken: entry.resumeToken },
-      store
-    );
-
-    expect(submitResponse.state).toBe(SubmissionState.COMPLETED);
-    expect(submitResponse.data).toEqual({
-      name: 'John Doe',
-      email: 'john@example.com',
-      age: 25,
-    });
+    expect(res.type).toBe('invalid');
+    expect(res.fields.length).toBeGreaterThan(0);
+    // No submission was created — a validation error carries no submissionId.
+    expect(res.submissionId).toBeUndefined();
   });
 
-  it('should handle mixed valid and invalid set operations', async () => {
-    const entry = store.create('simple_form', {});
+  it('accepts a valid partial set and rotates the token', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const created: any = await handleCreate(ctx.contract('simple_form'), { actor: agentActor }, ctx.services);
+    const res: any = expectOk(await handleSet(
+      ctx.contract('simple_form'),
+      { resumeToken: created.resumeToken, data: { email: 'valid@example.com' }, actor: agentActor },
+      ctx.services
+    ));
+    expect(res.resumeToken).not.toBe(created.resumeToken);
+    const after = await ctx.store.get(created.submissionId);
+    expect(after!.fields.email).toBe('valid@example.com');
+  });
+});
 
-    // Valid set
-    const validSet = await handleSet(
-      simpleIntake,
-      {
-        resumeToken: entry.resumeToken,
-        data: { name: 'John' }
-      },
-      store
+describe('resolveActor kind validation', () => {
+  it('falls back to the default system actor when actor.kind is malformed', async () => {
+    const ctx = makeCtx([simpleIntake]);
+    const res: any = await handleCreate(
+      ctx.contract('simple_form'),
+      { data: { name: 'A' }, actor: { kind: 'robot', id: 'x1', name: 'Rogue' } },
+      ctx.services
     );
-    expect(validSet.state).toBe(SubmissionState.VALIDATING);
-
-    // Invalid set (should not affect previous data)
-    const invalidSet = await handleSet(
-      simpleIntake,
-      {
-        resumeToken: entry.resumeToken,
-        data: { email: 'invalid-email' }
-      },
-      store
-    );
-    expect(invalidSet).toHaveProperty('type', 'invalid');
-
-    // Verify name is still there, email was not added due to validation failure
-    const current = store.get(entry.resumeToken);
-    expect(current?.data).toEqual({ name: 'John' });
-
-    // Another valid set
-    const validSet2 = await handleSet(
-      simpleIntake,
-      {
-        resumeToken: entry.resumeToken,
-        data: { email: 'john@example.com', age: 25 }
-      },
-      store
-    );
-    expect(validSet2.state).toBe(SubmissionState.VALIDATING);
-
-    // Now submit should work
-    const submit = await handleSubmit(
-      simpleIntake,
-      { resumeToken: entry.resumeToken },
-      store
-    );
-    expect(submit.state).toBe(SubmissionState.COMPLETED);
+    const submission = await ctx.store.get(res.submissionId);
+    // Malformed kind is not attributed — attribution defaults to system actor.
+    expect(submission!.fieldAttribution.name).toEqual({ kind: 'system', id: 'mcp-server', name: 'MCP Server' });
   });
 });

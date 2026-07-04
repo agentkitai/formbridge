@@ -10,12 +10,13 @@
  * - Transport configuration
  */
 
+import { vi } from 'vitest';
 import { z } from 'zod';
 import { FormBridgeMCPServer } from '../../src/mcp/server';
 import type { IntakeDefinition } from '../../src/schemas/intake-schema';
 import type { MCPServerConfig } from '../../src/types/mcp-types';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { generateToolsFromIntake } from '../../src/mcp/tool-generator';
+import { generateToolsFromIntake, parseToolName } from '../../src/mcp/tool-generator';
 
 describe('FormBridgeMCPServer', () => {
   describe('server initialization', () => {
@@ -601,6 +602,104 @@ describe('FormBridgeMCPServer', () => {
 
       expect(Array.isArray(intakes)).toBe(true);
       expect(intakes).toHaveLength(0);
+    });
+  });
+
+  describe('approval is not exposed over MCP', () => {
+    const gatedIntake: IntakeDefinition = {
+      id: 'gated_form',
+      version: '1.0.0',
+      name: 'Gated Form',
+      schema: z.object({ amount: z.number() }),
+      destination: { type: 'webhook', name: 'Gated', config: { url: 'https://example.com/gated' } },
+      approvalGates: [{ id: 'g1', name: 'High value', reviewers: ['rev-1'] }],
+    };
+
+    it('does not GENERATE approve/reject tools for a gated intake', () => {
+      const tools = generateToolsFromIntake(gatedIntake);
+      expect(tools).not.toHaveProperty('approve');
+      expect(tools).not.toHaveProperty('reject');
+    });
+
+    it('does not REGISTER _approve/_reject in the MCP tools/list surface', async () => {
+      const config: MCPServerConfig = {
+        name: 'test-server',
+        version: '1.0.0',
+        transport: { type: 'stdio' },
+      };
+      const server = new FormBridgeMCPServer(config);
+      server.registerIntake(gatedIntake);
+
+      // Invoke the real MCP tools/list handler and inspect the advertised tools.
+      const mcp = server.getServer() as unknown as {
+        _requestHandlers: Map<string, (req: unknown, extra: unknown) => Promise<{ tools: Array<{ name: string }> }>>;
+      };
+      const listHandler = mcp._requestHandlers.get('tools/list')!;
+      const result = await listHandler({ method: 'tools/list', params: {} }, {});
+      const names = result.tools.map((t) => t.name);
+
+      expect(names).toContain('gated_form_submit');
+      expect(names.some((n) => n.endsWith('_approve') || n.endsWith('_reject'))).toBe(false);
+    });
+
+    it('has no dispatch path for _approve/_reject (parseToolName rejects them)', () => {
+      expect(parseToolName('gated_form_approve')).toBeNull();
+      expect(parseToolName('gated_form_reject')).toBeNull();
+    });
+
+    it('returns an error when an _approve tool call is dispatched', async () => {
+      const config: MCPServerConfig = {
+        name: 'test-server',
+        version: '1.0.0',
+        transport: { type: 'stdio' },
+      };
+      const server = new FormBridgeMCPServer(config);
+      server.registerIntake(gatedIntake);
+
+      const call = (server as unknown as {
+        handleToolCall: (name: string, args: Record<string, unknown>) => Promise<{ isError?: boolean }>;
+      }).handleToolCall.bind(server);
+
+      const approveRes = await call('gated_form_approve', { resumeToken: 'rtok_x' });
+      const rejectRes = await call('gated_form_reject', { resumeToken: 'rtok_x', reason: 'x' });
+      expect(approveRes.isError).toBe(true);
+      expect(rejectRes.isError).toBe(true);
+    });
+  });
+
+  describe('standalone lifecycle cleanup', () => {
+    const intake: IntakeDefinition = {
+      id: 'cleanup_form',
+      version: '1.0.0',
+      name: 'Cleanup Form',
+      schema: z.object({ field: z.string() }),
+      destination: { type: 'webhook', name: 'Test', config: { url: 'https://example.com' } },
+    };
+
+    it('close() stops the schedulers it started and is idempotent', async () => {
+      const config: MCPServerConfig = {
+        name: 'test-server',
+        version: '1.0.0',
+        transport: { type: 'stdio' },
+      };
+      const server = new FormBridgeMCPServer(config);
+      server.registerIntake(intake);
+
+      // Force the standalone lifecycle (with its schedulers) to be built.
+      await (server as unknown as { ensureServices: () => Promise<void> }).ensureServices();
+      const resolved = (server as unknown as {
+        resolved: { webhookManager: { stopRetryScheduler: () => void }; expiryScheduler: { stop: () => void } };
+      }).resolved;
+
+      const stopWebhook = vi.spyOn(resolved.webhookManager, 'stopRetryScheduler');
+      const stopExpiry = vi.spyOn(resolved.expiryScheduler, 'stop');
+
+      await server.close();
+      expect(stopWebhook).toHaveBeenCalledTimes(1);
+      expect(stopExpiry).toHaveBeenCalledTimes(1);
+
+      // Idempotent — a second close() does not throw.
+      await expect(server.close()).resolves.toBeUndefined();
     });
   });
 });

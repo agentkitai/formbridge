@@ -14,10 +14,10 @@ import type {
   IntakeDefinition,
 } from "../types/intake-contract.js";
 import { createIntakeError } from "../types/intake-contract.js";
-import type { Submission, FieldAttribution } from "../submission-types";
+import type { Submission, FieldAttribution, FieldError, JSONSchema } from "../submission-types";
 import type { StorageBackend } from "../storage/storage-backend.js";
 import type { StorageTransaction } from "../storage/storage-interface.js";
-import type { UploadStatus } from "./validator.js";
+import { Validator, type UploadStatus } from "./validator.js";
 import type { EventStore } from "./event-store.js";
 import { InMemoryEventStore } from "./event-store.js";
 import type { PiiRedactor } from "./pii-redactor.js";
@@ -175,6 +175,8 @@ export class SubmissionManager {
   private storage?: TransactionalStorage;
   private handoffNotifyUrl?: string;
   private receiptManager?: ReceiptManager;
+  /** Lazily-built JSON-schema validator for the read-only validate() path. */
+  private schemaValidator?: Validator;
 
   constructor(options: SubmissionManagerOptions) {
     this.store = options.store;
@@ -918,6 +920,50 @@ export class SubmissionManager {
     resumeToken: string
   ): Promise<Submission | null> {
     return this.store.getByResumeToken(resumeToken);
+  }
+
+  /**
+   * Read-only validation of a submission's current fields against its intake
+   * schema. Pure query: NO recordEvent, NO save, NO resume-token rotation, and
+   * NO state transition — callers (e.g. the MCP validate tool) can probe
+   * readiness without mutating the audited lifecycle.
+   */
+  async validate(
+    submissionId: string
+  ): Promise<{ ok: boolean; missingFields: string[]; errors: FieldError[] }> {
+    const submission = await this.store.get(submissionId);
+    if (!submission) {
+      throw new SubmissionNotFoundError(submissionId);
+    }
+
+    let schema: JSONSchema = { type: "object" };
+    if (this.intakeRegistry) {
+      try {
+        const intake = this.intakeRegistry.getIntake(submission.intakeId);
+        if (isRecord(intake.schema)) {
+          schema = intake.schema as JSONSchema;
+        }
+      } catch {
+        // No intake registered — validate against an empty object schema.
+      }
+    }
+
+    // Strip the internal upload-tracking key before validating; pass uploads
+    // separately so file-field constraints are still checked.
+    const uploads = getUploads(submission.fields);
+    const { __uploads: _uploads, ...dataFields } = submission.fields;
+
+    this.schemaValidator ??= new Validator({
+      strict: false,
+      allowAdditionalProperties: true,
+    });
+    const result = this.schemaValidator.validate(dataFields, schema, uploads);
+
+    return {
+      ok: result.valid,
+      missingFields: result.missingFields,
+      errors: result.errors,
+    };
   }
 
   /**

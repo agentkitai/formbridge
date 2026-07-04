@@ -1,25 +1,27 @@
 /**
  * FormBridge MCP Tool Generator
  *
- * This module provides two tool registration approaches:
- * 1. MCP SDK tools (registerTools): Registers handoffToHuman, requestUpload,
- *    and confirmUpload tools using the MCP SDK server pattern.
- * 2. Intake-based tools (generateToolsFromIntake): Generates MCP tool definitions
- *    from IntakeDefinition schemas for create, set, validate, submit,
- *    requestUpload, and confirmUpload operations.
+ * Generates MCP tool DEFINITIONS from IntakeDefinition schemas. Each intake
+ * exposes a create/set/validate/submit/requestUpload/confirmUpload surface plus
+ * get/handoff/finalize tools. The definitions carry an optional `actor` on
+ * every mutating tool so callers can attribute writes.
+ *
+ * NOTE: approve/reject are intentionally NOT generated here. Approval is a
+ * separation-of-duties control that the unauthenticated MCP transport cannot
+ * enforce (it can't establish reviewer identity), so it lives only on the
+ * authenticated HTTP/dashboard path. See src/mcp/handlers/lifecycle-handlers.ts.
+ *
+ * The tool HANDLERS live in ./handlers/* and delegate to the shared
+ * SubmissionManager; this module only produces the JSON-schema tool specs.
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import type { SubmissionManager } from "../core/submission-manager.js";
-import type { Actor, IntakeDefinition } from "../types/intake-contract.js";
+import type { IntakeDefinition } from "../types/intake-contract.js";
 import type { MCPToolDefinition } from "../types/mcp-tool-definitions.js";
 import type { JsonSchema } from "../schemas/json-schema-converter.js";
 import { convertZodToJsonSchema } from "../schemas/json-schema-converter.js";
-import { IntakeId } from "../types/branded.js";
 
 // =============================================================================
-// § MCP SDK Tool Registration
+// § Intake-Based Tool Generation
 // =============================================================================
 
 /**
@@ -35,247 +37,21 @@ export interface ToolGenerationOptions {
 }
 
 /**
- * Register all MCP tools for FormBridge
+ * JSON-schema fragment for the optional `actor` on every mutating tool.
+ * Callers may attribute the write; when omitted the server uses the default
+ * system actor.
  */
-export function registerTools(
-  server: McpServer,
-  submissionManager: SubmissionManager
-): void {
-  /**
-   * handoffToHuman - Generate a resume URL for agent-to-human collaboration
-   *
-   * Allows an agent to hand off a partially completed submission to a human
-   * by generating a shareable resume URL with the resumeToken embedded.
-   */
-  server.tool(
-    "handoffToHuman",
-    "Generate a shareable resume URL for agent-to-human handoff. Returns a URL that a human can open to complete the submission.",
-    {
-      submissionId: z.string().describe("The submission ID to generate a handoff URL for"),
-      actor: z.object({
-        kind: z.enum(["agent", "human", "system"]).describe("Type of actor requesting the handoff"),
-        id: z.string().describe("Unique identifier for the actor"),
-        name: z.string().optional().describe("Display name of the actor"),
-        metadata: z.record(z.unknown()).optional().describe("Additional actor metadata"),
-      }).optional().describe("Actor requesting the handoff (defaults to system actor)"),
-    },
-    async ({ submissionId, actor }) => {
-      try {
-        // Default to system actor if not provided
-        const handoffActor: Actor = actor || {
-          kind: "system",
-          id: "mcp-server",
-          name: "MCP Server",
-        };
-
-        // Generate the handoff URL
-        const resumeUrl = await submissionManager.generateHandoffUrl(
-          submissionId,
-          handoffActor
-        );
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: true,
-                submissionId,
-                resumeUrl,
-                message: "Handoff URL generated successfully. Share this URL with a human to complete the submission.",
-              }, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                submissionId,
-                error: errorMessage,
-              }, null, 2),
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
-
-  /**
-   * requestUpload - Request a signed URL for file upload
-   *
-   * Initiates a file upload by requesting a signed URL from the storage backend.
-   * The agent provides file metadata and receives a URL to upload the file to.
-   */
-  server.tool(
-    "requestUpload",
-    "Request a signed URL to upload a file for a submission. Provide file metadata (field name, filename, MIME type, size) and receive a signed URL with upload constraints.",
-    {
-      submissionId: z.string().describe("The submission ID to upload a file for"),
-      resumeToken: z.string().describe("Resume token from previous create or set call"),
-      field: z.string().describe("Dot-path to the file field (e.g., 'documents.w9_form')"),
-      filename: z.string().describe("Name of the file to upload"),
-      mimeType: z.string().describe("MIME type of the file (e.g., 'application/pdf', 'image/jpeg')"),
-      sizeBytes: z.number().describe("Size of the file in bytes"),
-      intakeId: z.string().describe("The intake definition ID for schema validation"),
-      actor: z.object({
-        kind: z.enum(["agent", "human", "system"]).describe("Type of actor"),
-        id: z.string().describe("Unique identifier for the actor"),
-        name: z.string().optional().describe("Display name of the actor"),
-        metadata: z.record(z.unknown()).optional().describe("Additional actor metadata"),
-      }).optional().describe("Actor requesting the upload (defaults to system actor)"),
-    },
-    async ({ submissionId, resumeToken, field, filename, mimeType, sizeBytes, intakeId, actor }) => {
-      try {
-        const uploadActor: Actor = actor || {
-          kind: "system",
-          id: "mcp-server",
-          name: "MCP Server",
-        };
-
-        // Construct a minimal IntakeDefinition for validation
-        const intakeDefinition: IntakeDefinition = {
-          id: IntakeId(intakeId),
-          version: "1.0.0",
-          name: intakeId,
-          schema: {},
-          destination: { kind: "webhook" },
-        };
-
-        const result = await submissionManager.requestUpload(
-          {
-            submissionId,
-            resumeToken,
-            field,
-            filename,
-            mimeType,
-            sizeBytes,
-            actor: uploadActor,
-          },
-          intakeDefinition
-        );
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                submissionId,
-                error: errorMessage,
-              }, null, 2),
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
-
-  /**
-   * confirmUpload - Confirm completion of a file upload
-   *
-   * After uploading a file to the signed URL, call this to verify the upload
-   * and update the submission state.
-   */
-  server.tool(
-    "confirmUpload",
-    "Confirm completion of a file upload. Call this after successfully uploading a file to the signed URL received from requestUpload. The system will verify the upload and update the submission status.",
-    {
-      submissionId: z.string().describe("The submission ID"),
-      resumeToken: z.string().describe("Resume token from previous requestUpload call"),
-      uploadId: z.string().describe("Upload ID returned from requestUpload"),
-      actor: z.object({
-        kind: z.enum(["agent", "human", "system"]).describe("Type of actor"),
-        id: z.string().describe("Unique identifier for the actor"),
-        name: z.string().optional().describe("Display name of the actor"),
-        metadata: z.record(z.unknown()).optional().describe("Additional actor metadata"),
-      }).optional().describe("Actor confirming the upload (defaults to system actor)"),
-    },
-    async ({ submissionId, resumeToken, uploadId, actor }) => {
-      try {
-        const confirmActor: Actor = actor || {
-          kind: "system",
-          id: "mcp-server",
-          name: "MCP Server",
-        };
-
-        const result = await submissionManager.confirmUpload({
-          submissionId,
-          resumeToken,
-          uploadId,
-          actor: confirmActor,
-        });
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "Unknown error";
-
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify({
-                ok: false,
-                submissionId,
-                error: errorMessage,
-              }, null, 2),
-            },
-          ],
-          isError: true,
-        };
-      }
-    }
-  );
-}
-
-/**
- * Create and configure an MCP server with FormBridge tools
- */
-export function createMcpServer(
-  submissionManager: SubmissionManager,
-  options?: {
-    name?: string;
-    version?: string;
-  }
-): McpServer {
-  const server = new McpServer({
-    name: options?.name || "@agentkitai/formbridge-mcp-server",
-    version: options?.version || "0.1.0",
-  });
-
-  registerTools(server, submissionManager);
-
-  return server;
-}
-
-// =============================================================================
-// § Intake-Based Tool Generation (legacy pattern)
-// =============================================================================
+const ACTOR_SCHEMA: Record<string, unknown> = {
+  type: 'object',
+  description: 'Actor performing this operation (defaults to the system actor)',
+  properties: {
+    kind: { type: 'string', enum: ['agent', 'human', 'system'], description: 'Actor kind' },
+    id: { type: 'string', description: 'Unique actor identifier' },
+    name: { type: 'string', description: 'Display name of the actor' },
+  },
+  required: ['kind', 'id'],
+  additionalProperties: true,
+};
 
 /**
  * Generated tool definitions from an IntakeDefinition
@@ -293,6 +69,12 @@ export interface GeneratedTools {
   requestUpload: MCPToolDefinition;
   /** Confirm upload tool definition */
   confirmUpload: MCPToolDefinition;
+  /** Get tool definition (state / fields / attribution / missing fields) */
+  get: MCPToolDefinition;
+  /** Handoff tool definition (agent → human resume URL) */
+  handoff: MCPToolDefinition;
+  /** Finalize tool definition (issue provenance receipt) */
+  finalize: MCPToolDefinition;
 }
 
 /**
@@ -399,7 +181,29 @@ export function generateToolsFromIntake(
     intake.description
   );
 
-  return { create, set, validate, submit, requestUpload, confirmUpload };
+  const get = generateGetTool(toolPrefix, intake.name, intake.description);
+  const handoff = generateHandoffTool(toolPrefix, intake.name, intake.description);
+  const finalize = generateFinalizeTool(toolPrefix, intake.name, intake.description);
+
+  const tools: GeneratedTools = {
+    create,
+    set,
+    validate,
+    submit,
+    requestUpload,
+    confirmUpload,
+    get,
+    handoff,
+    finalize,
+  };
+
+  // NOTE: approve/reject are NOT generated for gated intakes over MCP. Approval
+  // is a reviewer-only action; the unauthenticated MCP transport cannot enforce
+  // that separation of duties (the submitting agent holds the resume token and
+  // could self-approve), so approval is exposed only on the authenticated HTTP
+  // path. The gate still applies — a gated submit returns needs_review, and a
+  // human approves via HTTP/dashboard.
+  return tools;
 }
 
 /**
@@ -442,7 +246,8 @@ function generateCreateTool(
       idempotencyKey: {
         type: 'string',
         description: 'Optional idempotency key for safe retries'
-      }
+      },
+      actor: ACTOR_SCHEMA
     },
     additionalProperties: false
   };
@@ -493,7 +298,8 @@ function generateSetTool(
         description: 'Field values to set or update',
         properties: jsonSchema.properties || {},
         additionalProperties: false
-      }
+      },
+      actor: ACTOR_SCHEMA
     },
     required: ['resumeToken', 'data'],
     additionalProperties: false
@@ -527,7 +333,8 @@ function generateValidateTool(
       resumeToken: {
         type: 'string',
         description: 'Resume token from previous create or set call'
-      }
+      },
+      actor: ACTOR_SCHEMA
     },
     required: ['resumeToken'],
     additionalProperties: false
@@ -565,7 +372,8 @@ function generateSubmitTool(
       resumeToken: {
         type: 'string',
         description: 'Resume token from previous create or set call'
-      }
+      },
+      actor: ACTOR_SCHEMA
     },
     required: ['resumeToken'],
     additionalProperties: false
@@ -615,7 +423,8 @@ function generateRequestUploadTool(
       sizeBytes: {
         type: 'number',
         description: 'Size of the file in bytes'
-      }
+      },
+      actor: ACTOR_SCHEMA
     },
     required: ['resumeToken', 'field', 'filename', 'mimeType', 'sizeBytes'],
     additionalProperties: false
@@ -653,7 +462,8 @@ function generateConfirmUploadTool(
       uploadId: {
         type: 'string',
         description: 'Upload ID returned from requestUpload'
-      }
+      },
+      actor: ACTOR_SCHEMA
     },
     required: ['resumeToken', 'uploadId'],
     additionalProperties: false
@@ -663,6 +473,75 @@ function generateConfirmUploadTool(
     name: toolName,
     description,
     inputSchema
+  };
+}
+
+/**
+ * Shared input schema: only a resume token (+ optional actor).
+ */
+function resumeTokenInputSchema(): MCPToolDefinition['inputSchema'] {
+  return {
+    type: 'object',
+    properties: {
+      resumeToken: {
+        type: 'string',
+        description: 'Resume token from a previous create or set call'
+      },
+      actor: ACTOR_SCHEMA
+    },
+    required: ['resumeToken'],
+    additionalProperties: false
+  };
+}
+
+/**
+ * Generates the get tool definition — reads the current submission state,
+ * fields, per-field attribution, and missing required fields (read-only).
+ */
+function generateGetTool(
+  toolPrefix: string,
+  intakeName: string,
+  intakeDescription: string | undefined
+): MCPToolDefinition {
+  const baseDescription = intakeDescription || intakeName;
+  return {
+    name: `${toolPrefix}_get`,
+    description: `Get the current state of ${baseDescription}: submission state, filled fields, per-field attribution, and any missing required fields. Read-only — does not change state or rotate the resume token.`,
+    inputSchema: resumeTokenInputSchema(),
+  };
+}
+
+/**
+ * Generates the handoff tool definition — issues a shareable resume URL for
+ * agent-to-human collaboration.
+ */
+function generateHandoffTool(
+  toolPrefix: string,
+  intakeName: string,
+  intakeDescription: string | undefined
+): MCPToolDefinition {
+  const baseDescription = intakeDescription || intakeName;
+  return {
+    name: `${toolPrefix}_handoff`,
+    description: `Generate a shareable resume URL to hand off ${baseDescription} from an agent to a human. Returns a URL a human can open to complete the submission.`,
+    inputSchema: resumeTokenInputSchema(),
+  };
+}
+
+/**
+ * Generates the finalize tool definition — transitions a submitted/approved
+ * submission to finalized and issues a signed provenance receipt.
+ */
+function generateFinalizeTool(
+  toolPrefix: string,
+  intakeName: string,
+  intakeDescription: string | undefined
+): MCPToolDefinition {
+  const baseDescription = intakeDescription || intakeName;
+  return {
+    name: `${toolPrefix}_finalize`,
+    description: `Finalize ${baseDescription} (submitted or approved) and issue a signed provenance receipt. Terminal — the submission cannot be modified afterward.`,
+    inputSchema: resumeTokenInputSchema(),
   };
 }
 
@@ -738,7 +617,19 @@ function extractFieldDescriptions(jsonSchema: JsonSchema): Record<string, string
 /**
  * Tool operation types
  */
-export type ToolOperation = 'create' | 'set' | 'validate' | 'submit' | 'requestUpload' | 'confirmUpload';
+// NOTE: 'approve'/'reject' are intentionally absent — approval is not exposed
+// over MCP (see generateToolsFromIntake). parseToolName therefore rejects any
+// `{intakeId}_approve`/`_reject` tool name, so no dispatch path can handle them.
+export type ToolOperation =
+  | 'create'
+  | 'set'
+  | 'validate'
+  | 'submit'
+  | 'requestUpload'
+  | 'confirmUpload'
+  | 'get'
+  | 'handoff'
+  | 'finalize';
 
 /**
  * Generates a tool name from intake ID and operation
@@ -757,7 +648,17 @@ export function generateToolName(intakeId: string, operation: ToolOperation): st
  * @param toolName - The full tool name to parse
  * @returns Object containing intakeId and operation, or null if invalid
  */
-const VALID_OPERATIONS = new Set<ToolOperation>(['create', 'set', 'validate', 'submit', 'requestUpload', 'confirmUpload']);
+const VALID_OPERATIONS = new Set<ToolOperation>([
+  'create',
+  'set',
+  'validate',
+  'submit',
+  'requestUpload',
+  'confirmUpload',
+  'get',
+  'handoff',
+  'finalize',
+]);
 
 function isToolOperation(value: string): value is ToolOperation {
   return VALID_OPERATIONS.has(value as ToolOperation);
