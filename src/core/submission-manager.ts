@@ -16,6 +16,7 @@ import type {
 import { createIntakeError } from "../types/intake-contract.js";
 import type { Submission, FieldAttribution } from "../submission-types";
 import type { StorageBackend } from "../storage/storage-backend.js";
+import type { StorageTransaction } from "../storage/storage-interface.js";
 import type { UploadStatus } from "./validator.js";
 import type { EventStore } from "./event-store.js";
 import { InMemoryEventStore } from "./event-store.js";
@@ -66,6 +67,14 @@ export interface SubmissionStore {
 
 export interface EventEmitter {
   emit(event: IntakeEvent): Promise<void>;
+}
+
+/**
+ * Minimal transactional-storage capability the manager needs to commit an
+ * event atomically (submission save + event append) before emitting.
+ */
+export interface TransactionalStorage {
+  transaction<T>(fn: (tx: StorageTransaction) => Promise<T>): Promise<T>;
 }
 
 export interface IntakeRegistry {
@@ -133,6 +142,13 @@ export interface SubmissionManagerOptions {
   baseUrl?: string;
   storageBackend?: StorageBackend;
   eventStore?: EventStore;
+  /**
+   * Optional transactional storage. When provided, recordEvent commits the
+   * submission + event atomically and emits AFTER commit (save-before-emit).
+   * When omitted, the manager falls back to the legacy sequential path so
+   * existing callers that inject a plain in-memory store keep working.
+   */
+  storage?: TransactionalStorage;
   /** Optional per-field PII redactor applied at intake (#13). Unset = no redaction. */
   piiRedactor?: PiiRedactor;
   /**
@@ -156,6 +172,7 @@ export class SubmissionManager {
   private piiRedactor?: PiiRedactor;
   private storageBackend?: StorageBackend;
   private eventStore: EventStore;
+  private storage?: TransactionalStorage;
   private handoffNotifyUrl?: string;
   private receiptManager?: ReceiptManager;
 
@@ -167,6 +184,7 @@ export class SubmissionManager {
     this.storageBackend = options.storageBackend;
     // Initialize event store (defaults to in-memory implementation)
     this.eventStore = options.eventStore ?? new InMemoryEventStore();
+    this.storage = options.storage;
     this.handoffNotifyUrl = options.handoffNotifyUrl ?? process.env["FORMBRIDGE_NOTIFY_URL"];
     this.piiRedactor = options.piiRedactor;
     this.receiptManager = options.receiptManager;
@@ -252,17 +270,35 @@ export class SubmissionManager {
   }
 
   /**
-   * Record an event using the triple-write pattern:
-   * 1. Append to submission.events array (in-memory)
-   * 2. Emit via event emitter + append to persistent event store (parallel)
-   * 3. Save submission to store
+   * Record an event.
+   *
+   * Transactional path (when a transactional storage is injected):
+   *   1. Append to submission.events array (in-memory copy)
+   *   2. Atomically save submission + append event to the durable event store
+   *   3. Emit AFTER commit (save-before-emit) so no listener observes an
+   *      uncommitted transition and reads go through store.get() post-commit.
+   *
+   * Legacy path (no transactional storage — plain in-memory store+eventStore):
+   *   Falls back to the previous sequential triple-write so existing unit tests
+   *   that construct SubmissionManager directly keep the same behavior.
    */
   private async recordEvent(
     submission: Submission,
     event: IntakeEvent
   ): Promise<void> {
     submission.events.push(event);
-    // Emit and append are independent — run in parallel
+
+    if (this.storage) {
+      await this.storage.transaction(async (tx) => {
+        await tx.submissions.save(submission);
+        await tx.events.appendEvent(event);
+      });
+      // Emit only after the transaction commits.
+      await this.eventEmitter.emit(event);
+      return;
+    }
+
+    // Legacy sequential path — emit and append in parallel, then save.
     await Promise.all([
       this.eventEmitter.emit(event),
       this.eventStore.appendEvent(event),

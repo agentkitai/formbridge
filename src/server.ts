@@ -14,9 +14,14 @@
 
 import { serve } from "@hono/node-server";
 import { createFormBridgeAppWithIntakes } from "./app.js";
+import { createStorageFromEnv } from "./storage/storage-factory.js";
 import { getLogger } from "./logging.js";
 
-const app = createFormBridgeAppWithIntakes([]);
+// Select + initialize the storage backend from the environment
+// (FORMBRIDGE_STORAGE=memory|sqlite|postgres; default memory). The app factory
+// stays synchronous, so we resolve the durable storage here and inject it.
+const storage = await createStorageFromEnv();
+const app = createFormBridgeAppWithIntakes([], { storage });
 
 const PORT = Number(process.env["PORT"]) || 3000;
 const HOST = process.env["HOST"] || "0.0.0.0";

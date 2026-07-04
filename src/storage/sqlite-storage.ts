@@ -14,9 +14,15 @@ import type {
   IntakeEvent,
   IntakeEventType,
   Actor,
+  DeliveryRecord,
 } from "../types/intake-contract.js";
 import type { EventStore, EventFilters, EventStoreStats } from "../core/event-store.js";
-import { EventId, SubmissionId } from "../types/branded.js";
+import type {
+  DeliveryQueue,
+  DeliveryQueueStats,
+  DeliveryContext,
+} from "../core/delivery-queue.js";
+import { EventId, SubmissionId, DeliveryId } from "../types/branded.js";
 import type { StorageBackend } from "./storage-backend.js";
 import type {
   FormBridgeStorage,
@@ -24,6 +30,7 @@ import type {
   SubmissionFilter,
   PaginatedResult,
   PaginationOptions,
+  StorageTransaction,
 } from "./storage-interface.js";
 
 // =============================================================================
@@ -198,8 +205,9 @@ class SqliteSubmissionStorage implements SubmissionStorage {
     const data = JSON.stringify(submission);
     this.db
       .prepare(
-        `INSERT OR REPLACE INTO submissions (id, intakeId, state, resumeToken, idempotencyKey, createdAt, updatedAt, data)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+        `INSERT OR REPLACE INTO submissions
+           (id, intakeId, state, resumeToken, idempotencyKey, tenant_id, expires_at, destination_delivered_at, createdAt, updatedAt, data)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       .run(
         submission.id,
@@ -207,6 +215,9 @@ class SqliteSubmissionStorage implements SubmissionStorage {
         submission.state,
         submission.resumeToken,
         submission.idempotencyKey ?? null,
+        submission.tenantId ?? null,
+        submission.expiresAt ?? null,
+        submission.destinationDeliveredAt ?? null,
         submission.createdAt,
         submission.updatedAt,
         data
@@ -285,6 +296,279 @@ class SqliteSubmissionStorage implements SubmissionStorage {
   async count(filter: SubmissionFilter): Promise<number> {
     const result = await this.list(filter, { limit: 0 });
     return result.total;
+  }
+
+  async getExpired(): Promise<Submission[]> {
+    const now = new Date().toISOString();
+    const rows = this.db
+      .prepare(
+        `SELECT data FROM submissions
+         WHERE expires_at IS NOT NULL AND expires_at < ?
+           AND state NOT IN ('rejected', 'finalized', 'cancelled', 'expired')`
+      )
+      .all(now);
+    const items: Submission[] = [];
+    for (const row of rows) {
+      if (isDataRow(row)) {
+        const parsed: unknown = JSON.parse(row.data);
+        if (isSubmissionShape(parsed)) items.push(parsed);
+      }
+    }
+    return items;
+  }
+
+  async getAll(tenantId?: string): Promise<Submission[]> {
+    const rows = tenantId
+      ? this.db
+          .prepare(
+            "SELECT data FROM submissions WHERE tenant_id IS NULL OR tenant_id = ?"
+          )
+          .all(tenantId)
+      : this.db.prepare("SELECT data FROM submissions").all();
+    const items: Submission[] = [];
+    for (const row of rows) {
+      if (isDataRow(row)) {
+        const parsed: unknown = JSON.parse(row.data);
+        if (isSubmissionShape(parsed)) items.push(parsed);
+      }
+    }
+    return items;
+  }
+
+  async getStateCounts(): Promise<Record<string, number>> {
+    const rows = this.db
+      .prepare("SELECT state, COUNT(*) as count FROM submissions GROUP BY state")
+      .all();
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      if (
+        row != null &&
+        typeof row === "object" &&
+        "state" in row &&
+        typeof row.state === "string" &&
+        "count" in row &&
+        typeof row.count === "number"
+      ) {
+        counts[row.state] = row.count;
+      }
+    }
+    return counts;
+  }
+
+  async getTotalCount(): Promise<number> {
+    const row = this.db
+      .prepare("SELECT COUNT(*) as count FROM submissions")
+      .get();
+    return isCountRow(row) ? row.count : 0;
+  }
+
+  async getPendingApprovalCount(): Promise<number> {
+    const row = this.db
+      .prepare(
+        "SELECT COUNT(*) as count FROM submissions WHERE state = 'needs_review'"
+      )
+      .get();
+    return isCountRow(row) ? row.count : 0;
+  }
+}
+
+// =============================================================================
+// § SQLite Delivery Queue
+// =============================================================================
+
+/** Type guard for delivery rows from the deliveries table. */
+interface DeliveryRow {
+  delivery_id: string;
+  submission_id: string;
+  destination_url: string;
+  status: string;
+  attempts: number;
+  last_attempt_at: string | null;
+  next_retry_at: string | null;
+  status_code: number | null;
+  error: string | null;
+  created_at: string;
+}
+
+function isDeliveryRow(row: unknown): row is DeliveryRow {
+  return (
+    row != null &&
+    typeof row === "object" &&
+    "delivery_id" in row &&
+    typeof row.delivery_id === "string" &&
+    "submission_id" in row &&
+    typeof row.submission_id === "string" &&
+    "status" in row &&
+    typeof row.status === "string"
+  );
+}
+
+function isDeliveryStatus(value: string): value is DeliveryRecord["status"] {
+  return value === "pending" || value === "succeeded" || value === "failed";
+}
+
+function rowToDeliveryRecord(row: DeliveryRow): DeliveryRecord {
+  return {
+    deliveryId: DeliveryId(row.delivery_id),
+    submissionId: SubmissionId(row.submission_id),
+    destinationUrl: row.destination_url,
+    status: isDeliveryStatus(row.status) ? row.status : "pending",
+    attempts: row.attempts,
+    lastAttemptAt: row.last_attempt_at ?? undefined,
+    nextRetryAt: row.next_retry_at ?? undefined,
+    statusCode: row.status_code ?? undefined,
+    error: row.error ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
+class SqliteDeliveryQueue implements DeliveryQueue {
+  /** In-memory cache of retry contexts for synchronous getContext(). */
+  private contexts = new Map<string, DeliveryContext>();
+
+  constructor(private db: Database) {
+    // Rehydrate retry contexts for non-failed deliveries (durability across restart).
+    const rows = this.db
+      .prepare(
+        "SELECT delivery_id, context FROM deliveries WHERE context IS NOT NULL AND status <> 'failed'"
+      )
+      .all();
+    for (const row of rows) {
+      if (
+        row != null &&
+        typeof row === "object" &&
+        "delivery_id" in row &&
+        typeof row.delivery_id === "string" &&
+        "context" in row &&
+        typeof row.context === "string"
+      ) {
+        try {
+          const ctx: unknown = JSON.parse(row.context);
+          if (ctx != null && typeof ctx === "object") {
+            this.contexts.set(row.delivery_id, ctx as DeliveryContext);
+          }
+        } catch {
+          // ignore malformed context
+        }
+      }
+    }
+  }
+
+  async enqueue(record: DeliveryRecord, context?: DeliveryContext): Promise<void> {
+    this.db
+      .prepare(
+        `INSERT OR REPLACE INTO deliveries
+           (delivery_id, submission_id, destination_url, status, attempts, last_attempt_at, next_retry_at, status_code, error, context, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        record.deliveryId,
+        record.submissionId,
+        record.destinationUrl,
+        record.status,
+        record.attempts,
+        record.lastAttemptAt ?? null,
+        record.nextRetryAt ?? null,
+        record.statusCode ?? null,
+        record.error ?? null,
+        context ? JSON.stringify(context) : null,
+        record.createdAt
+      );
+    if (context) {
+      this.contexts.set(record.deliveryId, context);
+    }
+  }
+
+  getContext(deliveryId: string): DeliveryContext | undefined {
+    return this.contexts.get(deliveryId);
+  }
+
+  async get(deliveryId: string): Promise<DeliveryRecord | null> {
+    const row = this.db
+      .prepare("SELECT * FROM deliveries WHERE delivery_id = ?")
+      .get(deliveryId);
+    return isDeliveryRow(row) ? rowToDeliveryRecord(row) : null;
+  }
+
+  async getBySubmission(submissionId: string): Promise<DeliveryRecord[]> {
+    const rows = this.db
+      .prepare(
+        "SELECT * FROM deliveries WHERE submission_id = ? ORDER BY created_at ASC"
+      )
+      .all(submissionId);
+    const records: DeliveryRecord[] = [];
+    for (const row of rows) {
+      if (isDeliveryRow(row)) records.push(rowToDeliveryRecord(row));
+    }
+    return records;
+  }
+
+  async update(record: DeliveryRecord): Promise<void> {
+    const result = this.db
+      .prepare(
+        `UPDATE deliveries SET
+           submission_id = ?, destination_url = ?, status = ?, attempts = ?,
+           last_attempt_at = ?, next_retry_at = ?, status_code = ?, error = ?
+         WHERE delivery_id = ?`
+      )
+      .run(
+        record.submissionId,
+        record.destinationUrl,
+        record.status,
+        record.attempts,
+        record.lastAttemptAt ?? null,
+        record.nextRetryAt ?? null,
+        record.statusCode ?? null,
+        record.error ?? null,
+        record.deliveryId
+      );
+    if (result.changes === 0) {
+      throw new Error(`Delivery not found: ${record.deliveryId}`);
+    }
+  }
+
+  async getPendingRetries(): Promise<DeliveryRecord[]> {
+    const now = new Date().toISOString();
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM deliveries
+         WHERE status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= ?)
+         ORDER BY created_at ASC`
+      )
+      .all(now);
+    const records: DeliveryRecord[] = [];
+    for (const row of rows) {
+      if (isDeliveryRow(row)) records.push(rowToDeliveryRecord(row));
+    }
+    return records;
+  }
+
+  async getStats(): Promise<DeliveryQueueStats> {
+    const rows = this.db
+      .prepare("SELECT status, COUNT(*) as count FROM deliveries GROUP BY status")
+      .all();
+    const stats: DeliveryQueueStats = {
+      total: 0,
+      pending: 0,
+      succeeded: 0,
+      failed: 0,
+    };
+    for (const row of rows) {
+      if (
+        row != null &&
+        typeof row === "object" &&
+        "status" in row &&
+        typeof row.status === "string" &&
+        "count" in row &&
+        typeof row.count === "number"
+      ) {
+        stats.total += row.count;
+        if (row.status === "pending") stats.pending = row.count;
+        else if (row.status === "succeeded") stats.succeeded = row.count;
+        else if (row.status === "failed") stats.failed = row.count;
+      }
+    }
+    return stats;
   }
 }
 
@@ -386,7 +670,14 @@ class SqliteEventStore implements EventStore {
     }
 
     const rawRows = this.db.prepare(sql).all(...params);
+    return this.mapEventRows(rawRows);
+  }
 
+  /**
+   * Map raw event rows to IntakeEvent[], skipping any row that fails validation.
+   * Shared by getEvents and the analytics helpers below.
+   */
+  private mapEventRows(rawRows: unknown[]): IntakeEvent[] {
     const events: IntakeEvent[] = [];
     for (const row of rawRows) {
       if (!isEventRow(row)) continue;
@@ -414,6 +705,30 @@ class SqliteEventStore implements EventStore {
       });
     }
     return events;
+  }
+
+  /**
+   * Get the most recent events across all submissions (newest first).
+   * Analytics helper — signature mirrors InMemoryEventStore so app.ts
+   * feature-detection wires /analytics/summary recentActivity automatically.
+   */
+  getRecentEventsAll(limit: number): IntakeEvent[] {
+    const rows = this.db
+      .prepare("SELECT * FROM events ORDER BY ts DESC LIMIT ?")
+      .all(limit);
+    return this.mapEventRows(rows);
+  }
+
+  /**
+   * Get all events of a given type (chronological order).
+   * Analytics helper — signature mirrors InMemoryEventStore so app.ts
+   * feature-detection wires /analytics/volume automatically.
+   */
+  getEventsByTypeAll(type: string): IntakeEvent[] {
+    const rows = this.db
+      .prepare("SELECT * FROM events WHERE type = ? ORDER BY ts ASC")
+      .all(type);
+    return this.mapEventRows(rows);
   }
 
   async countEvents(
@@ -522,6 +837,7 @@ export interface SqliteStorageOptions {
 export class SqliteStorage implements FormBridgeStorage {
   submissions!: SubmissionStorage;
   events!: EventStore;
+  deliveries!: DeliveryQueue;
   files: StorageBackend;
   private db: Database | null = null;
   private dbPath: string;
@@ -553,14 +869,30 @@ export class SqliteStorage implements FormBridgeStorage {
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
 
-    // Create tables
+    // Create tables (idempotent). initialize() is the source of truth for the
+    // schema; migrations/*.sql mirror this for reference.
+    //
+    // Ordering matters: the tenant_id / expires_at indexes are created in a
+    // SECOND exec below, AFTER addColumnIfMissing() has ensured those columns
+    // exist. On a pre-existing on-disk DB, `CREATE TABLE IF NOT EXISTS` is a
+    // no-op, so the durable-storage columns are absent until the ALTER runs —
+    // creating an index that references them here would fail with
+    // "no such column: tenant_id". (Postgres INIT_SQL has the same ordering.)
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        version TEXT PRIMARY KEY,
+        applied_at TEXT NOT NULL
+      );
+
       CREATE TABLE IF NOT EXISTS submissions (
         id TEXT PRIMARY KEY,
         intakeId TEXT NOT NULL,
         state TEXT NOT NULL,
         resumeToken TEXT NOT NULL,
         idempotencyKey TEXT,
+        tenant_id TEXT,
+        expires_at TEXT,
+        destination_delivered_at TEXT,
         createdAt TEXT NOT NULL,
         updatedAt TEXT NOT NULL,
         data TEXT NOT NULL
@@ -586,10 +918,114 @@ export class SqliteStorage implements FormBridgeStorage {
       CREATE INDEX IF NOT EXISTS idx_events_submissionId ON events(submissionId);
       CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
       CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+
+      CREATE TABLE IF NOT EXISTS deliveries (
+        delivery_id TEXT PRIMARY KEY,
+        submission_id TEXT NOT NULL,
+        destination_url TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at TEXT,
+        next_retry_at TEXT,
+        status_code INTEGER,
+        error TEXT,
+        context TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_deliveries_status_next_retry ON deliveries(status, next_retry_at);
+      CREATE INDEX IF NOT EXISTS idx_deliveries_submission_id ON deliveries(submission_id);
+      -- Deliberately NO unique guard on (submission_id, destination_url):
+      -- repeat deliveries to the same destination are legitimate (e.g. reviewer
+      -- notifications). Deliveries are keyed by delivery_id (PK), which enqueue
+      -- mints fresh each time, so there is no conflict. Drop the old partial
+      -- unique index if a pre-existing DB still carries it — it deleted in-flight
+      -- rows via INSERT OR REPLACE, causing "Delivery not found" error loops.
+      DROP INDEX IF EXISTS idx_deliveries_submission_dest;
     `);
+
+    // Idempotent column additions for pre-existing databases created before
+    // the durable-storage columns landed. SQLite lacks ADD COLUMN IF NOT EXISTS,
+    // so guard via pragma table_info. These MUST run before any CREATE INDEX
+    // that references the new columns (see the second exec, below).
+    this.addColumnIfMissing("submissions", "tenant_id", "TEXT");
+    this.addColumnIfMissing("submissions", "expires_at", "TEXT");
+    this.addColumnIfMissing("submissions", "destination_delivered_at", "TEXT");
+
+    // Indexes on the newly-ensured columns. Safe now that the ALTER TABLE ADD
+    // COLUMN calls above guarantee tenant_id / expires_at exist.
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_submissions_tenant_id ON submissions(tenant_id);
+      CREATE INDEX IF NOT EXISTS idx_submissions_expires_at ON submissions(expires_at);
+    `);
+
+    this.db
+      .prepare(
+        "INSERT OR IGNORE INTO schema_migrations (version, applied_at) VALUES (?, ?)"
+      )
+      .run("002_durable_storage", new Date().toISOString());
 
     this.submissions = new SqliteSubmissionStorage(this.db);
     this.events = new SqliteEventStore(this.db);
+    this.deliveries = new SqliteDeliveryQueue(this.db);
+  }
+
+  /** Add a column to a table only when it does not already exist. */
+  private addColumnIfMissing(table: string, column: string, type: string): void {
+    if (!this.db) return;
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all();
+    const exists = cols.some(
+      (c) =>
+        c != null &&
+        typeof c === "object" &&
+        "name" in c &&
+        (c as { name: unknown }).name === column
+    );
+    if (!exists) {
+      this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    }
+  }
+
+  private txChain: Promise<unknown> = Promise.resolve();
+
+  async transaction<T>(
+    fn: (tx: StorageTransaction) => Promise<T>
+  ): Promise<T> {
+    // Serialize transactions. SQLite is single-writer, and an `await` inside the
+    // callback yields the event loop — so two concurrent transactions on the one
+    // connection would issue nested BEGINs ("cannot start a transaction within a
+    // transaction"). Chain each transaction after the previous one settles.
+    const run = this.txChain.then(() => this.runTransaction(fn));
+    this.txChain = run.then(
+      () => undefined,
+      () => undefined
+    );
+    return run;
+  }
+
+  private async runTransaction<T>(
+    fn: (tx: StorageTransaction) => Promise<T>
+  ): Promise<T> {
+    if (!this.db) {
+      throw new Error("SqliteStorage not initialized");
+    }
+    const db = this.db;
+    // better-sqlite3's db.transaction() rejects async callbacks; our store
+    // methods are async (over synchronous work), so drive BEGIN/COMMIT/ROLLBACK
+    // explicitly. Serialization is guaranteed by transaction() above.
+    db.exec("BEGIN");
+    try {
+      const result = await fn({
+        submissions: this.submissions,
+        events: this.events,
+        deliveries: this.deliveries,
+      });
+      db.exec("COMMIT");
+      return result;
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
   }
 
   async close(): Promise<void> {

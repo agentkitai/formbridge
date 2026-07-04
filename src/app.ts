@@ -17,7 +17,6 @@ import { createHonoEventRouter } from './routes/hono-events.js';
 import { createHonoWellKnownRouter } from './routes/hono-well-known.js';
 import { createHonoReceiptRouter } from './routes/hono-receipts.js';
 import { loadReceiptManagerFromEnv } from './core/receipt-manager.js';
-import { timingSafeTokenCompare } from './core/errors.js';
 import { createHonoApprovalRouter } from './routes/hono-approvals.js';
 import { createHonoWebhookRouter } from './routes/hono-webhooks.js';
 import { createHonoAnalyticsRouter, type AnalyticsDataProvider, type IntakeMetrics } from './routes/hono-analytics.js';
@@ -28,8 +27,9 @@ import { loadAuthConfigFromEnv } from './auth/config.js';
 import { requestIdMiddleware } from './middleware/request-id.js';
 import { requestLoggerMiddleware } from './middleware/request-logger.js';
 import { getLogger } from './logging.js';
-import type { FormBridgeStorage } from './storage/storage-interface.js';
+import type { FormBridgeStorage, SubmissionStorage } from './storage/storage-interface.js';
 import { MemoryStorage } from './storage/memory-storage.js';
+import { createStorageFromEnv } from './storage/storage-factory.js';
 import { IntakeRegistry } from './core/intake-registry.js';
 import {
   SubmissionManager,
@@ -39,11 +39,12 @@ import {
 import { ApprovalManager } from './core/approval-manager.js';
 import { approvalDelegateFromEnv } from './core/agentgate-delegate.js';
 import { createPiiRedactor } from './core/pii-redactor.js';
-import { InMemoryEventStore } from './core/event-store.js';
+import type { EventStore } from './core/event-store.js';
+import type { DeliveryQueue } from './core/delivery-queue.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
 import type { IntakeDefinition } from './submission-types.js';
-import type { Submission } from './submission-types.js';
+import type { IntakeEvent } from './types/intake-contract.js';
 import { BridgingEventEmitter } from './core/bridging-event-emitter.js';
 import { WebhookNotifierImpl } from './core/webhook-notifier-impl.js';
 import { ExpiryScheduler } from './core/expiry-scheduler.js';
@@ -98,165 +99,6 @@ function hasReservedFieldNames(fields: Record<string, unknown>): string | null {
 }
 
 /**
- * In-memory SubmissionStore for the app factory
- */
-class InMemorySubmissionStore {
-  private submissions = new Map<string, Submission>();
-  private idempotencyIndex = new Map<string, string>(); // idempotencyKey -> submissionId
-  private resumeTokenIndex = new Map<string, string>(); // resumeToken -> submissionId
-  private lastKnownToken = new Map<string, string>(); // submissionId -> last saved token
-
-  // Incremental counters for O(1) analytics
-  private stateCountMap = new Map<string, number>();
-  private lastKnownState = new Map<string, string>(); // submissionId -> last saved state
-
-  async get(submissionId: string): Promise<Submission | null> {
-    return this.submissions.get(submissionId) ?? null;
-  }
-
-  async save(submission: Submission): Promise<void> {
-    // O(1) stale token cleanup using reverse index
-    const oldToken = this.lastKnownToken.get(submission.id);
-    if (oldToken && !timingSafeTokenCompare(oldToken, submission.resumeToken)) {
-      this.resumeTokenIndex.delete(oldToken);
-    }
-
-    // Update incremental state counters
-    const oldState = this.lastKnownState.get(submission.id);
-    if (oldState !== submission.state) {
-      if (oldState) {
-        this.stateCountMap.set(oldState, (this.stateCountMap.get(oldState) ?? 1) - 1);
-      }
-      this.stateCountMap.set(submission.state, (this.stateCountMap.get(submission.state) ?? 0) + 1);
-      this.lastKnownState.set(submission.id, submission.state);
-    }
-
-    this.submissions.set(submission.id, submission);
-    if (submission.idempotencyKey) {
-      this.idempotencyIndex.set(submission.idempotencyKey, submission.id);
-    }
-    this.resumeTokenIndex.set(submission.resumeToken, submission.id);
-    this.lastKnownToken.set(submission.id, submission.resumeToken);
-  }
-
-  async getByResumeToken(resumeToken: string): Promise<Submission | null> {
-    const id = this.resumeTokenIndex.get(resumeToken);
-    if (!id) return null;
-    return this.submissions.get(id) ?? null;
-  }
-
-  async getByIdempotencyKey(key: string): Promise<Submission | null> {
-    const id = this.idempotencyIndex.get(key);
-    if (!id) return null;
-    return this.submissions.get(id) ?? null;
-  }
-
-  getAll(tenantId?: string): Submission[] {
-    const all = Array.from(this.submissions.values());
-    if (!tenantId) return all;
-    return all.filter(s => !s.tenantId || s.tenantId === tenantId);
-  }
-
-  /** Returns submissions with expiresAt in the past that are not in a terminal state */
-  async getExpired(): Promise<Submission[]> {
-    const now = new Date();
-    const terminal = new Set(['rejected', 'finalized', 'cancelled', 'expired']);
-    const result: Submission[] = [];
-    for (const sub of this.submissions.values()) {
-      if (sub.expiresAt && new Date(sub.expiresAt) < now && !terminal.has(sub.state)) {
-        result.push(sub);
-      }
-    }
-    return result;
-  }
-
-  /** O(1) total submission count */
-  getTotalCount(): number {
-    return this.submissions.size;
-  }
-
-  /** O(1) submissions-by-state counts */
-  getStateCounts(): Record<string, number> {
-    const result: Record<string, number> = {};
-    for (const [state, count] of this.stateCountMap) {
-      if (count > 0) result[state] = count;
-    }
-    return result;
-  }
-
-  /** O(1) pending approval count */
-  getPendingApprovalCount(): number {
-    return this.stateCountMap.get('needs_review') ?? 0;
-  }
-
-  /**
-   * Evict terminal-state submissions beyond the configured max.
-   * Removes oldest terminal submissions first (by updatedAt).
-   * @returns Number of evicted submissions
-   */
-  evictTerminal(maxEntries: number): number {
-    if (this.submissions.size <= maxEntries) return 0;
-
-    const terminal = new Set(['rejected', 'finalized', 'cancelled', 'expired']);
-    const candidates: Submission[] = [];
-    for (const sub of this.submissions.values()) {
-      if (terminal.has(sub.state)) {
-        candidates.push(sub);
-      }
-    }
-
-    // Sort oldest first
-    candidates.sort((a, b) => a.updatedAt.localeCompare(b.updatedAt));
-
-    const toEvict = Math.min(candidates.length, this.submissions.size - maxEntries);
-    let evicted = 0;
-    for (let i = 0; i < toEvict; i++) {
-      const sub = candidates[i]!;
-      this.submissions.delete(sub.id);
-      this.resumeTokenIndex.delete(sub.resumeToken);
-      this.lastKnownToken.delete(sub.id);
-      if (sub.idempotencyKey) this.idempotencyIndex.delete(sub.idempotencyKey);
-      const st = this.lastKnownState.get(sub.id);
-      if (st) {
-        this.stateCountMap.set(st, (this.stateCountMap.get(st) ?? 1) - 1);
-        this.lastKnownState.delete(sub.id);
-      }
-      evicted++;
-    }
-    return evicted;
-  }
-
-  /**
-   * Remove submissions that have expired (expiresAt in the past + terminal state).
-   * @returns Number of cleaned-up submissions
-   */
-  cleanupExpired(): number {
-    const now = new Date().toISOString();
-    const terminal = new Set(['rejected', 'finalized', 'cancelled', 'expired']);
-    let removed = 0;
-    for (const [id, sub] of this.submissions) {
-      if (sub.expiresAt && sub.expiresAt < now && terminal.has(sub.state)) {
-        this.submissions.delete(id);
-        this.resumeTokenIndex.delete(sub.resumeToken);
-        this.lastKnownToken.delete(id);
-        if (sub.idempotencyKey) this.idempotencyIndex.delete(sub.idempotencyKey);
-        const st = this.lastKnownState.get(id);
-        if (st) {
-          this.stateCountMap.set(st, (this.stateCountMap.get(st) ?? 1) - 1);
-          this.lastKnownState.delete(id);
-        }
-        removed++;
-      }
-    }
-    return removed;
-  }
-
-  /** Current number of stored submissions */
-  get size(): number {
-    return this.submissions.size;
-  }
-}
-/**
  * Options for createFormBridgeApp
  */
 export interface FormBridgeAppOptions {
@@ -266,6 +108,202 @@ export interface FormBridgeAppOptions {
   storage?: FormBridgeStorage;
   /** When true, skip registering /metrics on the main app (served on separate METRICS_PORT) */
   skipMetricsRoute?: boolean;
+}
+
+/**
+ * The bundle of core services wired to a single storage backend. Returned by
+ * createSubmissionServices and consumed by the app factory.
+ */
+export interface SubmissionServices {
+  storage: FormBridgeStorage;
+  store: SubmissionStorage;
+  eventStore: EventStore;
+  deliveryQueue: DeliveryQueue;
+  emitter: BridgingEventEmitter;
+  manager: SubmissionManager;
+  approvalManager: ApprovalManager;
+  webhookManager: WebhookManager;
+  analyticsProvider: AnalyticsDataProvider;
+  expiryScheduler: ExpiryScheduler;
+  receiptManager: ReturnType<typeof loadReceiptManagerFromEnv>;
+}
+
+interface WireSubmissionServicesOptions {
+  registry: IntakeRegistry;
+  storage: FormBridgeStorage;
+  baseUrl?: string;
+  logger?: ReturnType<typeof getLogger>;
+}
+
+/** Optional analytics-only methods present on the in-memory event store. */
+interface AnalyticsEventStore {
+  getRecentEventsAll(limit: number): IntakeEvent[];
+  getEventsByTypeAll(type: string): IntakeEvent[];
+}
+
+function hasAnalyticsEventMethods(
+  es: EventStore
+): es is EventStore & AnalyticsEventStore {
+  const candidate = es as Partial<AnalyticsEventStore>;
+  return (
+    typeof candidate.getRecentEventsAll === 'function' &&
+    typeof candidate.getEventsByTypeAll === 'function'
+  );
+}
+
+/**
+ * Wire the core submission services to an already-initialized storage backend.
+ * Synchronous: constructing the managers requires no async work — the async
+ * part is creating/initializing the storage (see createSubmissionServices).
+ */
+export function wireSubmissionServices(
+  opts: WireSubmissionServicesOptions
+): SubmissionServices {
+  const { registry, storage } = opts;
+  const logger = opts.logger ?? getLogger();
+  const baseUrl = opts.baseUrl ?? 'http://localhost:3000';
+
+  const store = storage.submissions;
+  const eventStore = storage.events;
+  const deliveryQueue = storage.deliveries;
+  const emitter = new BridgingEventEmitter();
+
+  // Attach Prometheus metrics listeners to the event emitter.
+  attachMetricsListeners(emitter);
+
+  // Provenance receipt signer (#15) — issues JWT-VC receipts at finalize.
+  // Unsigned mode when FORMBRIDGE_RECEIPT_PRIVATE_KEY is unset (finalize still works).
+  const receiptManager = loadReceiptManagerFromEnv(baseUrl);
+
+  // SubmissionManager owns the event-sourced write path. Passing `storage`
+  // enables the transactional save-before-emit path; store/eventStore point at
+  // the same backend for reads and the legacy interface surface.
+  const manager = new SubmissionManager({
+    store,
+    eventEmitter: emitter,
+    intakeRegistry: registry,
+    baseUrl,
+    eventStore,
+    storage,
+    piiRedactor: createPiiRedactor(),
+    receiptManager,
+  });
+
+  // Webhook manager — durable outbox from the storage backend is injected.
+  const signingSecret = process.env['FORMBRIDGE_WEBHOOK_SECRET'];
+  if (!signingSecret) {
+    logger.warn('FORMBRIDGE_WEBHOOK_SECRET is not set. Webhooks will be delivered unsigned.');
+  }
+  const webhookManager = new WebhookManager(deliveryQueue, { signingSecret, eventEmitter: emitter });
+
+  // Start webhook delivery retry scheduler (checks every 30s)
+  webhookManager.startRetryScheduler();
+
+  // Webhook notifier for approval reviewer notifications
+  const reviewerNotificationUrl = process.env['FORMBRIDGE_REVIEWER_WEBHOOK_URL'];
+  const webhookNotifier = new WebhookNotifierImpl(webhookManager, reviewerNotificationUrl);
+  // Optionally delegate the approval gate to AgentGate (#12); undefined when
+  // FORMBRIDGE_AGENTGATE_URL/API_KEY are unset → local approval flow, unchanged.
+  // eventStore + storage route review events through the durable event store
+  // (transactional, save-before-emit).
+  const approvalManager = new ApprovalManager(
+    store,
+    emitter,
+    webhookNotifier,
+    approvalDelegateFromEnv(),
+    eventStore,
+    storage
+  );
+
+  // Submission TTL expiry scheduler (checks every 60s)
+  const expiryScheduler = new ExpiryScheduler(manager);
+  expiryScheduler.start();
+
+  // Terminal states for completion rate calculation
+  const completedStates = new Set(['submitted', 'finalized', 'approved']);
+
+  const analyticsProvider: AnalyticsDataProvider = {
+    getIntakeIds: () => registry.listIntakeIds(),
+    getTotalSubmissions: () => store.getTotalCount(),
+    getPendingApprovalCount: () => store.getPendingApprovalCount(),
+    getSubmissionsByState: () => store.getStateCounts(),
+    getRecentEvents: (limit) =>
+      hasAnalyticsEventMethods(eventStore) ? eventStore.getRecentEventsAll(limit) : [],
+    getEventsByType: (type) =>
+      hasAnalyticsEventMethods(eventStore) ? eventStore.getEventsByTypeAll(type) : [],
+    getSubmissionsByIntake: async (): Promise<IntakeMetrics[]> => {
+      const all = await store.getAll();
+      const byIntake = new Map<string, { total: number; byState: Record<string, number>; completed: number }>();
+      for (const sub of all) {
+        let entry = byIntake.get(sub.intakeId);
+        if (!entry) {
+          entry = { total: 0, byState: {}, completed: 0 };
+          byIntake.set(sub.intakeId, entry);
+        }
+        entry.total++;
+        entry.byState[sub.state] = (entry.byState[sub.state] ?? 0) + 1;
+        if (completedStates.has(sub.state)) entry.completed++;
+      }
+      const result: IntakeMetrics[] = [];
+      for (const [intakeId, entry] of byIntake) {
+        result.push({
+          intakeId,
+          total: entry.total,
+          byState: entry.byState,
+          completionRate: entry.total > 0 ? entry.completed / entry.total : 0,
+        });
+      }
+      return result;
+    },
+    getCompletionRates: async () => {
+      const stateCounts = await store.getStateCounts();
+      const total = await store.getTotalCount();
+      const funnelOrder = ['draft', 'in_progress', 'awaiting_upload', 'needs_review', 'approved', 'submitted', 'finalized', 'rejected', 'cancelled', 'expired'];
+      return funnelOrder
+        .filter((state) => (stateCounts[state] ?? 0) > 0)
+        .map((state) => ({
+          state,
+          count: stateCounts[state] ?? 0,
+          percentage: total > 0 ? ((stateCounts[state] ?? 0) / total) * 100 : 0,
+        }));
+    },
+  };
+
+  return {
+    storage,
+    store,
+    eventStore,
+    deliveryQueue,
+    emitter,
+    manager,
+    approvalManager,
+    webhookManager,
+    analyticsProvider,
+    expiryScheduler,
+    receiptManager,
+  };
+}
+
+/**
+ * Async factory: resolve a storage backend (from env by default) and wire the
+ * core submission services to it. Use this when you want to pick the durable
+ * backend via FORMBRIDGE_STORAGE without going through the HTTP app factory.
+ */
+export async function createSubmissionServices(opts?: {
+  intakes?: IntakeDefinition[];
+  registry?: IntakeRegistry;
+  storage?: FormBridgeStorage;
+  baseUrl?: string;
+}): Promise<SubmissionServices> {
+  let registry = opts?.registry;
+  if (!registry) {
+    registry = new IntakeRegistry({ validateOnRegister: true });
+    for (const intake of opts?.intakes ?? []) {
+      registry.registerIntake(intake);
+    }
+  }
+  const storage = opts?.storage ?? (await createStorageFromEnv());
+  return wireSubmissionServices({ registry, storage, baseUrl: opts?.baseUrl });
 }
 
 /**
@@ -368,96 +406,14 @@ export function createFormBridgeAppWithIntakes(
   // Intake schema routes
   app.route('/intake', createIntakeRouter(registry));
 
-  // Core services
-  const store = new InMemorySubmissionStore();
-  const eventStore = new InMemoryEventStore();
-  const emitter = new BridgingEventEmitter();
-
-  // Attach Prometheus metrics listeners to the event emitter
-  attachMetricsListeners(emitter);
-
-  // Pass the shared eventStore to SubmissionManager — it already appends events
-  // via its triple-write pattern (submission.events + emitter.emit + eventStore.appendEvent).
-  // No need for an additional listener on the emitter to avoid duplicates.
-  // Provenance receipt signer (#15) — issues JWT-VC receipts at finalize.
-  // Unsigned mode when FORMBRIDGE_RECEIPT_PRIVATE_KEY is unset (finalize still works).
-  const receiptManager = loadReceiptManagerFromEnv('http://localhost:3000');
-
-  const manager = new SubmissionManager({ store, eventEmitter: emitter, intakeRegistry: registry, baseUrl: 'http://localhost:3000', eventStore, piiRedactor: createPiiRedactor(), receiptManager });
-
-  // Webhook manager — wired to receive events from the bridging emitter
-  const signingSecret = process.env['FORMBRIDGE_WEBHOOK_SECRET'];
-  if (!signingSecret) {
-    logger.warn('FORMBRIDGE_WEBHOOK_SECRET is not set. Webhooks will be delivered unsigned.');
-  }
-  const webhookManager = new WebhookManager(undefined, { signingSecret, eventEmitter: emitter });
-
-  // Start webhook delivery retry scheduler (checks every 30s)
-  webhookManager.startRetryScheduler();
-
-  // Webhook notifier for approval reviewer notifications
-  const reviewerNotificationUrl = process.env['FORMBRIDGE_REVIEWER_WEBHOOK_URL'];
-  const webhookNotifier = new WebhookNotifierImpl(webhookManager, reviewerNotificationUrl);
-  // Optionally delegate the approval gate to AgentGate (#12); undefined when
-  // FORMBRIDGE_AGENTGATE_URL/API_KEY are unset → local approval flow, unchanged.
-  const approvalManager = new ApprovalManager(store, emitter, webhookNotifier, approvalDelegateFromEnv());
-
-  // Submission TTL expiry scheduler (checks every 60s)
-  const expiryScheduler = new ExpiryScheduler(manager);
-  expiryScheduler.start();
+  // Core services — wired to the (durable or in-memory) storage backend.
+  const services = wireSubmissionServices({ registry, storage, logger });
+  const { store, manager, approvalManager, webhookManager, analyticsProvider } =
+    services;
+  const receiptManager = services.receiptManager;
 
   // Schema validator for HTTP API field validation
   const validator = new Validator({ strict: false, allowAdditionalProperties: true });
-
-  // Terminal states for completion rate calculation
-  const completedStates = new Set(['submitted', 'finalized', 'approved']);
-
-  // Analytics provider — uses pre-computed indexes for O(1) reads
-  const analyticsProvider: AnalyticsDataProvider = {
-    getIntakeIds: () => registry.listIntakeIds(),
-    getTotalSubmissions: () => store.getTotalCount(),
-    getPendingApprovalCount: () => store.getPendingApprovalCount(),
-    getSubmissionsByState: () => store.getStateCounts(),
-    getRecentEvents: (limit) => eventStore.getRecentEventsAll(limit),
-    getEventsByType: (type) => eventStore.getEventsByTypeAll(type),
-    getSubmissionsByIntake: (): IntakeMetrics[] => {
-      const all = store.getAll();
-      const byIntake = new Map<string, { total: number; byState: Record<string, number>; completed: number }>();
-      for (const sub of all) {
-        let entry = byIntake.get(sub.intakeId);
-        if (!entry) {
-          entry = { total: 0, byState: {}, completed: 0 };
-          byIntake.set(sub.intakeId, entry);
-        }
-        entry.total++;
-        entry.byState[sub.state] = (entry.byState[sub.state] ?? 0) + 1;
-        if (completedStates.has(sub.state)) entry.completed++;
-      }
-      const result: IntakeMetrics[] = [];
-      for (const [intakeId, entry] of byIntake) {
-        result.push({
-          intakeId,
-          total: entry.total,
-          byState: entry.byState,
-          completionRate: entry.total > 0 ? entry.completed / entry.total : 0,
-        });
-      }
-      return result;
-    },
-    getCompletionRates: () => {
-      const stateCounts = store.getStateCounts();
-      const total = store.getTotalCount();
-      // Define funnel order
-      const funnelOrder = ['draft', 'in_progress', 'awaiting_upload', 'needs_review', 'approved', 'submitted', 'finalized', 'rejected', 'cancelled', 'expired'];
-      return funnelOrder
-        .filter((state) => (stateCounts[state] ?? 0) > 0)
-        .map((state) => ({
-          state,
-          count: stateCounts[state] ?? 0,
-          percentage: total > 0 ? ((stateCounts[state] ?? 0) / total) * 100 : 0,
-        }));
-    },
-  };
 
   // Auth middleware — applied to all API routes except health and resume-token routes
   const authConfig = options?.auth ?? loadAuthConfigFromEnv();

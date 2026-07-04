@@ -12,6 +12,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { tmpdir } from "os";
+import { join } from "path";
+import { rmSync } from "fs";
 import { SqliteStorage } from "../../src/storage/sqlite-storage";
 import { migrateStorage } from "../../src/storage/migration";
 import { MemoryStorage } from "../../src/storage/memory-storage";
@@ -130,6 +133,91 @@ describe("SqliteStorage", () => {
       // Tables already created; calling exec with CREATE IF NOT EXISTS again should be fine
       await s.initialize();
       await s.close();
+    });
+  });
+
+  // ===========================================================================
+  // Pre-existing DB migration (FIX 1: add durable-storage columns BEFORE the
+  // indexes that reference them, so boot over an old on-disk DB doesn't crash)
+  // ===========================================================================
+
+  describe("Pre-existing DB migration", () => {
+    let dbPath = "";
+
+    afterEach(() => {
+      if (dbPath) {
+        rmSync(dbPath, { force: true });
+        rmSync(`${dbPath}-wal`, { force: true });
+        rmSync(`${dbPath}-shm`, { force: true });
+        dbPath = "";
+      }
+    });
+
+    it("initializes over an OLD schema missing the durable-storage columns", async () => {
+      dbPath = join(
+        tmpdir(),
+        `fb-sqlite-pre-${Date.now()}-${Math.random().toString(36).slice(2)}.db`
+      );
+
+      // Seed the pre-migration submissions table: NO tenant_id / expires_at /
+      // destination_delivered_at columns (mimics a DB created before durable
+      // storage landed). CREATE TABLE IF NOT EXISTS in initialize() is then a
+      // no-op, so those columns stay absent until addColumnIfMissing() runs.
+      const mod: { default?: unknown } = await import("better-sqlite3" as string);
+      const Database = mod.default as new (path: string) => {
+        exec(sql: string): void;
+        prepare(sql: string): { all(...p: unknown[]): unknown[] };
+        close(): void;
+      };
+      const seed = new Database(dbPath);
+      seed.exec(`
+        CREATE TABLE submissions (
+          id TEXT PRIMARY KEY,
+          intakeId TEXT NOT NULL,
+          state TEXT NOT NULL,
+          resumeToken TEXT NOT NULL,
+          idempotencyKey TEXT,
+          createdAt TEXT NOT NULL,
+          updatedAt TEXT NOT NULL,
+          data TEXT NOT NULL
+        );
+      `);
+      seed.close();
+
+      // The bug: initialize() created idx_submissions_tenant_id BEFORE adding the
+      // tenant_id column → "no such column: tenant_id" and boot failed. Must NOT
+      // throw now that the ALTER TABLE ADD COLUMN calls run first.
+      const s = new SqliteStorage({ dbPath });
+      await expect(s.initialize()).resolves.toBeUndefined();
+
+      try {
+        // A successful save that populates all three new columns proves they
+        // exist (the INSERT names them explicitly).
+        const sub = createSubmission("sub_pre", {
+          tenantId: "tenant-1",
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+          destinationDeliveredAt: new Date().toISOString(),
+        });
+        await s.submissions.save(sub);
+        const scoped = await s.submissions.getAll("tenant-1");
+        expect(scoped.map((x) => x.id)).toContain("sub_pre");
+      } finally {
+        await s.close();
+      }
+
+      // Independently confirm the columns are present in the on-disk schema.
+      const check = new Database(dbPath);
+      try {
+        const cols = check
+          .prepare("PRAGMA table_info(submissions)")
+          .all()
+          .map((c) => (c as { name: string }).name);
+        expect(cols).toContain("tenant_id");
+        expect(cols).toContain("expires_at");
+        expect(cols).toContain("destination_delivered_at");
+      } finally {
+        check.close();
+      }
     });
   });
 
@@ -679,6 +767,57 @@ describe("SqliteStorage", () => {
         await storage.events.appendEvent(createEvent("evt_recent", "sub_1"));
         const deleted = await storage.events.cleanupOld(60_000);
         expect(deleted).toBe(0);
+      });
+    });
+
+    // FIX 4: durable event stores must expose the same analytics helpers as
+    // InMemoryEventStore so /analytics/summary + /analytics/volume aren't empty.
+    describe("Analytics helpers", () => {
+      it("getRecentEventsAll returns events newest-first up to the limit", async () => {
+        const base = Date.now();
+        await storage.events.appendEvent(
+          createEvent("evt_r1", "sub_r", "submission.created", {
+            ts: new Date(base - 3000).toISOString(),
+          })
+        );
+        await storage.events.appendEvent(
+          createEvent("evt_r2", "sub_r", "field.updated" as IntakeEventType, {
+            ts: new Date(base - 2000).toISOString(),
+          })
+        );
+        await storage.events.appendEvent(
+          createEvent("evt_r3", "sub_r", "submission.submitted" as IntakeEventType, {
+            ts: new Date(base - 1000).toISOString(),
+          })
+        );
+
+        const es = storage.events as unknown as {
+          getRecentEventsAll(limit: number): IntakeEvent[];
+        };
+        const recent = es.getRecentEventsAll(2);
+        expect(recent.map((e) => e.eventId)).toEqual(["evt_r3", "evt_r2"]);
+      });
+
+      it("getEventsByTypeAll returns all events of a given type", async () => {
+        await storage.events.appendEvent(
+          createEvent("evt_t1", "sub_t1", "field.updated" as IntakeEventType)
+        );
+        await storage.events.appendEvent(
+          createEvent("evt_t2", "sub_t2", "field.updated" as IntakeEventType)
+        );
+        await storage.events.appendEvent(
+          createEvent("evt_t3", "sub_t3", "submission.created")
+        );
+
+        const es = storage.events as unknown as {
+          getEventsByTypeAll(type: string): IntakeEvent[];
+        };
+        expect(
+          es.getEventsByTypeAll("field.updated").map((e) => e.eventId).sort()
+        ).toEqual(["evt_t1", "evt_t2"]);
+        expect(
+          es.getEventsByTypeAll("submission.created").map((e) => e.eventId)
+        ).toEqual(["evt_t3"]);
       });
     });
   });

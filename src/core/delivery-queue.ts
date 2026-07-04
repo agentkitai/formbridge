@@ -27,6 +27,14 @@ export interface DeliveryQueue {
 
   /** Get queue statistics */
   getStats(): Promise<DeliveryQueueStats>;
+
+  /**
+   * Synchronously fetch the stored retry context for a delivery, if available.
+   * Optional: implementations that persist context expose it here so the
+   * WebhookManager retry scheduler can rehydrate submission/destination.
+   * Kept synchronous to match the existing (unchanged) retry loop.
+   */
+  getContext?(deliveryId: string): DeliveryContext | undefined;
 }
 
 export interface DeliveryQueueStats {

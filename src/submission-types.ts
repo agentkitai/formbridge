@@ -153,6 +153,13 @@ export interface Submission {
   ttlMs?: number;
 
   /**
+   * Timestamp (ISO 8601) at which this submission's payload was successfully
+   * delivered to its configured destination. Set by the destination-delivery
+   * flow; persisted so durable backends can report/query delivery completion.
+   */
+  destinationDeliveredAt?: string;
+
+  /**
    * Delivery records for webhook forwarding
    */
   deliveries?: import("./types/intake-contract").DeliveryRecord[];

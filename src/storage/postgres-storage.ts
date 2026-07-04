@@ -18,9 +18,15 @@ import type {
   IntakeEvent,
   IntakeEventType,
   Actor,
+  DeliveryRecord,
 } from "../types/intake-contract.js";
 import type { EventStore, EventFilters, EventStoreStats } from "../core/event-store.js";
-import { EventId, SubmissionId } from "../types/branded.js";
+import type {
+  DeliveryQueue,
+  DeliveryQueueStats,
+  DeliveryContext,
+} from "../core/delivery-queue.js";
+import { EventId, SubmissionId, DeliveryId } from "../types/branded.js";
 import type { StorageBackend } from "./storage-backend.js";
 import type {
   FormBridgeStorage,
@@ -28,6 +34,7 @@ import type {
   SubmissionFilter,
   PaginatedResult,
   PaginationOptions,
+  StorageTransaction,
 } from "./storage-interface.js";
 
 // =============================================================================
@@ -91,8 +98,22 @@ function isIntakeEventType(value: string): value is IntakeEventType {
 // § Types for pg (optional dependency)
 // =============================================================================
 
-interface PgPool {
-  query(text: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }>;
+interface PgQueryResult {
+  rows: Record<string, unknown>[];
+  rowCount: number | null;
+}
+
+/** Anything that can run a parameterized query (pool or a checked-out client). */
+interface PgQueryable {
+  query(text: string, values?: unknown[]): Promise<PgQueryResult>;
+}
+
+interface PgClient extends PgQueryable {
+  release(): void;
+}
+
+interface PgPool extends PgQueryable {
+  connect(): Promise<PgClient>;
   end(): Promise<void>;
 }
 
@@ -105,7 +126,7 @@ interface PgPoolConstructor {
 // =============================================================================
 
 class PostgresSubmissionStorage implements SubmissionStorage {
-  constructor(private pool: PgPool) {}
+  constructor(private pool: PgQueryable) {}
 
   async get(id: string): Promise<Submission | null> {
     const { rows } = await this.pool.query(
@@ -139,13 +160,17 @@ class PostgresSubmissionStorage implements SubmissionStorage {
 
   async save(submission: Submission): Promise<void> {
     await this.pool.query(
-      `INSERT INTO submissions (id, intake_id, state, resume_token, idempotency_key, created_at, updated_at, data)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      `INSERT INTO submissions
+         (id, intake_id, state, resume_token, idempotency_key, tenant_id, expires_at, destination_delivered_at, created_at, updated_at, data)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        ON CONFLICT (id) DO UPDATE SET
          intake_id = EXCLUDED.intake_id,
          state = EXCLUDED.state,
          resume_token = EXCLUDED.resume_token,
          idempotency_key = EXCLUDED.idempotency_key,
+         tenant_id = EXCLUDED.tenant_id,
+         expires_at = EXCLUDED.expires_at,
+         destination_delivered_at = EXCLUDED.destination_delivered_at,
          created_at = EXCLUDED.created_at,
          updated_at = EXCLUDED.updated_at,
          data = EXCLUDED.data`,
@@ -155,6 +180,9 @@ class PostgresSubmissionStorage implements SubmissionStorage {
         submission.state,
         submission.resumeToken,
         submission.idempotencyKey ?? null,
+        submission.tenantId ?? null,
+        submission.expiresAt ?? null,
+        submission.destinationDeliveredAt ?? null,
         submission.createdAt,
         submission.updatedAt,
         JSON.stringify(submission),
@@ -235,6 +263,239 @@ class PostgresSubmissionStorage implements SubmissionStorage {
     const result = await this.list(filter, { limit: 0 });
     return result.total;
   }
+
+  async getExpired(): Promise<Submission[]> {
+    const now = new Date().toISOString();
+    const { rows } = await this.pool.query(
+      `SELECT data FROM submissions
+       WHERE expires_at IS NOT NULL AND expires_at < $1
+         AND state NOT IN ('rejected', 'finalized', 'cancelled', 'expired')`,
+      [now]
+    );
+    const items: Submission[] = [];
+    for (const row of rows) {
+      if (isSubmissionShape(row.data)) items.push(row.data);
+    }
+    return items;
+  }
+
+  async getAll(tenantId?: string): Promise<Submission[]> {
+    const { rows } = tenantId
+      ? await this.pool.query(
+          "SELECT data FROM submissions WHERE tenant_id IS NULL OR tenant_id = $1",
+          [tenantId]
+        )
+      : await this.pool.query("SELECT data FROM submissions");
+    const items: Submission[] = [];
+    for (const row of rows) {
+      if (isSubmissionShape(row.data)) items.push(row.data);
+    }
+    return items;
+  }
+
+  async getStateCounts(): Promise<Record<string, number>> {
+    const { rows } = await this.pool.query(
+      "SELECT state, COUNT(*)::int as count FROM submissions GROUP BY state"
+    );
+    const counts: Record<string, number> = {};
+    for (const row of rows) {
+      const state = row.state;
+      const count = row.count;
+      if (typeof state === "string" && typeof count === "number") {
+        counts[state] = count;
+      }
+    }
+    return counts;
+  }
+
+  async getTotalCount(): Promise<number> {
+    const { rows } = await this.pool.query(
+      "SELECT COUNT(*)::int as count FROM submissions"
+    );
+    return (rows[0]?.count as number) ?? 0;
+  }
+
+  async getPendingApprovalCount(): Promise<number> {
+    const { rows } = await this.pool.query(
+      "SELECT COUNT(*)::int as count FROM submissions WHERE state = 'needs_review'"
+    );
+    return (rows[0]?.count as number) ?? 0;
+  }
+}
+
+// =============================================================================
+// § PostgreSQL Delivery Queue
+// =============================================================================
+
+function isDeliveryStatus(value: unknown): value is DeliveryRecord["status"] {
+  return value === "pending" || value === "succeeded" || value === "failed";
+}
+
+function pgRowToDeliveryRecord(row: Record<string, unknown>): DeliveryRecord {
+  return {
+    deliveryId: DeliveryId(String(row.delivery_id)),
+    submissionId: SubmissionId(String(row.submission_id)),
+    destinationUrl: String(row.destination_url),
+    status: isDeliveryStatus(row.status) ? row.status : "pending",
+    attempts: (row.attempts as number) ?? 0,
+    lastAttemptAt: pgTsToIso(row.last_attempt_at),
+    nextRetryAt: pgTsToIso(row.next_retry_at),
+    statusCode: (row.status_code as number | null) ?? undefined,
+    error: (row.error as string | null) ?? undefined,
+    createdAt: pgTsToIso(row.created_at) ?? new Date().toISOString(),
+  };
+}
+
+function pgTsToIso(value: unknown): string | undefined {
+  if (value == null) return undefined;
+  if (value instanceof Date) return value.toISOString();
+  return String(value);
+}
+
+class PostgresDeliveryQueue implements DeliveryQueue {
+  /** In-memory cache of retry contexts for synchronous getContext(). */
+  private contexts = new Map<string, DeliveryContext>();
+
+  constructor(private pool: PgQueryable) {}
+
+  /**
+   * Load retry contexts for non-terminal deliveries into the in-memory cache so
+   * getContext() works after a process restart (mirrors SqliteDeliveryQueue's
+   * constructor rehydration). Called once from PostgresStorage.initialize().
+   * Without this, the webhook retry loop would `continue` past every pending
+   * delivery (getContext returns undefined) and strand it forever.
+   */
+  async hydrateContexts(): Promise<void> {
+    const { rows } = await this.pool.query(
+      "SELECT delivery_id, context FROM deliveries WHERE context IS NOT NULL AND status <> 'failed'"
+    );
+    for (const row of rows) {
+      const id = row.delivery_id;
+      const ctx = row.context;
+      if (typeof id !== "string" || ctx == null) continue;
+      try {
+        // pg returns JSONB as a parsed object; tolerate a raw string too.
+        const parsed = typeof ctx === "string" ? JSON.parse(ctx) : ctx;
+        if (parsed != null && typeof parsed === "object") {
+          this.contexts.set(id, parsed as DeliveryContext);
+        }
+      } catch {
+        // ignore malformed context
+      }
+    }
+  }
+
+  async enqueue(record: DeliveryRecord, context?: DeliveryContext): Promise<void> {
+    await this.pool.query(
+      `INSERT INTO deliveries
+         (delivery_id, submission_id, destination_url, status, attempts, last_attempt_at, next_retry_at, status_code, error, context, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       ON CONFLICT (delivery_id) DO UPDATE SET
+         submission_id = EXCLUDED.submission_id,
+         destination_url = EXCLUDED.destination_url,
+         status = EXCLUDED.status,
+         attempts = EXCLUDED.attempts,
+         last_attempt_at = EXCLUDED.last_attempt_at,
+         next_retry_at = EXCLUDED.next_retry_at,
+         status_code = EXCLUDED.status_code,
+         error = EXCLUDED.error,
+         context = EXCLUDED.context`,
+      [
+        record.deliveryId,
+        record.submissionId,
+        record.destinationUrl,
+        record.status,
+        record.attempts,
+        record.lastAttemptAt ?? null,
+        record.nextRetryAt ?? null,
+        record.statusCode ?? null,
+        record.error ?? null,
+        context ? JSON.stringify(context) : null,
+        record.createdAt,
+      ]
+    );
+    if (context) {
+      this.contexts.set(record.deliveryId, context);
+    }
+  }
+
+  getContext(deliveryId: string): DeliveryContext | undefined {
+    return this.contexts.get(deliveryId);
+  }
+
+  async get(deliveryId: string): Promise<DeliveryRecord | null> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM deliveries WHERE delivery_id = $1",
+      [deliveryId]
+    );
+    const row = rows[0];
+    return row ? pgRowToDeliveryRecord(row) : null;
+  }
+
+  async getBySubmission(submissionId: string): Promise<DeliveryRecord[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM deliveries WHERE submission_id = $1 ORDER BY created_at ASC",
+      [submissionId]
+    );
+    return rows.map(pgRowToDeliveryRecord);
+  }
+
+  async update(record: DeliveryRecord): Promise<void> {
+    const result = await this.pool.query(
+      `UPDATE deliveries SET
+         submission_id = $2, destination_url = $3, status = $4, attempts = $5,
+         last_attempt_at = $6, next_retry_at = $7, status_code = $8, error = $9
+       WHERE delivery_id = $1`,
+      [
+        record.deliveryId,
+        record.submissionId,
+        record.destinationUrl,
+        record.status,
+        record.attempts,
+        record.lastAttemptAt ?? null,
+        record.nextRetryAt ?? null,
+        record.statusCode ?? null,
+        record.error ?? null,
+      ]
+    );
+    if ((result.rowCount ?? 0) === 0) {
+      throw new Error(`Delivery not found: ${record.deliveryId}`);
+    }
+  }
+
+  async getPendingRetries(): Promise<DeliveryRecord[]> {
+    const now = new Date().toISOString();
+    const { rows } = await this.pool.query(
+      `SELECT * FROM deliveries
+       WHERE status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= $1)
+       ORDER BY created_at ASC`,
+      [now]
+    );
+    return rows.map(pgRowToDeliveryRecord);
+  }
+
+  async getStats(): Promise<DeliveryQueueStats> {
+    const { rows } = await this.pool.query(
+      "SELECT status, COUNT(*)::int as count FROM deliveries GROUP BY status"
+    );
+    const stats: DeliveryQueueStats = {
+      total: 0,
+      pending: 0,
+      succeeded: 0,
+      failed: 0,
+    };
+    for (const row of rows) {
+      const status = row.status;
+      const count = (row.count as number) ?? 0;
+      if (typeof status === "string") {
+        stats.total += count;
+        if (status === "pending") stats.pending = count;
+        else if (status === "succeeded") stats.succeeded = count;
+        else if (status === "failed") stats.failed = count;
+      }
+    }
+    return stats;
+  }
 }
 
 // =============================================================================
@@ -242,7 +503,7 @@ class PostgresSubmissionStorage implements SubmissionStorage {
 // =============================================================================
 
 class PostgresEventStore implements EventStore {
-  constructor(private pool: PgPool) {}
+  constructor(private pool: PgQueryable) {}
 
   async appendEvent(event: IntakeEvent): Promise<void> {
     // Assign version atomically using a subquery
@@ -315,7 +576,14 @@ class PostgresEventStore implements EventStore {
     }
 
     const { rows } = await this.pool.query(sql, params);
+    return this.mapEventRows(rows);
+  }
 
+  /**
+   * Map raw event rows to IntakeEvent[], skipping any row that fails validation.
+   * Shared by getEvents and the analytics helpers below.
+   */
+  private mapEventRows(rows: Record<string, unknown>[]): IntakeEvent[] {
     const events: IntakeEvent[] = [];
     for (const row of rows) {
       const actorValue = row.actor;
@@ -345,6 +613,34 @@ class PostgresEventStore implements EventStore {
       });
     }
     return events;
+  }
+
+  /**
+   * Get the most recent events across all submissions (newest first).
+   * Analytics helper — mirrors InMemoryEventStore.getRecentEventsAll so app.ts
+   * feature-detection wires /analytics/summary recentActivity automatically.
+   * Returns a Promise (pg is async); the analytics provider awaits it.
+   */
+  async getRecentEventsAll(limit: number): Promise<IntakeEvent[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM events ORDER BY ts DESC LIMIT $1",
+      [limit]
+    );
+    return this.mapEventRows(rows);
+  }
+
+  /**
+   * Get all events of a given type (chronological order).
+   * Analytics helper — mirrors InMemoryEventStore.getEventsByTypeAll so app.ts
+   * feature-detection wires /analytics/volume automatically.
+   * Returns a Promise (pg is async); the analytics provider awaits it.
+   */
+  async getEventsByTypeAll(type: string): Promise<IntakeEvent[]> {
+    const { rows } = await this.pool.query(
+      "SELECT * FROM events WHERE type = $1 ORDER BY ts ASC",
+      [type]
+    );
+    return this.mapEventRows(rows);
   }
 
   async countEvents(
@@ -447,6 +743,11 @@ class NoopStorageBackend implements StorageBackend {
 // =============================================================================
 
 const INIT_SQL = `
+CREATE TABLE IF NOT EXISTS schema_migrations (
+  version TEXT PRIMARY KEY,
+  applied_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS submissions (
   id TEXT PRIMARY KEY,
   intake_id TEXT NOT NULL,
@@ -458,11 +759,17 @@ CREATE TABLE IF NOT EXISTS submissions (
   data JSONB NOT NULL
 );
 
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS tenant_id TEXT;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS destination_delivered_at TIMESTAMPTZ;
+
 CREATE INDEX IF NOT EXISTS idx_submissions_intake_id ON submissions(intake_id);
 CREATE INDEX IF NOT EXISTS idx_submissions_state ON submissions(state);
 CREATE INDEX IF NOT EXISTS idx_submissions_resume_token ON submissions(resume_token);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_submissions_idempotency_key ON submissions(idempotency_key) WHERE idempotency_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_submissions_created_at ON submissions(created_at);
+CREATE INDEX IF NOT EXISTS idx_submissions_tenant_id ON submissions(tenant_id);
+CREATE INDEX IF NOT EXISTS idx_submissions_expires_at ON submissions(expires_at);
 
 CREATE TABLE IF NOT EXISTS events (
   event_id TEXT PRIMARY KEY,
@@ -478,6 +785,33 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_submission_id ON events(submission_id);
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type);
 CREATE INDEX IF NOT EXISTS idx_events_ts ON events(ts);
+
+CREATE TABLE IF NOT EXISTS deliveries (
+  delivery_id TEXT PRIMARY KEY,
+  submission_id TEXT NOT NULL,
+  destination_url TEXT NOT NULL,
+  status TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  last_attempt_at TIMESTAMPTZ,
+  next_retry_at TIMESTAMPTZ,
+  status_code INTEGER,
+  error TEXT,
+  context JSONB,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_deliveries_status_next_retry ON deliveries(status, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_deliveries_submission_id ON deliveries(submission_id);
+-- Deliberately NO unique guard on (submission_id, destination_url): repeat
+-- deliveries to the same destination are legitimate (e.g. reviewer
+-- notifications). Deliveries are keyed by delivery_id (PK), minted fresh per
+-- enqueue. Drop the old partial unique index if a pre-existing DB carries it —
+-- it raised an unhandled unique_violation on the second legitimate enqueue.
+DROP INDEX IF EXISTS idx_deliveries_submission_dest;
+
+INSERT INTO schema_migrations (version, applied_at)
+  VALUES ('002_durable_storage', NOW())
+  ON CONFLICT (version) DO NOTHING;
 `;
 
 // =============================================================================
@@ -498,6 +832,7 @@ export interface PostgresStorageOptions {
 export class PostgresStorage implements FormBridgeStorage {
   submissions!: SubmissionStorage;
   events!: EventStore;
+  deliveries!: DeliveryQueue;
   files: StorageBackend;
   private pool: PgPool | null = null;
   private options: PostgresStorageOptions;
@@ -531,11 +866,55 @@ export class PostgresStorage implements FormBridgeStorage {
       idleTimeoutMillis: this.options.idleTimeoutMillis ?? 30000,
     });
 
-    // Run migration
+    // Run migration. All DDL is kept in this single statement; the mock-pg unit
+    // test asserts the first init query is this DDL (and the second is the
+    // delivery-context hydration query below).
     await this.pool.query(INIT_SQL);
 
     this.submissions = new PostgresSubmissionStorage(this.pool);
     this.events = new PostgresEventStore(this.pool);
+    const deliveries = new PostgresDeliveryQueue(this.pool);
+    // Rehydrate delivery retry contexts from the durable outbox so getContext()
+    // works for pending deliveries after a restart (mirrors SqliteDeliveryQueue).
+    await deliveries.hydrateContexts();
+    this.deliveries = deliveries;
+  }
+
+  async transaction<T>(
+    fn: (tx: StorageTransaction) => Promise<T>
+  ): Promise<T> {
+    if (!this.pool) {
+      throw new Error("PostgresStorage not initialized");
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN");
+      const tx: StorageTransaction = {
+        submissions: new PostgresSubmissionStorage(client),
+        events: new PostgresEventStore(client),
+        // NOTE: this is a throwaway per-transaction PostgresDeliveryQueue. Its
+        // in-memory context cache is NOT the one on storage.deliveries, so a
+        // context enqueued via tx.deliveries.enqueue would be cached here and
+        // lost when the tx ends (getContext on storage.deliveries would miss
+        // it). No code enqueues via tx.deliveries today; if you wire that up,
+        // hydrate/propagate the context to storage.deliveries first.
+        deliveries: new PostgresDeliveryQueue(client),
+      };
+      const result = await fn(tx);
+      await client.query("COMMIT");
+      return result;
+    } catch (err) {
+      // Roll back in its own try/catch so a ROLLBACK failure can't replace the
+      // original error that caused us to abort — that error is what we rethrow.
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // swallow rollback error; preserve the original err below
+      }
+      throw err;
+    } finally {
+      client.release();
+    }
   }
 
   async close(): Promise<void> {
