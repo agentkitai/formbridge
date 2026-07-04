@@ -22,23 +22,30 @@ export interface IntakeMetrics {
   completionRate: number;
 }
 
+/**
+ * A value that may be returned synchronously or as a Promise. The analytics
+ * route awaits every provider call, so providers backed by a synchronous
+ * in-memory store OR an async durable store both satisfy this contract.
+ */
+type Awaitable<T> = T | Promise<T>;
+
 export interface AnalyticsDataProvider {
   /** Returns all registered intake IDs */
-  getIntakeIds(): string[];
+  getIntakeIds(): Awaitable<string[]>;
   /** Returns the total number of submissions across all intakes */
-  getTotalSubmissions(): number;
+  getTotalSubmissions(): Awaitable<number>;
   /** Returns count of submissions in the "submitted" state (pending approval) */
-  getPendingApprovalCount(): number;
+  getPendingApprovalCount(): Awaitable<number>;
   /** Returns submission counts by state */
-  getSubmissionsByState(): Record<string, number>;
+  getSubmissionsByState(): Awaitable<Record<string, number>>;
   /** Returns the most recent events (up to limit) */
-  getRecentEvents(limit: number): IntakeEvent[];
+  getRecentEvents(limit: number): Awaitable<IntakeEvent[]>;
   /** Returns events of a given type */
-  getEventsByType(type: string): IntakeEvent[];
+  getEventsByType(type: string): Awaitable<IntakeEvent[]>;
   /** Returns per-intake submission breakdown */
-  getSubmissionsByIntake(): IntakeMetrics[];
+  getSubmissionsByIntake(): Awaitable<IntakeMetrics[]>;
   /** Returns state-transition funnel data */
-  getCompletionRates(): { state: string; count: number; percentage: number }[];
+  getCompletionRates(): Awaitable<{ state: string; count: number; percentage: number }[]>;
 }
 
 export function createHonoAnalyticsRouter(
@@ -55,12 +62,12 @@ export function createHonoAnalyticsRouter(
    * - recentActivity (last 20 events)
    */
   app.get("/analytics/summary", async (c) => {
-    const intakeIds = provider.getIntakeIds();
+    const intakeIds = await provider.getIntakeIds();
     const totalIntakes = intakeIds.length;
-    const totalSubmissions = provider.getTotalSubmissions();
-    const pendingApprovals = provider.getPendingApprovalCount();
-    const submissionsByState = provider.getSubmissionsByState();
-    const recentActivity = provider.getRecentEvents(20);
+    const totalSubmissions = await provider.getTotalSubmissions();
+    const pendingApprovals = await provider.getPendingApprovalCount();
+    const submissionsByState = await provider.getSubmissionsByState();
+    const recentActivity = await provider.getRecentEvents(20);
 
     return c.json({
       totalIntakes,
@@ -79,7 +86,7 @@ export function createHonoAnalyticsRouter(
   app.get("/analytics/volume", async (c) => {
     const days = Math.min(Number(c.req.query("days") ?? 30), 365);
 
-    const createdEvents = provider.getEventsByType("submission.created");
+    const createdEvents = await provider.getEventsByType("submission.created");
 
     // Build date -> count map
     const volumeMap: Record<string, number> = {};
@@ -113,7 +120,7 @@ export function createHonoAnalyticsRouter(
    * Returns per-intake breakdown: total, byState, completionRate.
    */
   app.get("/analytics/intakes", async (c) => {
-    const metrics = provider.getSubmissionsByIntake();
+    const metrics = await provider.getSubmissionsByIntake();
     return c.json(metrics);
   });
 
@@ -124,7 +131,7 @@ export function createHonoAnalyticsRouter(
    * reached each state and the percentage relative to total.
    */
   app.get("/analytics/funnel", async (c) => {
-    const funnel = provider.getCompletionRates();
+    const funnel = await provider.getCompletionRates();
     return c.json(funnel);
   });
 

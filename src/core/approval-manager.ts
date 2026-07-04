@@ -10,6 +10,8 @@ import type {
   SubmissionState,
 } from "../types/intake-contract.js";
 import type { Submission } from "../submission-types";
+import type { EventStore } from "./event-store.js";
+import type { TransactionalStorage } from "./submission-manager.js";
 import { assertValidTransition } from "./state-machine.js";
 import { randomUUID } from "crypto";
 import { EventId } from "../types/branded.js";
@@ -132,8 +134,58 @@ export class ApprovalManager {
     private store: SubmissionStore,
     private eventEmitter: EventEmitter,
     private webhookNotifier?: WebhookNotifier,
-    private approvalDelegate?: ApprovalDelegate
+    private approvalDelegate?: ApprovalDelegate,
+    /**
+     * Optional durable event store. When provided, review decision events
+     * (review.approved / review.rejected / request_changes) are appended so
+     * they are queryable via the EventStore — fixing the prior gap where these
+     * were pushed to submission.events + emitted but never appended.
+     */
+    private eventStore?: EventStore,
+    /**
+     * Optional transactional storage. When provided, the submission save +
+     * event append commit atomically and the event is emitted after commit.
+     */
+    private storage?: TransactionalStorage
   ) {}
+
+  /**
+   * Commit a review-decision event.
+   * - With transactional storage: atomically save submission + append event,
+   *   then emit after commit (save-before-emit).
+   * - With only an event store: emit + append (parallel), then save.
+   * - With neither (legacy 2/4-arg construction used by unit tests): emit,
+   *   then save — unchanged behavior, no event-store append.
+   */
+  private async commitReviewEvent(
+    submission: Submission,
+    event: IntakeEvent
+  ): Promise<void> {
+    submission.events.push(event);
+
+    if (this.storage) {
+      // Transactional save-before-emit; the event append is part of the txn.
+      await this.storage.transaction(async (tx) => {
+        await tx.submissions.save(submission);
+        await tx.events.appendEvent(event);
+      });
+      await this.eventEmitter.emit(event);
+      return;
+    }
+
+    if (this.eventStore) {
+      await Promise.all([
+        this.eventEmitter.emit(event),
+        this.eventStore.appendEvent(event),
+      ]);
+      await this.store.save(submission);
+      return;
+    }
+
+    // Legacy path — no event store injected.
+    await this.eventEmitter.emit(event);
+    await this.store.save(submission);
+  }
 
   /**
    * Validate that a submission exists, the resume token matches,
@@ -222,9 +274,7 @@ export class ApprovalManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.commitReviewEvent(submission, event);
 
     return {
       ok: true,
@@ -286,9 +336,7 @@ export class ApprovalManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.commitReviewEvent(submission, event);
 
     return {
       ok: true,
@@ -351,9 +399,7 @@ export class ApprovalManager {
       },
     };
 
-    submission.events.push(event);
-    await this.eventEmitter.emit(event);
-    await this.store.save(submission);
+    await this.commitReviewEvent(submission, event);
 
     return {
       ok: true,

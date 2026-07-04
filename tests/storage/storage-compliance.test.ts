@@ -5,15 +5,22 @@
  * Currently tests MemoryStorage. SqliteStorage requires better-sqlite3 (optional).
  */
 
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { MemoryStorage } from "../../src/storage/memory-storage";
+import { SqliteStorage } from "../../src/storage/sqlite-storage";
+import { PostgresStorage } from "../../src/storage/postgres-storage";
 import { migrateStorage } from "../../src/storage/migration";
+import type { FormBridgeStorage } from "../../src/storage/storage-interface";
 import type { Submission } from "../../src/submission-types";
-import type { Actor, IntakeEvent } from "../../src/types/intake-contract";
+import type { Actor, IntakeEvent, SubmissionState } from "../../src/types/intake-contract";
 
 const testActor: Actor = { kind: "agent", id: "agent-1", name: "Test Agent" };
 
-function createTestSubmission(id: string, intakeId = "intake_test"): Submission {
+function createTestSubmission(
+  id: string,
+  intakeId = "intake_test",
+  overrides: Partial<Submission> = {}
+): Submission {
   const now = new Date().toISOString();
   return {
     id,
@@ -27,6 +34,7 @@ function createTestSubmission(id: string, intakeId = "intake_test"): Submission 
     createdBy: testActor,
     updatedBy: testActor,
     events: [],
+    ...overrides,
   };
 }
 
@@ -267,3 +275,119 @@ describe("MemoryStorage Compliance", () => {
     });
   });
 });
+
+// =============================================================================
+// § Widened SubmissionStorage surface — parametrized across backends
+// =============================================================================
+
+interface BackendUnderTest {
+  name: string;
+  skip: boolean;
+  make: () => Promise<FormBridgeStorage>;
+}
+
+const DATABASE_URL = process.env.DATABASE_URL;
+
+const backends: BackendUnderTest[] = [
+  {
+    name: "MemoryStorage",
+    skip: false,
+    make: async () => {
+      const s = new MemoryStorage();
+      await s.initialize();
+      return s;
+    },
+  },
+  {
+    name: "SqliteStorage(:memory:)",
+    skip: false,
+    make: async () => {
+      const s = new SqliteStorage({ dbPath: ":memory:" });
+      await s.initialize();
+      return s;
+    },
+  },
+  {
+    name: "PostgresStorage",
+    skip: !DATABASE_URL,
+    make: async () => {
+      const s = new PostgresStorage({ connectionString: DATABASE_URL! });
+      await s.initialize();
+      return s;
+    },
+  },
+];
+
+function sub(
+  id: string,
+  state: SubmissionState,
+  overrides: Partial<Submission> = {}
+): Submission {
+  return createTestSubmission(id, "intake_widened", { state, ...overrides });
+}
+
+for (const backend of backends) {
+  describe.skipIf(backend.skip)(`${backend.name} — widened surface`, () => {
+    let storage: FormBridgeStorage;
+
+    beforeEach(async () => {
+      storage = await backend.make();
+    });
+
+    afterEach(async () => {
+      await storage.close();
+    });
+
+    it("getTotalCount returns the number of stored submissions", async () => {
+      expect(await storage.submissions.getTotalCount()).toBe(0);
+      await storage.submissions.save(sub("wt_1", "draft"));
+      await storage.submissions.save(sub("wt_2", "submitted"));
+      expect(await storage.submissions.getTotalCount()).toBe(2);
+    });
+
+    it("getStateCounts groups submissions by state", async () => {
+      await storage.submissions.save(sub("sc_1", "draft"));
+      await storage.submissions.save(sub("sc_2", "draft"));
+      await storage.submissions.save(sub("sc_3", "needs_review"));
+
+      const counts = await storage.submissions.getStateCounts();
+      expect(counts.draft).toBe(2);
+      expect(counts.needs_review).toBe(1);
+      expect(counts.submitted ?? 0).toBe(0);
+    });
+
+    it("getPendingApprovalCount counts needs_review submissions", async () => {
+      await storage.submissions.save(sub("pa_1", "needs_review"));
+      await storage.submissions.save(sub("pa_2", "needs_review"));
+      await storage.submissions.save(sub("pa_3", "draft"));
+
+      expect(await storage.submissions.getPendingApprovalCount()).toBe(2);
+    });
+
+    it("getAll returns all submissions and honors tenant scoping", async () => {
+      await storage.submissions.save(sub("ga_a", "draft", { tenantId: "tenant-A" }));
+      await storage.submissions.save(sub("ga_b", "draft", { tenantId: "tenant-B" }));
+      await storage.submissions.save(sub("ga_none", "draft")); // no tenant
+
+      const all = await storage.submissions.getAll();
+      expect(all.map((s) => s.id).sort()).toEqual(["ga_a", "ga_b", "ga_none"]);
+
+      // tenant-A sees its own + the untenanted submission
+      const scoped = await storage.submissions.getAll("tenant-A");
+      expect(scoped.map((s) => s.id).sort()).toEqual(["ga_a", "ga_none"]);
+    });
+
+    it("getExpired returns past-due, non-terminal submissions only", async () => {
+      const past = new Date(Date.now() - 60_000).toISOString();
+      const future = new Date(Date.now() + 60_000).toISOString();
+
+      await storage.submissions.save(sub("ex_due", "in_progress", { expiresAt: past }));
+      await storage.submissions.save(sub("ex_terminal", "finalized", { expiresAt: past }));
+      await storage.submissions.save(sub("ex_future", "in_progress", { expiresAt: future }));
+      await storage.submissions.save(sub("ex_none", "in_progress")); // no expiresAt
+
+      const expired = await storage.submissions.getExpired();
+      expect(expired.map((s) => s.id)).toEqual(["ex_due"]);
+    });
+  });
+}
