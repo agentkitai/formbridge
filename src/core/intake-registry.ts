@@ -94,16 +94,24 @@ export class IntakeRegistry {
    * Registers a new intake definition.
    *
    * @param intake - The intake definition to register
-   * @throws {IntakeDuplicateError} If intake already exists and allowOverwrite is false
+   * @param options - Per-call options. `overwrite: true` replaces an existing
+   *   intake with the same id (used by the runtime PUT /intakes/:id path) even
+   *   when the registry was constructed with `allowOverwrite: false`. Validation
+   *   still runs *before* the store is mutated, so a failed validation leaves any
+   *   previously-registered intake untouched.
+   * @throws {IntakeDuplicateError} If intake already exists and neither the
+   *   per-call `overwrite` flag nor the registry-level `allowOverwrite` is set
    * @throws {IntakeValidationError} If intake definition is invalid
    */
-  registerIntake(intake: IntakeDefinition): void {
+  registerIntake(intake: IntakeDefinition, options?: { overwrite?: boolean }): void {
+    const overwrite = options?.overwrite ?? this.config.allowOverwrite;
+
     // Check for duplicates
-    if (this.intakes.has(intake.id) && !this.config.allowOverwrite) {
+    if (this.intakes.has(intake.id) && !overwrite) {
       throw new IntakeDuplicateError(intake.id);
     }
 
-    // Validate the intake definition if enabled
+    // Validate the intake definition if enabled (before mutating the store).
     if (this.config.validateOnRegister) {
       this.validateIntakeDefinition(intake);
     }
