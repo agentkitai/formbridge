@@ -139,8 +139,17 @@ export class OpenAPIParser implements Parser<OpenAPIDocument> {
     if (extraction.metadata.summary && !intakeSchema.title) {
       intakeSchema.title = extraction.metadata.summary;
     }
-    if (extraction.metadata.description && !intakeSchema.description) {
-      intakeSchema.description = extraction.metadata.description;
+    if (extraction.metadata.description) {
+      // Mirror the operation description onto both the document and the root
+      // field. A JSON-Schema round-trip surfaces it on both (the serializer
+      // writes it to the root schema node, which parses back onto the field),
+      // so setting only the document description would make round-trips asymmetric.
+      if (!intakeSchema.description) {
+        intakeSchema.description = extraction.metadata.description;
+      }
+      if (!intakeSchema.schema.description) {
+        intakeSchema.schema.description = extraction.metadata.description;
+      }
     }
 
     // Add OpenAPI-specific metadata
@@ -179,8 +188,8 @@ export class OpenAPIParser implements Parser<OpenAPIDocument> {
       return false;
     }
 
-    // Must have paths object
-    if (!doc.paths || typeof doc.paths !== 'object') {
+    // Must have a paths object (a JSON array is `typeof 'object'` too, so reject it)
+    if (!doc.paths || typeof doc.paths !== 'object' || Array.isArray(doc.paths)) {
       return false;
     }
 
@@ -241,6 +250,13 @@ export class OpenAPIParser implements Parser<OpenAPIDocument> {
     // If path is provided, extract from specific path/method
     if (options?.path) {
       const path = options.path;
+      // Check path existence first, so a missing path reports "path not found"
+      // rather than the misleading "no mutation operation" error.
+      if (!doc.paths?.[path]) {
+        throw new ParserError(`Path "${path}" not found in OpenAPI document`, undefined, {
+          path,
+        });
+      }
       const method = options?.method ?? this.findFirstMutationMethod(doc, path);
 
       if (!method) {
@@ -382,7 +398,8 @@ export class OpenAPIParser implements Parser<OpenAPIDocument> {
       });
     }
 
-    const operation = pathItem[method] as OpenAPIOperation | undefined;
+    // HTTP methods are lower-cased keys in an OpenAPI path item; accept any casing.
+    const operation = pathItem[method.toLowerCase()] as OpenAPIOperation | undefined;
     if (!operation) {
       throw new ParserError(
         `Method "${method}" not found for path "${path}"`,

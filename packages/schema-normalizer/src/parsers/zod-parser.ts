@@ -210,6 +210,9 @@ export class ZodParser implements Parser<ZodSchema> {
       if (typeof defaultValueFn === 'function') {
         defaultValue = defaultValueFn();
       }
+      // A default makes the field optional on input: Zod supplies the value when
+      // the input is undefined, so a defaulted field must not be marked required.
+      isOptional = true;
       current = (current._def as { innerType: ZodSchema }).innerType;
     }
 
@@ -497,26 +500,25 @@ export class ZodParser implements Parser<ZodSchema> {
     // Recursively parse the array item type
     const items = this.parseField(type);
 
-    // Extract constraints from checks
+    // Extract constraints. ZodArray stores size limits directly on _def as
+    // minLength/maxLength/exactLength ({ value } | null) — NOT in a `checks`
+    // array like string/number schemas.
     const constraints: ArrayConstraints = {};
-    const checks = (schema._def as { checks?: Array<{ kind: string; value?: unknown }> }).checks || [];
-
-    for (const check of checks) {
-      switch (check.kind) {
-        case 'min':
-          constraints.minItems = check.value as number;
-          break;
-        case 'max':
-          constraints.maxItems = check.value as number;
-          break;
-        case 'length': {
-          // Exact length - set both min and max
-          const length = check.value as number;
-          constraints.minItems = length;
-          constraints.maxItems = length;
-          break;
-        }
-      }
+    const arrayDef = schema._def as {
+      minLength?: { value: number } | null;
+      maxLength?: { value: number } | null;
+      exactLength?: { value: number } | null;
+    };
+    if (arrayDef.minLength != null) {
+      constraints.minItems = arrayDef.minLength.value;
+    }
+    if (arrayDef.maxLength != null) {
+      constraints.maxItems = arrayDef.maxLength.value;
+    }
+    if (arrayDef.exactLength != null) {
+      // .length(n) fixes both bounds to n
+      constraints.minItems = arrayDef.exactLength.value;
+      constraints.maxItems = arrayDef.exactLength.value;
     }
 
     const field: ArrayField = {
@@ -567,13 +569,21 @@ export class ZodParser implements Parser<ZodSchema> {
         }
       }
     } else if (typeof def.values === 'object') {
-      // ZodNativeEnum - values is an object (enum object)
-      for (const [key, value] of Object.entries(def.values)) {
+      // ZodNativeEnum - values is an object (enum object).
+      // TypeScript NUMERIC enums carry a reverse mapping, e.g.
+      // `enum E { One = 1 }` => { "1": "One", One: 1 }. Keep only the forward
+      // name->number entries so each member is emitted once, not twice.
+      const entries = Object.entries(def.values);
+      const isNumericEnum = entries.some(([, value]) => typeof value === 'number');
+      const memberEntries = isNumericEnum
+        ? entries.filter(([, value]) => typeof value === 'number')
+        : entries;
+      for (const [key, value] of memberEntries) {
         if (typeof value === 'string' || typeof value === 'number') {
           // For native enums, use the key as the label
           enumValues.push({
             value,
-            label: key
+            label: key,
           });
         }
       }
