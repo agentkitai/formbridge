@@ -96,6 +96,13 @@ export {
   SerializerError,
 } from './serializers/json-schema-serializer';
 
+export {
+  ZodSerializer,
+  serializeToZod,
+  createZodSerializer,
+  type ZodSerializerOptions,
+} from './serializers/zod-serializer';
+
 // =============================================================================
 // Convenience Factory Functions
 // =============================================================================
