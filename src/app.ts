@@ -44,8 +44,8 @@ import type { EventStore } from './core/event-store.js';
 import type { DeliveryQueue } from './core/delivery-queue.js';
 import { WebhookManager } from './core/webhook-manager.js';
 import { Validator } from './core/validator.js';
-import type { IntakeDefinition } from './submission-types.js';
-import type { IntakeEvent } from './types/intake-contract.js';
+import type { IntakeDefinition, Submission } from './submission-types.js';
+import type { IntakeEvent, IntakeEventType } from './types/intake-contract.js';
 import { BridgingEventEmitter } from './core/bridging-event-emitter.js';
 import { WebhookNotifierImpl } from './core/webhook-notifier-impl.js';
 import { ExpiryScheduler } from './core/expiry-scheduler.js';
@@ -226,6 +226,87 @@ export function wireSubmissionServices(
   // Submission TTL expiry scheduler (checks every 60s)
   const expiryScheduler = new ExpiryScheduler(manager);
   expiryScheduler.start();
+
+  // ---------------------------------------------------------------------------
+  // Destination-delivery outbox: auto-deliver a completed submission to its
+  // intake's configured webhook destination, exactly once. The durable delivery
+  // queue is the source of truth for dedup (crash-safe); destinationDeliveredAt
+  // is a denormalized marker for display/queries.
+  // ---------------------------------------------------------------------------
+
+  /** Event types that mean the submission reached a completion state. */
+  const COMPLETION_EVENT_TYPES = new Set<IntakeEventType>([
+    'submission.submitted',
+    'review.approved',
+    'submission.finalized',
+  ]);
+
+  /** Submission states eligible for boot reconciliation. */
+  const DELIVERABLE_STATES = new Set(['submitted', 'approved', 'finalized']);
+
+  /**
+   * Deliver a completed submission to its intake's webhook destination exactly
+   * once. Dedup is anchored on the durable delivery queue (not a standalone
+   * marker), so it survives crashes and never collides with reviewer
+   * notifications (which target a different URL).
+   */
+  const deliverToDestination = async (submission: Submission): Promise<void> => {
+    let intake: IntakeDefinition;
+    try {
+      intake = registry.getIntake(submission.intakeId);
+    } catch {
+      // Intake was deregistered — nothing to deliver to.
+      return;
+    }
+
+    const destination = intake.destination;
+    const url = destination.url;
+    // Only webhook destinations with a URL are auto-delivered (skip callback/queue/urlless).
+    if (destination.kind !== 'webhook' || !url) return;
+
+    // Exactly-once: the delivery queue is the dedup authority. A non-failed row
+    // for this URL means already delivered/in-flight.
+    const existing = await deliveryQueue.getBySubmission(submission.id);
+    if (existing.some((d) => d.destinationUrl === url && d.status !== 'failed')) return;
+
+    await webhookManager.enqueueDelivery(submission, destination);
+    submission.destinationDeliveredAt = new Date().toISOString();
+    await store.save(submission);
+  };
+
+  // Auto-deliver when a submission reaches a completion state. A gated submit
+  // goes to needs_review (fires on review.approved); an ungated submit fires on
+  // submission.submitted; submission.finalized is deduped by the queue check.
+  emitter.addListener(async (event) => {
+    if (!COMPLETION_EVENT_TYPES.has(event.type)) return;
+    try {
+      const submission = await store.get(event.submissionId);
+      if (submission) await deliverToDestination(submission);
+    } catch (err) {
+      logger.error({ err, logger: 'destination-delivery' }, 'destination delivery failed');
+    }
+  });
+
+  // Boot reconciliation (outbox relay): re-enqueue any completed-but-undelivered
+  // submissions, closing the crash window between state-commit and enqueue.
+  // Idempotent via the delivery-queue dedup check; fire-and-forget so it never
+  // blocks startup.
+  // ponytail: O(n) getAll scan on boot — add a "completed & undelivered" query if volume grows
+  void (async () => {
+    try {
+      const all = await store.getAll();
+      for (const submission of all) {
+        if (!DELIVERABLE_STATES.has(submission.state)) continue;
+        try {
+          await deliverToDestination(submission);
+        } catch (err) {
+          logger.error({ err, logger: 'destination-delivery' }, 'reconciliation delivery failed');
+        }
+      }
+    } catch (err) {
+      logger.error({ err, logger: 'destination-delivery' }, 'destination delivery reconciliation failed');
+    }
+  })();
 
   // Terminal states for completion rate calculation
   const completedStates = new Set(['submitted', 'finalized', 'approved']);
