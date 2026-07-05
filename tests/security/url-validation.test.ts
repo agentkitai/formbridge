@@ -2,8 +2,14 @@
  * Tests for SSRF prevention URL validation utilities.
  */
 
-import { describe, it, expect } from 'vitest';
-import { isPrivateIP, validateWebhookUrl, sanitizeDestinationHeaders } from '../../src/core/url-validation.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import {
+  isPrivateIP,
+  validateWebhookUrl,
+  sanitizeDestinationHeaders,
+  isCloudMetadata,
+  allowPrivateWebhooks,
+} from '../../src/core/url-validation.js';
 
 describe('isPrivateIP', () => {
   it('should detect loopback addresses', () => {
@@ -134,5 +140,78 @@ describe('sanitizeDestinationHeaders', () => {
       'X-Custom-Header': 'value',
       'Accept': 'application/json',
     });
+  });
+});
+
+describe('isCloudMetadata', () => {
+  it('blocks the cloud metadata IP + hostnames', () => {
+    expect(isCloudMetadata('169.254.169.254')).toBe(true);
+    expect(isCloudMetadata('metadata.google.internal')).toBe(true);
+    expect(isCloudMetadata('metadata')).toBe(true);
+    expect(isCloudMetadata('instance-data')).toBe(true);
+  });
+  it('is false for public and other private hosts', () => {
+    expect(isCloudMetadata('example.com')).toBe(false);
+    expect(isCloudMetadata('10.0.0.1')).toBe(false);
+    expect(isCloudMetadata('127.0.0.1')).toBe(false);
+    expect(isCloudMetadata('169.254.0.1')).toBe(false); // link-local but not the metadata IP
+  });
+});
+
+describe('validateWebhookUrl — allowPrivate escape hatch', () => {
+  it('permits loopback/private destinations when allowPrivate is true', () => {
+    expect(validateWebhookUrl('http://localhost:8787/hook', { allowPrivate: true })).toBeNull();
+    expect(validateWebhookUrl('http://127.0.0.1:8787/hook', { allowPrivate: true })).toBeNull();
+    expect(validateWebhookUrl('http://10.0.0.5/hook', { allowPrivate: true })).toBeNull();
+    expect(validateWebhookUrl('http://192.168.1.10/hook', { allowPrivate: true })).toBeNull();
+  });
+  it('STILL blocks cloud metadata even with allowPrivate=true', () => {
+    expect(
+      validateWebhookUrl('http://169.254.169.254/latest/meta-data', { allowPrivate: true })
+    ).not.toBeNull();
+    expect(
+      validateWebhookUrl('http://metadata.google.internal/', { allowPrivate: true })
+    ).not.toBeNull();
+  });
+  it('STILL blocks non-http(s) schemes even with allowPrivate=true', () => {
+    expect(validateWebhookUrl('file:///etc/passwd', { allowPrivate: true })).not.toBeNull();
+  });
+  it('still allows public URLs when allowPrivate=true', () => {
+    expect(validateWebhookUrl('https://example.com/hook', { allowPrivate: true })).toBeNull();
+  });
+  it('blocks loopback/private when allowPrivate=false (explicit)', () => {
+    expect(validateWebhookUrl('http://localhost/hook', { allowPrivate: false })).not.toBeNull();
+    expect(validateWebhookUrl('http://127.0.0.1/hook', { allowPrivate: false })).not.toBeNull();
+  });
+});
+
+describe('allowPrivateWebhooks (env flag, hard-refused in production)', () => {
+  const saved = {
+    node: process.env['NODE_ENV'],
+    flag: process.env['FORMBRIDGE_ALLOW_PRIVATE_WEBHOOKS'],
+  };
+  const restore = (key: string, val: string | undefined): void => {
+    if (val === undefined) delete process.env[key];
+    else process.env[key] = val;
+  };
+  afterEach(() => {
+    restore('NODE_ENV', saved.node);
+    restore('FORMBRIDGE_ALLOW_PRIVATE_WEBHOOKS', saved.flag);
+  });
+
+  it('is false when the flag is unset', () => {
+    delete process.env['FORMBRIDGE_ALLOW_PRIVATE_WEBHOOKS'];
+    process.env['NODE_ENV'] = 'development';
+    expect(allowPrivateWebhooks()).toBe(false);
+  });
+  it('is true in development when the flag is set', () => {
+    process.env['FORMBRIDGE_ALLOW_PRIVATE_WEBHOOKS'] = '1';
+    process.env['NODE_ENV'] = 'development';
+    expect(allowPrivateWebhooks()).toBe(true);
+  });
+  it('is HARD-REFUSED (false) in production even when the flag is set', () => {
+    process.env['FORMBRIDGE_ALLOW_PRIVATE_WEBHOOKS'] = 'true';
+    process.env['NODE_ENV'] = 'production';
+    expect(allowPrivateWebhooks()).toBe(false);
   });
 });
