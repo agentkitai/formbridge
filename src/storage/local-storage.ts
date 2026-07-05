@@ -17,7 +17,7 @@
 
 import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
 import { promises as fs } from 'fs';
-import { join, dirname, basename } from 'path';
+import { join, dirname, basename, posix } from 'path';
 import type {
   StorageBackend,
   SignedUploadUrl,
@@ -445,6 +445,13 @@ export class LocalStorageBackend implements StorageBackend {
   /**
    * Generates storage key (relative path within storage directory).
    * Format: uploads/{intakeId}/{submissionId}/{uploadId}-{filename}
+   *
+   * The storage key is a stable, platform-independent logical identifier: it is
+   * persisted to metadata JSON and surfaced through the public `UploadedFile`
+   * API, so it always uses forward slashes (POSIX separators) regardless of the
+   * host OS. Actual filesystem paths are derived on demand via
+   * `join(storageDir, storageKey)`, which converts separators to the OS-native
+   * form for `fs` operations.
    */
   private generateStorageKey(
     intakeId: string,
@@ -458,7 +465,7 @@ export class LocalStorageBackend implements StorageBackend {
     const sanitizedSubmissionId = sanitize(submissionId);
     const sanitizedUploadId = sanitize(uploadId);
     const sanitizedFilename = sanitize(filename);
-    return join('uploads', sanitizedIntakeId, sanitizedSubmissionId, `${sanitizedUploadId}-${sanitizedFilename}`);
+    return posix.join('uploads', sanitizedIntakeId, sanitizedSubmissionId, `${sanitizedUploadId}-${sanitizedFilename}`);
   }
 
   /**

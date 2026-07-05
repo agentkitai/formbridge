@@ -813,7 +813,10 @@ describe('LocalStorageBackend', () => {
 
       expect(path).toBeDefined();
       expect(path).toContain(storageDir);
-      expect(path).toContain('uploads/intake_1/sub_1/');
+      // getUploadPath returns an OS-native filesystem path (used directly for
+      // fs writes), so it uses backslashes on Windows. Normalize separators
+      // before asserting the logical directory structure.
+      expect(path!.replace(/\\/g, '/')).toContain('uploads/intake_1/sub_1/');
       expect(path).toContain(result.uploadId);
       expect(path).toContain('resume.pdf');
     });
