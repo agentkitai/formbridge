@@ -19,7 +19,7 @@ jobs:
           fetch-depth: 0
       # No registry-url on purpose: setup-node would write an .npmrc with a
       # `${NODE_AUTH_TOKEN}` placeholder that breaks OIDC trusted publishing (404).
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           cache: npm
