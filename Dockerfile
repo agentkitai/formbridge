@@ -1,5 +1,5 @@
 # ---- Builder stage ----
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 
 RUN apk add --no-cache python3 make g++
 
@@ -38,7 +38,7 @@ RUN rm -rf node_modules/@microsoft node_modules/typescript \
     node_modules/acorn* node_modules/estree* node_modules/magic-string
 
 # ---- Production stage ----
-FROM node:22-alpine AS production
+FROM node:25-alpine AS production
 
 RUN apk add --no-cache libstdc++
 
