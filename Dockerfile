@@ -40,7 +40,8 @@ RUN rm -rf node_modules/@microsoft node_modules/typescript \
 # ---- Production stage ----
 FROM node:25-alpine AS production
 
-RUN apk add --no-cache libstdc++
+# CVE-2026-45447: base image ships libcrypto3/libssl3 3.5.6-r0, fixed in 3.5.7-r0
+RUN apk add --no-cache libstdc++ && apk upgrade --no-cache libcrypto3 libssl3
 
 RUN addgroup -g 1001 formbridge && \
     adduser -u 1001 -G formbridge -s /bin/sh -D formbridge
