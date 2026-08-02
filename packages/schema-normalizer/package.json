@@ -43,5 +43,10 @@
     "zod": {
       "optional": true
     }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentkitai/formbridge.git",
+    "directory": "packages/schema-normalizer"
   }
 }

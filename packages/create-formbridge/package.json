@@ -41,5 +41,10 @@
     "cli",
     "create"
   ],
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentkitai/formbridge.git",
+    "directory": "packages/create-formbridge"
+  }
 }

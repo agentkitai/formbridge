@@ -63,5 +63,10 @@
     "accessibility"
   ],
   "author": "FormBridge",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/agentkitai/formbridge.git",
+    "directory": "packages/form-renderer"
+  }
 }
