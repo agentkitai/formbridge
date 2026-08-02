@@ -1,5 +1,4 @@
 ---
-'@agentkitai/formbridge-mcp-server': patch
 '@agentkitai/formbridge-create': patch
 '@agentkitai/formbridge-form-renderer': patch
 '@agentkitai/formbridge-schema-normalizer': patch
