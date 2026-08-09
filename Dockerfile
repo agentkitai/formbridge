@@ -1,5 +1,5 @@
 # ---- Builder stage ----
-FROM node:25-alpine AS builder
+FROM node:26-alpine AS builder
 
 RUN apk add --no-cache python3 make g++
 
@@ -38,7 +38,7 @@ RUN rm -rf node_modules/@microsoft node_modules/typescript \
     node_modules/acorn* node_modules/estree* node_modules/magic-string
 
 # ---- Production stage ----
-FROM node:25-alpine AS production
+FROM node:26-alpine AS production
 
 # CVE-2026-45447: base image ships libcrypto3/libssl3 3.5.6-r0, fixed in 3.5.7-r0
 RUN apk add --no-cache libstdc++ && apk upgrade --no-cache libcrypto3 libssl3
