@@ -16,7 +16,7 @@
     "ts-node": "^10.9.0"
   },
   "dependencies": {
-    "aws-cdk-lib": "2.262.2",
+    "aws-cdk-lib": "2.272.0",
     "constructs": "^10.7.2"
   }
 }
